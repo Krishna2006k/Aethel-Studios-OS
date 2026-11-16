@@ -1,0 +1,6 @@
+{
+  "name": "Aethel OS — Internal Agency & Growth Operating System",
+  "description": "Internal agency management, CRM pipeline, Meta Ads tracker, domain registry, R&D lab, co-founder finance ledger, and zero-knowledge AES-GCM encrypted vault for Aethel Studios.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
