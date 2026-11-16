@@ -6,6 +6,7 @@ import {
   Trash2,
   Globe,
   Search,
+  Edit3,
 } from 'lucide-react';
 import type { TechAsset, HealthStatus } from '../types';
 import { formatINR, calculateDaysRemaining } from '../utils/calculations';
@@ -30,6 +31,7 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
   onOpenAddWebsite,
 }) => {
   const [search, setSearch] = useState('');
+  const [editingWebsiteId, setEditingWebsiteId] = useState<string | null>(null);
 
   const filtered = websites.filter((w) => {
     const q = search.toLowerCase();
@@ -97,6 +99,7 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
         {filtered.map((site) => {
           const daysLeft = calculateDaysRemaining(site.renewalDate);
           const isExpiringUnder30 = daysLeft <= 30;
+          const isEditing = editingWebsiteId === site.id;
 
           return (
             <div
@@ -184,6 +187,108 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
                   </div>
                 </div>
 
+                {/* Inline Field Editor */}
+                {isEditing && (
+                  <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#2563EB]/40 grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Project Name
+                      </label>
+                      <input
+                        type="text"
+                        value={site.projectName}
+                        onChange={(e) =>
+                          onUpdateWebsite({
+                            ...site,
+                            projectName: e.target.value,
+                          })
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white text-xs font-semibold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Client Name
+                      </label>
+                      <input
+                        type="text"
+                        value={site.clientName}
+                        onChange={(e) =>
+                          onUpdateWebsite({
+                            ...site,
+                            clientName: e.target.value,
+                          })
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white text-xs font-semibold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Live Domain URL
+                      </label>
+                      <input
+                        type="text"
+                        value={site.liveDomainUrl}
+                        onChange={(e) =>
+                          onUpdateWebsite({
+                            ...site,
+                            liveDomainUrl: e.target.value,
+                          })
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Renewal Date
+                      </label>
+                      <input
+                        type="date"
+                        value={site.renewalDate}
+                        onChange={(e) =>
+                          onUpdateWebsite({
+                            ...site,
+                            renewalDate: e.target.value,
+                          })
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Annual Renewal Cost (₹)
+                      </label>
+                      <input
+                        type="number"
+                        value={site.annualRenewalCost}
+                        onChange={(e) =>
+                          onUpdateWebsite({
+                            ...site,
+                            annualRenewalCost: Number(e.target.value) || 0,
+                          })
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Tech Stack
+                      </label>
+                      <input
+                        type="text"
+                        value={site.techStack}
+                        onChange={(e) =>
+                          onUpdateWebsite({
+                            ...site,
+                            techStack: e.target.value,
+                          })
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {/* Metadata Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
                   <div>
@@ -230,14 +335,26 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
 
               <div className="pt-3 border-t border-[#EAECEF] flex items-center justify-between text-xs text-slate-500">
                 <span>Assigned Engineer: {site.assignedLead}</span>
-                <button
-                  type="button"
-                  onClick={() => onDeleteWebsite(site.id)}
-                  aria-label={`Remove ${site.projectName}`}
-                  className="text-slate-400 hover:text-rose-600 p-1 transition-colors cursor-pointer"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditingWebsiteId(isEditing ? null : site.id)
+                    }
+                    className="px-2.5 py-1 rounded-full border border-[#EAECEF] hover:border-[#2563EB] text-xs font-semibold text-[#2563EB] flex items-center gap-1 cursor-pointer"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>{isEditing ? 'Done' : 'Edit Asset'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteWebsite(site.id)}
+                    aria-label={`Remove ${site.projectName}`}
+                    className="text-slate-400 hover:text-rose-600 p-1 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           );

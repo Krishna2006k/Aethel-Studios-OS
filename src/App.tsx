@@ -20,6 +20,13 @@ import {
   resetToFactorySeed,
   DEMO_MASTER_PASSPHRASE,
 } from './services/dbService';
+import {
+  reconcileClientAddition,
+  reconcileClientUpdate,
+  reconcilePaymentAddition,
+  reconcilePaymentDeletion,
+  reconcileWebsiteHealthWithTickets,
+} from './utils/syncEngine';
 import { Navbar } from './components/Navbar';
 import { CommandCenterView } from './components/CommandCenterView';
 import { ClientPipelineView } from './components/ClientPipelineView';
@@ -93,30 +100,36 @@ export default function App() {
     []
   );
 
-  // CRUD Handlers for Module 02: Clients
+  // CRUD Handlers for Module 02: Clients (Relational Sync Enabled)
   const handleAddClient = (client: ClientLead) => {
-    updateAndPersist((prev) => ({
-      ...prev,
-      clients: [client, ...prev.clients],
-    }));
-    notify(`Added client lead: ${client.businessName}`);
+    updateAndPersist((prev) => reconcileClientAddition(prev, client));
+    notify(
+      client.advancePaid > 0
+        ? `Added ${client.businessName} & synced advance inflow to Studio Finance`
+        : `Added client lead: ${client.businessName}`
+    );
   };
 
   const handleUpdateClient = (updated: ClientLead) => {
-    updateAndPersist((prev) => ({
-      ...prev,
-      clients: prev.clients.map((c) => (c.id === updated.id ? updated : c)),
-    }));
-    notify(`Updated ${updated.businessName}`);
+    updateAndPersist((prev) => reconcileClientUpdate(prev, updated));
+    notify(`Synced ${updated.businessName} across pipeline & finance`);
   };
 
   const handleDeleteClient = (id: string) => {
+    const target = dbState.clients.find((c) => c.id === id);
     updateAndPersist((prev) => ({
       ...prev,
       clients: prev.clients.filter((c) => c.id !== id),
     }));
+    if (selectedClientForDrawer?.id === id) {
+      setSelectedClientForDrawer(null);
+    }
     deleteRecordFromSupabase('clients', id);
-    notify('Removed client from pipeline.');
+    notify(
+      target
+        ? `Deleted ${target.businessName} from pipeline.`
+        : 'Removed client from pipeline.'
+    );
   };
 
   // CRUD Handlers for Module 03: Meta Ads
@@ -148,10 +161,12 @@ export default function App() {
 
   // CRUD Handlers for Module 04: Websites & Domains
   const handleAddWebsite = (website: TechAsset) => {
-    updateAndPersist((prev) => ({
-      ...prev,
-      websites: [website, ...prev.websites],
-    }));
+    updateAndPersist((prev) =>
+      reconcileWebsiteHealthWithTickets({
+        ...prev,
+        websites: [website, ...prev.websites],
+      })
+    );
     notify(`Registered domain asset: ${website.projectName}`);
   };
 
@@ -172,30 +187,36 @@ export default function App() {
     notify('Removed website asset.');
   };
 
-  // CRUD Handlers for Module 05: Tickets
+  // CRUD Handlers for Module 05: Tickets (Relational Sync with Website Health)
   const handleAddTicket = (ticket: DeliveryTicket) => {
-    updateAndPersist((prev) => ({
-      ...prev,
-      tickets: [ticket, ...prev.tickets],
-    }));
+    updateAndPersist((prev) =>
+      reconcileWebsiteHealthWithTickets({
+        ...prev,
+        tickets: [ticket, ...prev.tickets],
+      })
+    );
     notify(`Logged ticket: ${ticket.title}`);
   };
 
   const handleUpdateTicket = (updated: DeliveryTicket) => {
-    updateAndPersist((prev) => ({
-      ...prev,
-      tickets: prev.tickets.map((t) => (t.id === updated.id ? updated : t)),
-    }));
+    updateAndPersist((prev) =>
+      reconcileWebsiteHealthWithTickets({
+        ...prev,
+        tickets: prev.tickets.map((t) => (t.id === updated.id ? updated : t)),
+      })
+    );
     notify(`Ticket moved to ${updated.state}`);
   };
 
   const handleDeleteTicket = (id: string) => {
-    updateAndPersist((prev) => ({
-      ...prev,
-      tickets: prev.tickets.filter((t) => t.id !== id),
-    }));
+    updateAndPersist((prev) =>
+      reconcileWebsiteHealthWithTickets({
+        ...prev,
+        tickets: prev.tickets.filter((t) => t.id !== id),
+      })
+    );
     deleteRecordFromSupabase('tickets', id);
-    notify('Deleted ticket.');
+    notify('Deleted ticket & reconciled website health.');
   };
 
   // CRUD Handlers for Module 06: R&D Lab Prototypes
@@ -225,7 +246,7 @@ export default function App() {
     notify('Removed R&D prototype.');
   };
 
-  // CRUD Handlers for Module 07: Studio Finance
+  // CRUD Handlers for Module 07: Studio Finance (Relational Sync with Client Pipeline)
   const handleAddExpense = (expense: ExpenseItem) => {
     updateAndPersist((prev) => ({
       ...prev,
@@ -252,20 +273,14 @@ export default function App() {
   };
 
   const handleAddPayment = (payment: ClientPayment) => {
-    updateAndPersist((prev) => ({
-      ...prev,
-      payments: [payment, ...prev.payments],
-    }));
-    notify(`Recorded inflow from ${payment.clientName}`);
+    updateAndPersist((prev) => reconcilePaymentAddition(prev, payment));
+    notify(`Recorded inflow from ${payment.clientName} & synced client balance`);
   };
 
   const handleDeletePayment = (id: string) => {
-    updateAndPersist((prev) => ({
-      ...prev,
-      payments: prev.payments.filter((p) => p.id !== id),
-    }));
+    updateAndPersist((prev) => reconcilePaymentDeletion(prev, id));
     deleteRecordFromSupabase('client_payments', id);
-    notify('Removed payment record.');
+    notify('Removed payment record & reconciled client balance.');
   };
 
   // CRUD Handlers for Module 08: Encrypted Vault

@@ -340,15 +340,21 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
           >
             <div className="lg:col-span-2">
               <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
-                Client Name
+                Client Name (Syncs with Pipeline)
               </label>
               <input
                 type="text"
+                list="studio-finance-client-list"
                 value={payClientName}
                 onChange={(e) => setPayClientName(e.target.value)}
-                placeholder="Client or project name"
+                placeholder="Select or type client name"
                 className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
               />
+              <datalist id="studio-finance-client-list">
+                {clients.map((c) => (
+                  <option key={c.id} value={c.businessName} />
+                ))}
+              </datalist>
             </div>
 
             <div>

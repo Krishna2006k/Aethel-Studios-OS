@@ -5,10 +5,13 @@ import {
   Square,
   Trash2,
   TrendingUp,
+  Edit3,
 } from 'lucide-react';
 import type {
   MetaCampaign,
   CampaignStatus,
+  PackageDuration,
+  CampaignObjective,
 } from '../types';
 import {
   formatINR,
@@ -31,6 +34,20 @@ const CAMPAIGN_STATUSES: CampaignStatus[] = [
   'Completed',
 ];
 
+const PACKAGE_DURATIONS: PackageDuration[] = [
+  '7 Days',
+  '15 Days',
+  '30 Days',
+  'Monthly Retainer',
+];
+
+const AD_OBJECTIVES: CampaignObjective[] = [
+  'WhatsApp Inquiries',
+  'Lead Generation Form',
+  'Local Store Visits / Reach',
+  'Instagram Profile Visits',
+];
+
 export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
   campaigns,
   onUpdateCampaign,
@@ -38,6 +55,7 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
   onOpenAddCampaign,
 }) => {
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
 
   const filtered = campaigns.filter(
     (c) => statusFilter === 'ALL' || c.status === statusFilter
@@ -127,6 +145,7 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
           const cpl = calculateCPL(campaign.adSpendUsed, campaign.leadsGenerated);
           const prog = calculateCampaignProgress(campaign.startDate, campaign.endDate);
           const isEndingSoon = prog.daysRemaining <= 3 && campaign.status !== 'Completed';
+          const isEditing = editingCampaignId === campaign.id;
 
           return (
             <div
@@ -253,6 +272,136 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
                   </div>
                 </div>
 
+                {/* Expandable Full-Field Editor */}
+                {isEditing && (
+                  <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#2563EB]/40 space-y-3 text-xs">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Total Ad Budget (₹)
+                        </label>
+                        <input
+                          type="number"
+                          value={campaign.totalAdBudget}
+                          onChange={(e) =>
+                            onUpdateCampaign({
+                              ...campaign,
+                              totalAdBudget: Number(e.target.value) || 0,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Agency Fee (₹)
+                        </label>
+                        <input
+                          type="number"
+                          value={campaign.agencyFee}
+                          onChange={(e) =>
+                            onUpdateCampaign({
+                              ...campaign,
+                              agencyFee: Number(e.target.value) || 0,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Sprint Package
+                        </label>
+                        <select
+                          value={campaign.packageDuration}
+                          onChange={(e) =>
+                            onUpdateCampaign({
+                              ...campaign,
+                              packageDuration: e.target.value as PackageDuration,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white text-xs"
+                        >
+                          {PACKAGE_DURATIONS.map((d) => (
+                            <option key={d} value={d}>
+                              {d}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Objective
+                        </label>
+                        <select
+                          value={campaign.objective}
+                          onChange={(e) =>
+                            onUpdateCampaign({
+                              ...campaign,
+                              objective: e.target.value as CampaignObjective,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white text-xs"
+                        >
+                          {AD_OBJECTIVES.map((o) => (
+                            <option key={o} value={o}>
+                              {o}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Start Date
+                        </label>
+                        <input
+                          type="date"
+                          value={campaign.startDate}
+                          onChange={(e) =>
+                            onUpdateCampaign({
+                              ...campaign,
+                              startDate: e.target.value,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white font-mono text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          End Date
+                        </label>
+                        <input
+                          type="date"
+                          value={campaign.endDate}
+                          onChange={(e) =>
+                            onUpdateCampaign({
+                              ...campaign,
+                              endDate: e.target.value,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                        Audience &amp; Hook Notes
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={campaign.audienceNotes}
+                        onChange={(e) =>
+                          onUpdateCampaign({
+                            ...campaign,
+                            audienceNotes: e.target.value,
+                          })
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+
                 {/* Technical Checklist Controls */}
                 <div className="space-y-1.5 pt-2 border-t border-[#EAECEF]">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
@@ -330,14 +479,26 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
                 <span className="font-mono text-slate-500">
                   Remaining Budget: {formatINR(Math.max(0, campaign.totalAdBudget - campaign.adSpendUsed))}
                 </span>
-                <button
-                  type="button"
-                  onClick={() => onDeleteCampaign(campaign.id)}
-                  aria-label={`Delete campaign for ${campaign.clientName}`}
-                  className="text-slate-400 hover:text-rose-600 p-1 transition-colors cursor-pointer"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditingCampaignId(isEditing ? null : campaign.id)
+                    }
+                    className="px-2.5 py-1 rounded-full border border-[#EAECEF] hover:border-[#2563EB] text-xs font-semibold text-[#2563EB] flex items-center gap-1 cursor-pointer"
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    <span>{isEditing ? 'Done' : 'Edit Fields'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDeleteCampaign(campaign.id)}
+                    aria-label={`Delete campaign for ${campaign.clientName}`}
+                    className="text-slate-400 hover:text-rose-600 p-1 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           );

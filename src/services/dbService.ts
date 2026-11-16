@@ -86,46 +86,77 @@ export async function buildEncryptedSeedVault(): Promise<VaultCredential[]> {
   return credentials;
 }
 
+async function fetchServerDatabase(): Promise<AethelDatabaseState | null> {
+  try {
+    const res = await fetch('/api/db', {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data && data.state && Array.isArray(data.state.clients)) {
+      return data.state as AethelDatabaseState;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function pushStateToServer(state: AethelDatabaseState): Promise<boolean> {
+  try {
+    const res = await fetch('/api/db', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ state }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function loadInitialDatabase(): Promise<{
   state: AethelDatabaseState;
   mode: 'cloud' | 'local';
   syncNote?: string;
 }> {
-  // 1. Ensure local storage has initialized seed data with real AES-GCM vault records
-  let localState: AethelDatabaseState | null = null;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY_DATA);
-    if (raw) {
-      localState = JSON.parse(raw) as AethelDatabaseState;
+  // 1. Try loading from our persistent Express Backend (/api/db) first
+  let activeState = await fetchServerDatabase();
+
+  // 2. Fallback to browser localStorage if server is unreachable
+  if (!activeState) {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY_DATA);
+      if (raw) {
+        activeState = JSON.parse(raw) as AethelDatabaseState;
+      }
+    } catch {
+      activeState = null;
     }
-  } catch {
-    localState = null;
   }
 
-  if (!localState || !localState.clients) {
+  // 3. Ensure valid seed state with AES-GCM encrypted vault records
+  if (!activeState || !activeState.clients) {
     const vaultCredentials = await buildEncryptedSeedVault();
-    localState = {
+    activeState = {
       ...SEED_DATA,
       vaultCredentials,
     };
-    try {
-      localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(localState));
-    } catch {
-      // Ignore quota errors
-    }
-  } else if (!localState.vaultCredentials || localState.vaultCredentials.length === 0) {
-    localState.vaultCredentials = await buildEncryptedSeedVault();
-    try {
-      localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(localState));
-    } catch {
-      // Ignore
-    }
+  } else if (!activeState.vaultCredentials || activeState.vaultCredentials.length === 0) {
+    activeState.vaultCredentials = await buildEncryptedSeedVault();
   }
 
-  // 2. If Supabase is configured, try syncing from Supabase tables
+  try {
+    localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(activeState));
+  } catch {
+    // Ignore quota errors
+  }
+
+  // 4. If Supabase is configured, try syncing from Supabase tables
   const sb = getSupabaseClient();
   if (!sb) {
-    return { state: localState, mode: 'local' };
+    return { state: activeState, mode: 'local' };
   }
 
   try {
@@ -151,7 +182,7 @@ export async function loadInitialDatabase(): Promise<{
 
     if (clientsRes.error) {
       return {
-        state: localState,
+        state: activeState,
         mode: 'local',
         syncNote: `Supabase connected, awaiting schema setup (${clientsRes.error.message})`,
       };
@@ -162,9 +193,8 @@ export async function loadInitialDatabase(): Promise<{
       (campaignsRes.data && campaignsRes.data.length > 0);
 
     if (!hasCloudData) {
-      // Seed cloud tables automatically with current local state so user gets instant cloud persistence
-      await pushFullStateToSupabase(localState);
-      return { state: localState, mode: 'cloud', syncNote: 'Synced initial studio data to Supabase' };
+      await pushFullStateToSupabase(activeState);
+      return { state: activeState, mode: 'cloud', syncNote: 'Synced initial studio data to Supabase' };
     }
 
     const cloudState: AethelDatabaseState = {
@@ -179,12 +209,13 @@ export async function loadInitialDatabase(): Promise<{
     };
 
     localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(cloudState));
+    await pushStateToServer(cloudState);
     return { state: cloudState, mode: 'cloud' };
   } catch (err: any) {
     return {
-      state: localState,
+      state: activeState,
       mode: 'local',
-      syncNote: err?.message || 'Fallback to Local Mode',
+      syncNote: err?.message || 'Fallback to Server + Local Mode',
     };
   }
 }
@@ -195,12 +226,17 @@ export async function persistDatabaseState(state: AethelDatabaseState): Promise<
   } catch {
     // Ignore storage error
   }
+
+  // Persist to Express Backend disk storage (/api/db)
+  await pushStateToServer(state);
+
+  // Also sync to Supabase Cloud if configured
   const sb = getSupabaseClient();
   if (sb) {
     try {
       await pushFullStateToSupabase(state);
     } catch {
-      // Silent fallback to localStorage
+      // Silent fallback to server + localStorage
     }
   }
 }
@@ -254,12 +290,26 @@ export async function deleteRecordFromSupabase(
 }
 
 export async function resetToFactorySeed(): Promise<AethelDatabaseState> {
+  try {
+    const res = await fetch('/api/db/reset', { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.state) {
+        localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(data.state));
+        return data.state as AethelDatabaseState;
+      }
+    }
+  } catch {
+    // Fallback if server endpoint is unavailable
+  }
+
   const vaultCredentials = await buildEncryptedSeedVault();
   const fresh: AethelDatabaseState = {
     ...SEED_DATA,
     vaultCredentials,
   };
   localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(fresh));
+  await pushStateToServer(fresh);
   return fresh;
 }
 

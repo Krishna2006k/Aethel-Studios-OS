@@ -9,6 +9,13 @@ import {
   calculateStudioFinances,
   buildWhatsAppUrl,
 } from './calculations';
+import {
+  reconcileClientUpdate,
+  reconcileClientAddition,
+  reconcilePaymentAddition,
+  reconcilePaymentDeletion,
+  reconcileWebsiteHealthWithTickets,
+} from './syncEngine';
 import { encryptSecret, decryptSecret } from './cryptoService';
 import { SEED_DATA } from '../data/seedData';
 
@@ -82,4 +89,76 @@ test('Web Crypto AES-GCM 256-bit encryptSecret and decryptSecret roundtrip works
   await assert.rejects(async () => {
     await decryptSecret(payload, 'wrong-passphrase');
   });
+});
+
+test('reconcileClientUpdate cascades businessName across modules and syncs advancePaid delta to Studio Finance', () => {
+  const imperial = SEED_DATA.clients.find((c) => c.id === 'cli-1')!;
+  // Settle remaining 9000 balance (from 25000 to 34000) and rename business
+  const updatedImperial = {
+    ...imperial,
+    businessName: 'The Imperial Grand Pavilion',
+    advancePaid: 34000,
+  };
+
+  const nextState = reconcileClientUpdate(SEED_DATA, updatedImperial);
+  const syncedClient = nextState.clients.find((c) => c.id === 'cli-1')!;
+
+  // Stage should auto-promote from 'Live / Payment Pending' to 'Delivered / Live'
+  assert.equal(syncedClient.stage, 'Delivered / Live');
+  assert.equal(syncedClient.businessName, 'The Imperial Grand Pavilion');
+
+  // Linked Meta Campaign, Website, Ticket, and Expense should have cascaded name
+  const linkedCampaign = nextState.metaCampaigns.find((m) => m.id === 'cam-1')!;
+  assert.equal(linkedCampaign.clientName, 'The Imperial Grand Pavilion');
+
+  const linkedWebsite = nextState.websites.find((w) => w.id === 'web-1')!;
+  assert.equal(linkedWebsite.clientName, 'The Imperial Grand Pavilion');
+
+  // Studio Finance payments should have a new 9000 inflow record
+  assert.equal(nextState.payments.length, SEED_DATA.payments.length + 1);
+  assert.equal(nextState.payments[0].amountReceived, 9000);
+  assert.equal(nextState.payments[0].clientName, 'The Imperial Grand Pavilion');
+});
+
+test('reconcilePaymentAddition and reconcilePaymentDeletion sync back to Client Pipeline and reconcileWebsiteHealthWithTickets updates website health', () => {
+  // Record 8500 payment for Lotus Women's Hospital & IVF Center (cli-8, agreed 22500, advance 14000)
+  const afterPay = reconcilePaymentAddition(SEED_DATA, {
+    id: 'pay-test-99',
+    date: '2026-11-16',
+    clientName: "Lotus Women's Hospital & IVF Center",
+    amountReceived: 8500,
+    paymentMode: 'UPI',
+    receivedBy: 'Krishna',
+    notes: 'Final settlement upon launch',
+  });
+
+  const lotusAfterPay = afterPay.clients.find((c) => c.id === 'cli-8')!;
+  assert.equal(lotusAfterPay.advancePaid, 22500);
+  assert.equal(lotusAfterPay.stage, 'Delivered / Live');
+
+  // Delete that payment and verify stage reverts to 'Live / Payment Pending'
+  const afterDel = reconcilePaymentDeletion(afterPay, 'pay-test-99');
+  const lotusAfterDel = afterDel.clients.find((c) => c.id === 'cli-8')!;
+  assert.equal(lotusAfterDel.advancePaid, 14000);
+  assert.equal(lotusAfterDel.stage, 'Live / Payment Pending');
+
+  // Adding a new client with advancePaid > 0 creates an initial payment
+  const afterAdd = reconcileClientAddition(SEED_DATA, {
+    ...SEED_DATA.clients[0],
+    id: 'cli-new-test',
+    businessName: 'Sunrise Multi-Specialty Clinic',
+    advancePaid: 10000,
+  });
+  assert.equal(afterAdd.payments[0].amountReceived, 10000);
+
+  // Resolving all urgent tickets for Imperial Pavilion (tkt-1) restores web-1 health to 'Live & Healthy'
+  const resolvedTickets = SEED_DATA.tickets.map((t) =>
+    t.id === 'tkt-1' ? { ...t, state: 'Deployed & Resolved' as const } : t
+  );
+  const healthSynced = reconcileWebsiteHealthWithTickets({
+    ...SEED_DATA,
+    tickets: resolvedTickets,
+  });
+  const web1 = healthSynced.websites.find((w) => w.id === 'web-1')!;
+  assert.equal(web1.healthStatus, 'Live & Healthy');
 });

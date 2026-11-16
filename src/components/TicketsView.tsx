@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, ExternalLink } from 'lucide-react';
+import { Plus, Trash2, ExternalLink, Edit3 } from 'lucide-react';
 import type {
   DeliveryTicket,
   TicketCategory,
   TicketWorkflowState,
+  TicketPriority,
+  ScopeBillingTag,
 } from '../types';
 import { formatINR } from '../utils/calculations';
 
@@ -21,6 +23,19 @@ const WORKFLOW_STATES: TicketWorkflowState[] = [
   'Deployed & Resolved',
 ];
 
+const TICKET_PRIORITIES: TicketPriority[] = [
+  'Low',
+  'Medium',
+  'High',
+  'Critical - Site Down',
+];
+
+const BILLING_TAGS: ScopeBillingTag[] = [
+  'Included in Plan',
+  'Free Goodwill',
+  'Billable Extra ₹',
+];
+
 const CATEGORY_TABS: ('All Tickets' | TicketCategory)[] = [
   'All Tickets',
   'Website Bugs / Issues',
@@ -35,6 +50,7 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
   onOpenAddTicket,
 }) => {
   const [activeTab, setActiveTab] = useState<'All Tickets' | TicketCategory>('All Tickets');
+  const [editingTicketId, setEditingTicketId] = useState<string | null>(null);
 
   const filtered = tickets.filter(
     (t) => activeTab === 'All Tickets' || t.category === activeTab
@@ -53,7 +69,7 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
               Post-Sales Execution &amp; Scope Guardrail Board
             </h1>
             <p className="text-sm text-slate-600 mt-1">
-              Every WhatsApp revision, production bug, and billable extra tracked from report to deployment.
+              Every WhatsApp revision, production bug, and billable extra tracked from report to deployment · Urgent bugs auto-sync Website Health in Module 04.
             </p>
           </div>
 
@@ -110,92 +126,204 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
                     No tickets in {state}
                   </p>
                 ) : (
-                  columnTickets.map((ticket) => (
-                    <div
-                      key={ticket.id}
-                      className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-3"
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <span
-                          className={`text-[11px] font-bold ${
-                            ticket.priority === 'Critical - Site Down' ||
-                            ticket.priority === 'High'
-                              ? 'text-rose-600'
-                              : 'text-[#2563EB]'
-                          }`}
-                        >
-                          {ticket.priority}
-                        </span>
-                        <span className="text-[11px] font-semibold text-slate-600">
-                          {ticket.billingTag}
-                          {ticket.extraAmount
-                            ? ` (${formatINR(ticket.extraAmount)})`
-                            : ''}
-                        </span>
-                      </div>
-
-                      <div>
-                        <h3 className="text-sm font-bold text-[#0B0F19] leading-snug">
-                          {ticket.title}
-                        </h3>
-                        <div className="text-xs text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
-                          <span className="font-semibold text-slate-700">
-                            {ticket.clientName}
-                          </span>
-                          <span aria-hidden="true">·</span>
-                          <span>{ticket.category}</span>
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-slate-600 leading-relaxed">
-                        {ticket.notes}
-                      </p>
-
-                      {ticket.websiteUrl && (
-                        <a
-                          href={ticket.websiteUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-mono text-[11px] text-[#2563EB] hover:underline flex items-center gap-1"
-                        >
-                          <span>{ticket.websiteUrl.replace(/^https?:\/\//, '')}</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      )}
-
-                      <div className="pt-2.5 border-t border-[#EAECEF] flex items-center justify-between gap-2">
-                        <select
-                          aria-label={`Change workflow state for ${ticket.title}`}
-                          value={ticket.state}
-                          onChange={(e) =>
-                            onUpdateTicket({
-                              ...ticket,
-                              state: e.target.value as TicketWorkflowState,
-                            })
-                          }
-                          className="px-2.5 py-1 rounded-full bg-white border border-[#EAECEF] text-[11px] font-semibold text-[#0B0F19]"
-                        >
-                          {WORKFLOW_STATES.map((ws) => (
-                            <option key={ws} value={ws}>
-                              {ws}
-                            </option>
-                          ))}
-                        </select>
-
-                        <div className="flex items-center gap-2 text-xs text-slate-500">
-                          <span>{ticket.assignedTo}</span>
-                          <button
-                            type="button"
-                            onClick={() => onDeleteTicket(ticket.id)}
-                            aria-label={`Delete ticket ${ticket.title}`}
-                            className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                  columnTickets.map((ticket) => {
+                    const isEditing = editingTicketId === ticket.id;
+                    return (
+                      <div
+                        key={ticket.id}
+                        className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-3"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <span
+                            className={`text-[11px] font-bold ${
+                              ticket.priority === 'Critical - Site Down' ||
+                              ticket.priority === 'High'
+                                ? 'text-rose-600'
+                                : 'text-[#2563EB]'
+                            }`}
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                            {ticket.priority}
+                          </span>
+                          <span className="text-[11px] font-semibold text-slate-600">
+                            {ticket.billingTag}
+                            {ticket.extraAmount
+                              ? ` (${formatINR(ticket.extraAmount)})`
+                              : ''}
+                          </span>
+                        </div>
+
+                        <div>
+                          <h3 className="text-sm font-bold text-[#0B0F19] leading-snug">
+                            {ticket.title}
+                          </h3>
+                          <div className="text-xs text-slate-500 mt-1 flex items-center gap-1.5 flex-wrap">
+                            <span className="font-semibold text-slate-700">
+                              {ticket.clientName}
+                            </span>
+                            <span aria-hidden="true">·</span>
+                            <span>{ticket.category}</span>
+                          </div>
+                        </div>
+
+                        {isEditing ? (
+                          <div className="space-y-2 pt-2 border-t border-[#EAECEF] text-xs">
+                            <div>
+                              <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                                Title
+                              </label>
+                              <input
+                                type="text"
+                                value={ticket.title}
+                                onChange={(e) =>
+                                  onUpdateTicket({
+                                    ...ticket,
+                                    title: e.target.value,
+                                  })
+                                }
+                                className="w-full px-2.5 py-1 rounded-lg border border-[#EAECEF] bg-white text-xs font-semibold"
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                                  Priority
+                                </label>
+                                <select
+                                  value={ticket.priority}
+                                  onChange={(e) =>
+                                    onUpdateTicket({
+                                      ...ticket,
+                                      priority: e.target.value as TicketPriority,
+                                    })
+                                  }
+                                  className="w-full px-2 py-1 rounded-lg border border-[#EAECEF] bg-white text-xs"
+                                >
+                                  {TICKET_PRIORITIES.map((p) => (
+                                    <option key={p} value={p}>
+                                      {p}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                                  Assigned To
+                                </label>
+                                <select
+                                  value={ticket.assignedTo}
+                                  onChange={(e) =>
+                                    onUpdateTicket({
+                                      ...ticket,
+                                      assignedTo: e.target.value as 'Krishna' | 'Vansh',
+                                    })
+                                  }
+                                  className="w-full px-2 py-1 rounded-lg border border-[#EAECEF] bg-white text-xs"
+                                >
+                                  <option value="Vansh">Vansh</option>
+                                  <option value="Krishna">Krishna</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                                Scope / Billing
+                              </label>
+                              <select
+                                value={ticket.billingTag}
+                                onChange={(e) =>
+                                  onUpdateTicket({
+                                    ...ticket,
+                                    billingTag: e.target.value as ScopeBillingTag,
+                                  })
+                                }
+                                className="w-full px-2 py-1 rounded-lg border border-[#EAECEF] bg-white text-xs"
+                              >
+                                {BILLING_TAGS.map((b) => (
+                                  <option key={b} value={b}>
+                                    {b}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                                Technical Notes
+                              </label>
+                              <textarea
+                                rows={2}
+                                value={ticket.notes}
+                                onChange={(e) =>
+                                  onUpdateTicket({
+                                    ...ticket,
+                                    notes: e.target.value,
+                                  })
+                                }
+                                className="w-full px-2.5 py-1 rounded-lg border border-[#EAECEF] bg-white text-xs"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-600 leading-relaxed">
+                            {ticket.notes}
+                          </p>
+                        )}
+
+                        {ticket.websiteUrl && (
+                          <a
+                            href={ticket.websiteUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-mono text-[11px] text-[#2563EB] hover:underline flex items-center gap-1"
+                          >
+                            <span>{ticket.websiteUrl.replace(/^https?:\/\//, '')}</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+
+                        <div className="pt-2.5 border-t border-[#EAECEF] flex items-center justify-between gap-2">
+                          <select
+                            aria-label={`Change workflow state for ${ticket.title}`}
+                            value={ticket.state}
+                            onChange={(e) =>
+                              onUpdateTicket({
+                                ...ticket,
+                                state: e.target.value as TicketWorkflowState,
+                              })
+                            }
+                            className="px-2.5 py-1 rounded-full bg-white border border-[#EAECEF] text-[11px] font-semibold text-[#0B0F19]"
+                          >
+                            {WORKFLOW_STATES.map((ws) => (
+                              <option key={ws} value={ws}>
+                                {ws}
+                              </option>
+                            ))}
+                          </select>
+
+                          <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                            <span>{ticket.assignedTo}</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditingTicketId(isEditing ? null : ticket.id)
+                              }
+                              aria-label={`Edit ticket ${ticket.title}`}
+                              className="text-slate-400 hover:text-[#2563EB] p-1 cursor-pointer"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => onDeleteTicket(ticket.id)}
+                              aria-label={`Delete ticket ${ticket.title}`}
+                              className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
