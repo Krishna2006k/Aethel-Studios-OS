@@ -30,7 +30,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   syncMode,
 }) => {
   return (
-    <header className="sticky top-3 z-40 px-4 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-40 py-3 px-4 sm:px-6 lg:px-8 bg-[#F8F9FA]/90 backdrop-blur-md">
       <div className="mx-auto max-w-[1440px] bg-white/95 backdrop-blur-md border border-[#EAECEF] rounded-full px-3 sm:px-4 py-2 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.06)] flex items-center justify-between gap-3">
         {/* Zone 1: Brand Mark */}
         <button

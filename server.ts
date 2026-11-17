@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer as createViteServer } from 'vite';
 import { SEED_DATA, SEED_RAW_VAULT_ITEMS } from './src/data/seedData';
 import { encryptSecret } from './src/utils/cryptoService';
+import { reconcileDatabaseIntegrity } from './src/utils/syncEngine';
 import type { AethelDatabaseState, VaultCredential } from './src/types';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -61,8 +62,9 @@ async function loadOrInitializeDiskDb(): Promise<PersistedDiskEnvelope> {
       if (parsed && parsed.state && Array.isArray(parsed.state.clients)) {
         if (!parsed.state.vaultCredentials || parsed.state.vaultCredentials.length === 0) {
           parsed.state.vaultCredentials = await generateEncryptedSeedVault();
-          writeEnvelopeAtomically(parsed);
         }
+        parsed.state = reconcileDatabaseIntegrity(parsed.state);
+        writeEnvelopeAtomically(parsed);
         return parsed;
       }
     } catch {
@@ -73,10 +75,10 @@ async function loadOrInitializeDiskDb(): Promise<PersistedDiskEnvelope> {
   const vaultCredentials = await generateEncryptedSeedVault();
   const initialEnvelope: PersistedDiskEnvelope = {
     updatedAt: new Date().toISOString(),
-    state: {
+    state: reconcileDatabaseIntegrity({
       ...SEED_DATA,
       vaultCredentials,
-    },
+    }),
   };
   writeEnvelopeAtomically(initialEnvelope);
   return initialEnvelope;
@@ -144,7 +146,7 @@ async function startServer() {
 
     const nextEnvelope: PersistedDiskEnvelope = {
       updatedAt: new Date().toISOString(),
-      state: incomingState,
+      state: reconcileDatabaseIntegrity(incomingState),
     };
     writeEnvelopeAtomically(nextEnvelope);
     currentEnvelope = nextEnvelope;
@@ -161,10 +163,10 @@ async function startServer() {
       const vaultCredentials = await generateEncryptedSeedVault();
       const freshEnvelope: PersistedDiskEnvelope = {
         updatedAt: new Date().toISOString(),
-        state: {
+        state: reconcileDatabaseIntegrity({
           ...SEED_DATA,
           vaultCredentials,
-        },
+        }),
       };
       writeEnvelopeAtomically(freshEnvelope);
       currentEnvelope = freshEnvelope;

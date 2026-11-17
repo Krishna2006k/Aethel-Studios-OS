@@ -12,9 +12,11 @@ import {
 import {
   reconcileClientUpdate,
   reconcileClientAddition,
+  reconcileClientDeletion,
   reconcilePaymentAddition,
   reconcilePaymentDeletion,
   reconcileWebsiteHealthWithTickets,
+  reconcileDatabaseIntegrity,
 } from './syncEngine';
 import { encryptSecret, decryptSecret } from './cryptoService';
 import { SEED_DATA } from '../data/seedData';
@@ -162,3 +164,96 @@ test('reconcilePaymentAddition and reconcilePaymentDeletion sync back to Client 
   const web1 = healthSynced.websites.find((w) => w.id === 'web-1')!;
   assert.equal(web1.healthStatus, 'Live & Healthy');
 });
+
+test('reconcileDatabaseIntegrity consolidates fragmented keystroke payments and syncs client advancePaid with payments ledger', () => {
+  const customState = {
+    ...SEED_DATA,
+    clients: [
+      {
+        ...SEED_DATA.clients[0],
+        id: 'cli-sagar',
+        businessName: 'New Sagar Mobiles Risod',
+        finalAgreedPrice: 10000,
+        advancePaid: 3000,
+        assignedLead: 'Krishna' as const,
+        stage: 'Live / Payment Pending' as const,
+      },
+      {
+        ...SEED_DATA.clients[0],
+        id: 'cli-kabra',
+        businessName: 'Kabra Mobiles',
+        finalAgreedPrice: 10000,
+        advancePaid: 10000,
+        assignedLead: 'Both' as const,
+        stage: 'Delivered / Live' as const,
+      },
+    ],
+    payments: [
+      {
+        id: 'pay-sync-1',
+        date: '2026-11-16',
+        clientName: 'New Sagar Mobiles Risod',
+        amountReceived: 2700,
+        paymentMode: 'UPI' as const,
+        receivedBy: 'Krishna' as const,
+        notes: 'Milestone',
+      },
+      {
+        id: 'pay-sync-2',
+        date: '2026-11-16',
+        clientName: 'New Sagar Mobiles Risod',
+        amountReceived: 270,
+        paymentMode: 'UPI' as const,
+        receivedBy: 'Krishna' as const,
+        notes: 'Milestone',
+      },
+      {
+        id: 'pay-sync-3',
+        date: '2026-11-16',
+        clientName: 'New Sagar Mobiles Risod',
+        amountReceived: 27,
+        paymentMode: 'UPI' as const,
+        receivedBy: 'Krishna' as const,
+        notes: 'Milestone',
+      },
+      {
+        id: 'pay-sync-4',
+        date: '2026-11-16',
+        clientName: 'New Sagar Mobiles Risod',
+        amountReceived: 3,
+        paymentMode: 'UPI' as const,
+        receivedBy: 'Krishna' as const,
+        notes: 'Milestone',
+      },
+      {
+        id: 'pay-sync-5',
+        date: '2026-11-16',
+        clientName: 'Kabra Mobiles',
+        amountReceived: 5000,
+        paymentMode: 'UPI' as const,
+        receivedBy: 'Studio Account' as const,
+        notes: 'Full balance settlement',
+      },
+    ],
+  };
+
+  const reconciled = reconcileDatabaseIntegrity(customState);
+
+  // Should have exactly 2 clean payments: 3000 for New Sagar Mobiles Risod and 10000 for Kabra Mobiles
+  assert.equal(reconciled.payments.length, 2);
+  const sagarPay = reconciled.payments.find(
+    (p) => p.clientName === 'New Sagar Mobiles Risod'
+  )!;
+  const kabraPay = reconciled.payments.find(
+    (p) => p.clientName === 'Kabra Mobiles'
+  )!;
+  assert.equal(sagarPay.amountReceived, 3000);
+  assert.equal(kabraPay.amountReceived, 10000);
+
+  // Deleting New Sagar Mobiles Risod removes its client record and its payment record
+  const afterDelete = reconcileClientDeletion(reconciled, 'cli-sagar');
+  assert.equal(afterDelete.clients.length, 1);
+  assert.equal(afterDelete.payments.length, 1);
+  assert.equal(afterDelete.payments[0].clientName, 'Kabra Mobiles');
+});
+

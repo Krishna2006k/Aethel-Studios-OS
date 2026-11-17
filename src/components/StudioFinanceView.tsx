@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus,
   Trash2,
@@ -15,7 +15,11 @@ import type {
   PaymentAccount,
   PaymentMode,
 } from '../types';
-import { formatINR, calculateStudioFinances } from '../utils/calculations';
+import {
+  formatINR,
+  calculateStudioFinances,
+  calculatePendingBalance,
+} from '../utils/calculations';
 
 interface StudioFinanceViewProps {
   expenses: ExpenseItem[];
@@ -49,14 +53,56 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
   const [subTab, setSubTab] = useState<'expenses' | 'payments'>('expenses');
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | ExpenseCategory>('ALL');
 
-  // Inline form for logging a Client Payment inflow
-  const [payClientName, setPayClientName] = useState(
-    clients[0]?.businessName || 'The Imperial Pavilion & Lawns'
+  // Active pipeline clients (excluding rejected)
+  const activeClients = clients.filter((c) => c.stage !== 'Rejected / Dropped');
+
+  const [payClientName, setPayClientName] = useState<string>(
+    activeClients[0]?.businessName || clients[0]?.businessName || ''
   );
-  const [payAmount, setPayAmount] = useState('7999');
+  const [payAmount, setPayAmount] = useState<string>('');
   const [payMode, setPayMode] = useState<PaymentMode>('UPI');
   const [payReceivedBy, setPayReceivedBy] = useState<PaymentAccount>('Studio Account');
   const [payNotes, setPayNotes] = useState('');
+
+  // Keep selected client in sync with live pipeline clients and pre-fill remaining balance
+  useEffect(() => {
+    const exists = clients.find((c) => c.businessName === payClientName);
+    if (!exists && clients.length > 0) {
+      const preferred =
+        clients.find(
+          (c) =>
+            calculatePendingBalance(c.finalAgreedPrice, c.advancePaid) > 0 &&
+            c.stage !== 'Rejected / Dropped'
+        ) || clients[0];
+      setPayClientName(preferred.businessName);
+      const due = calculatePendingBalance(
+        preferred.finalAgreedPrice,
+        preferred.advancePaid
+      );
+      setPayAmount(due > 0 ? String(due) : '');
+    } else if (exists && !payAmount) {
+      const due = calculatePendingBalance(
+        exists.finalAgreedPrice,
+        exists.advancePaid
+      );
+      if (due > 0) setPayAmount(String(due));
+    }
+  }, [clients]);
+
+  const handleSelectClientChange = (nextName: string) => {
+    setPayClientName(nextName);
+    const matched = clients.find((c) => c.businessName === nextName);
+    if (matched) {
+      const due = calculatePendingBalance(
+        matched.finalAgreedPrice,
+        matched.advancePaid
+      );
+      setPayAmount(due > 0 ? String(due) : '');
+      if (matched.assignedLead === 'Krishna') setPayReceivedBy('Krishna');
+      else if (matched.assignedLead === 'Vansh') setPayReceivedBy('Vansh');
+      else setPayReceivedBy('Studio Account');
+    }
+  };
 
   const finance = calculateStudioFinances(expenses, payments, clients);
 
@@ -275,86 +321,112 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#EAECEF] text-xs">
-                {filteredExpenses.map((exp) => (
-                  <tr key={exp.id} className="hover:bg-slate-50/80">
-                    <td className="py-3.5 px-4 font-mono text-slate-600 whitespace-nowrap">
-                      {exp.date}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <span className="font-bold text-[#0B0F19] block">
-                        {exp.title}
-                      </span>
-                      <span className="text-slate-500">
-                        {exp.notes}
-                        {exp.linkedClient ? ` · Client: ${exp.linkedClient}` : ''}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 font-medium text-slate-700">
-                      {exp.category}
-                    </td>
-                    <td className="py-3.5 px-4 font-semibold text-[#0B0F19]">
-                      {exp.paidBy}
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0B0F19]">
-                      {formatINR(exp.amount)}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onUpdateExpense({
-                            ...exp,
-                            reimbursed: !exp.reimbursed,
-                          })
-                        }
-                        className={`inline-flex items-center gap-1 text-xs font-semibold cursor-pointer ${
-                          exp.reimbursed ? 'text-[#059669]' : 'text-amber-700'
-                        }`}
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{exp.reimbursed ? 'Settled' : 'Pending Split'}</span>
-                      </button>
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => onDeleteExpense(exp.id)}
-                        aria-label={`Delete expense ${exp.title}`}
-                        className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                {filteredExpenses.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-10 text-center text-slate-400">
+                      No expenses recorded in this category.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredExpenses.map((exp) => (
+                    <tr key={exp.id} className="hover:bg-slate-50/80">
+                      <td className="py-3.5 px-4 font-mono text-slate-600 whitespace-nowrap">
+                        {exp.date}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="font-bold text-[#0B0F19] block">
+                          {exp.title}
+                        </span>
+                        <span className="text-slate-500">
+                          {exp.notes}
+                          {exp.linkedClient ? ` · Client: ${exp.linkedClient}` : ''}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 font-medium text-slate-700">
+                        {exp.category}
+                      </td>
+                      <td className="py-3.5 px-4 font-semibold text-[#0B0F19]">
+                        {exp.paidBy}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0B0F19]">
+                        {formatINR(exp.amount)}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onUpdateExpense({
+                              ...exp,
+                              reimbursed: !exp.reimbursed,
+                            })
+                          }
+                          className={`inline-flex items-center gap-1 text-xs font-semibold cursor-pointer ${
+                            exp.reimbursed ? 'text-[#059669]' : 'text-amber-700'
+                          }`}
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>{exp.reimbursed ? 'Settled' : 'Pending Split'}</span>
+                        </button>
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <button
+                          type="button"
+                          onClick={() => onDeleteExpense(exp.id)}
+                          aria-label={`Delete expense ${exp.title}`}
+                          className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </div>
       ) : (
         <div className="space-y-5">
-          {/* Quick Inline Client Payment Logger */}
+          {/* Quick Inline Client Payment Logger (Live Synced with Pipeline Accounts) */}
           <form
             onSubmit={handleLogPaymentSubmit}
             className="bg-white border border-[#EAECEF] rounded-3xl p-5 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end"
           >
             <div className="lg:col-span-2">
               <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
-                Client Name (Syncs with Pipeline)
+                Pipeline Client (Auto-Syncs Balance)
               </label>
-              <input
-                type="text"
-                list="studio-finance-client-list"
-                value={payClientName}
-                onChange={(e) => setPayClientName(e.target.value)}
-                placeholder="Select or type client name"
-                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
-              />
-              <datalist id="studio-finance-client-list">
-                {clients.map((c) => (
-                  <option key={c.id} value={c.businessName} />
-                ))}
-              </datalist>
+              {clients.length > 0 ? (
+                <select
+                  aria-label="Select pipeline client for payment"
+                  value={payClientName}
+                  onChange={(e) => handleSelectClientChange(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
+                >
+                  {clients.map((c) => {
+                    const due = calculatePendingBalance(
+                      c.finalAgreedPrice,
+                      c.advancePaid
+                    );
+                    return (
+                      <option key={c.id} value={c.businessName}>
+                        {c.businessName}{' '}
+                        {due > 0
+                          ? `(Due: ${formatINR(due)})`
+                          : `(Settled: ${formatINR(c.advancePaid)})`}
+                      </option>
+                    );
+                  })}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={payClientName}
+                  onChange={(e) => setPayClientName(e.target.value)}
+                  placeholder="Client name"
+                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
+                />
+              )}
             </div>
 
             <div>
@@ -365,6 +437,7 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
                 type="number"
                 value={payAmount}
                 onChange={(e) => setPayAmount(e.target.value)}
+                placeholder="Enter ₹ amount"
                 className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono text-xs font-bold text-[#059669]"
               />
             </div>

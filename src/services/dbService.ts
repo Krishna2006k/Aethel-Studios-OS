@@ -2,6 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { AethelDatabaseState, VaultCredential } from '../types';
 import { SEED_DATA, SEED_RAW_VAULT_ITEMS } from '../data/seedData';
 import { encryptSecret } from '../utils/cryptoService';
+import { reconcileDatabaseIntegrity } from '../utils/syncEngine';
 
 const STORAGE_KEY_DATA = 'aethel_os_db_v3';
 const STORAGE_KEY_SUPABASE_CFG = 'aethel_os_supabase_config_v1';
@@ -147,13 +148,15 @@ export async function loadInitialDatabase(): Promise<{
     activeState.vaultCredentials = await buildEncryptedSeedVault();
   }
 
+  activeState = reconcileDatabaseIntegrity(activeState);
+
   try {
     localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(activeState));
   } catch {
     // Ignore quota errors
   }
 
-  // 4. If Supabase is configured, try syncing from Supabase tables
+  // 4. If Supabase is configured, sync from Supabase tables and reconcile integrity
   const sb = getSupabaseClient();
   if (!sb) {
     return { state: activeState, mode: 'local' };
@@ -194,10 +197,10 @@ export async function loadInitialDatabase(): Promise<{
 
     if (!hasCloudData) {
       await pushFullStateToSupabase(activeState);
-      return { state: activeState, mode: 'cloud', syncNote: 'Synced initial studio data to Supabase' };
+      return { state: activeState, mode: 'cloud', syncNote: 'Synced studio data to Supabase' };
     }
 
-    const cloudState: AethelDatabaseState = {
+    const rawCloudState: AethelDatabaseState = {
       clients: (clientsRes.data || []).map((r: { payload: any }) => r.payload),
       metaCampaigns: (campaignsRes.data || []).map((r: { payload: any }) => r.payload),
       websites: (websitesRes.data || []).map((r: { payload: any }) => r.payload),
@@ -208,9 +211,13 @@ export async function loadInitialDatabase(): Promise<{
       vaultCredentials: (vaultRes.data || []).map((r: { payload: any }) => r.payload),
     };
 
-    localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(cloudState));
-    await pushStateToServer(cloudState);
-    return { state: cloudState, mode: 'cloud' };
+    // Reconcile cloud data integrity (consolidates fragmented keystroke payments & syncs advancePaid <-> payments)
+    const reconciledCloudState = reconcileDatabaseIntegrity(rawCloudState);
+
+    localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(reconciledCloudState));
+    await pushStateToServer(reconciledCloudState);
+    await pushFullStateToSupabase(reconciledCloudState);
+    return { state: reconciledCloudState, mode: 'cloud' };
   } catch (err: any) {
     return {
       state: activeState,
@@ -221,20 +228,21 @@ export async function loadInitialDatabase(): Promise<{
 }
 
 export async function persistDatabaseState(state: AethelDatabaseState): Promise<void> {
+  const reconciled = reconcileDatabaseIntegrity(state);
   try {
-    localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(state));
+    localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(reconciled));
   } catch {
     // Ignore storage error
   }
 
   // Persist to Express Backend disk storage (/api/db)
-  await pushStateToServer(state);
+  await pushStateToServer(reconciled);
 
   // Also sync to Supabase Cloud if configured
   const sb = getSupabaseClient();
   if (sb) {
     try {
-      await pushFullStateToSupabase(state);
+      await pushFullStateToSupabase(reconciled);
     } catch {
       // Silent fallback to server + localStorage
     }
@@ -246,6 +254,9 @@ export async function pushFullStateToSupabase(state: AethelDatabaseState): Promi
   if (!sb) return;
 
   const syncTable = async (tableName: string, items: { id: string }[]) => {
+    const currentIdSet = new Set(items.map((item) => item.id));
+
+    // 1. Upsert all current items
     const rows = items.map((item) => ({
       id: item.id,
       payload: item,
@@ -253,6 +264,17 @@ export async function pushFullStateToSupabase(state: AethelDatabaseState): Promi
     }));
     if (rows.length > 0) {
       await sb.from(tableName).upsert(rows, { onConflict: 'id' });
+    }
+
+    // 2. Delete any stale/consolidated/removed rows in Supabase that are no longer in `items`
+    const existingRes = await sb.from(tableName).select('id');
+    if (existingRes.data && existingRes.data.length > 0) {
+      const staleIds = existingRes.data
+        .map((r: { id: string }) => r.id)
+        .filter((id) => !currentIdSet.has(id));
+      if (staleIds.length > 0) {
+        await sb.from(tableName).delete().in('id', staleIds);
+      }
     }
   };
 

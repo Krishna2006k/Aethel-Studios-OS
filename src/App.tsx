@@ -23,6 +23,7 @@ import {
 import {
   reconcileClientAddition,
   reconcileClientUpdate,
+  reconcileClientDeletion,
   reconcilePaymentAddition,
   reconcilePaymentDeletion,
   reconcileWebsiteHealthWithTickets,
@@ -117,17 +118,14 @@ export default function App() {
 
   const handleDeleteClient = (id: string) => {
     const target = dbState.clients.find((c) => c.id === id);
-    updateAndPersist((prev) => ({
-      ...prev,
-      clients: prev.clients.filter((c) => c.id !== id),
-    }));
+    updateAndPersist((prev) => reconcileClientDeletion(prev, id));
     if (selectedClientForDrawer?.id === id) {
       setSelectedClientForDrawer(null);
     }
     deleteRecordFromSupabase('clients', id);
     notify(
       target
-        ? `Deleted ${target.businessName} from pipeline.`
+        ? `Deleted ${target.businessName} & synced Studio Finance.`
         : 'Removed client from pipeline.'
     );
   };
