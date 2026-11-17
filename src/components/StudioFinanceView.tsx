@@ -1,643 +1,770 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
+  Wallet,
   Plus,
-  Trash2,
   CheckCircle2,
-  Scale,
-  ArrowDownLeft,
   ArrowUpRight,
+  Scale,
+  Receipt,
+  CreditCard,
+  Trash2,
+  BarChart3,
+  Layers,
+  Megaphone,
+  TrendingUp,
 } from 'lucide-react';
-import type {
-  ExpenseItem,
-  ExpenseCategory,
+import {
+  StudioExpense,
   ClientPayment,
   ClientLead,
-  PaymentAccount,
-  PaymentMode,
+  ExpensePaidBy,
+  MetaAdCampaign,
 } from '../types';
 import {
-  formatINR,
-  calculateStudioFinances,
   calculatePendingBalance,
+  calculateStudioFinances,
+  formatINR,
 } from '../utils/calculations';
 
 interface StudioFinanceViewProps {
-  expenses: ExpenseItem[];
+  expenses: StudioExpense[];
   payments: ClientPayment[];
   clients: ClientLead[];
-  onAddExpenseModal: () => void;
-  onUpdateExpense: (e: ExpenseItem) => void;
-  onDeleteExpense: (id: string) => void;
-  onAddPayment: (p: ClientPayment) => void;
-  onDeletePayment: (id: string) => void;
+  metaCampaigns?: MetaAdCampaign[];
+  initialSubView?: 'ledger' | 'analytics';
+  onUpdateExpense: (updated: StudioExpense) => void;
+  onAddExpense: (newExp: StudioExpense) => void;
+  onDeleteExpense: (expenseId: string) => void;
+  onAddPayment: (newPay: ClientPayment) => void;
+  onDeletePayment: (paymentId: string) => void;
+  onOpenClient360?: (clientId: string) => void;
 }
-
-const EXPENSE_CATEGORIES: ('ALL' | ExpenseCategory)[] = [
-  'ALL',
-  'Studio Expense',
-  'Tech Expense',
-  'Food & Chai Expense',
-  'Client-Billable Expense',
-];
 
 export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
   expenses,
   payments,
   clients,
-  onAddExpenseModal,
+  metaCampaigns = [],
+  initialSubView = 'ledger',
   onUpdateExpense,
+  onAddExpense,
   onDeleteExpense,
   onAddPayment,
   onDeletePayment,
+  onOpenClient360,
 }) => {
-  const [subTab, setSubTab] = useState<'expenses' | 'payments'>('expenses');
-  const [categoryFilter, setCategoryFilter] = useState<'ALL' | ExpenseCategory>('ALL');
-
-  // Active pipeline clients (excluding rejected)
-  const activeClients = clients.filter((c) => c.stage !== 'Rejected / Dropped');
-
-  const [payClientName, setPayClientName] = useState<string>(
-    activeClients[0]?.businessName || clients[0]?.businessName || ''
+  const [activeTab, setActiveTab] = useState<'receivables' | 'payments' | 'expenses' | 'analytics'>(
+    initialSubView === 'analytics' ? 'analytics' : 'payments'
   );
-  const [payAmount, setPayAmount] = useState<string>('');
-  const [payMode, setPayMode] = useState<PaymentMode>('UPI');
-  const [payReceivedBy, setPayReceivedBy] = useState<PaymentAccount>('Studio Account');
-  const [payNotes, setPayNotes] = useState('');
 
-  // Keep selected client in sync with live pipeline clients and pre-fill remaining balance
-  useEffect(() => {
-    const exists = clients.find((c) => c.businessName === payClientName);
-    if (!exists && clients.length > 0) {
-      const preferred =
-        clients.find(
-          (c) =>
-            calculatePendingBalance(c.finalAgreedPrice, c.advancePaid) > 0 &&
-            c.stage !== 'Rejected / Dropped'
-        ) || clients[0];
-      setPayClientName(preferred.businessName);
-      const due = calculatePendingBalance(
-        preferred.finalAgreedPrice,
-        preferred.advancePaid
-      );
-      setPayAmount(due > 0 ? String(due) : '');
-    } else if (exists && !payAmount) {
-      const due = calculatePendingBalance(
-        exists.finalAgreedPrice,
-        exists.advancePaid
-      );
-      if (due > 0) setPayAmount(String(due));
+  // Sync tab if sidebar switches between 'finance' and 'analytics'
+  React.useEffect(() => {
+    if (initialSubView === 'analytics') {
+      setActiveTab('analytics');
+    } else if (activeTab === 'analytics') {
+      setActiveTab('payments');
     }
-  }, [clients]);
+  }, [initialSubView]);
 
-  const handleSelectClientChange = (nextName: string) => {
-    setPayClientName(nextName);
-    const matched = clients.find((c) => c.businessName === nextName);
-    if (matched) {
-      const due = calculatePendingBalance(
-        matched.finalAgreedPrice,
-        matched.advancePaid
-      );
-      setPayAmount(due > 0 ? String(due) : '');
-      if (matched.assignedLead === 'Krishna') setPayReceivedBy('Krishna');
-      else if (matched.assignedLead === 'Vansh') setPayReceivedBy('Vansh');
-      else setPayReceivedBy('Studio Account');
-    }
+  // Quick Add Expense
+  const [expTitle, setExpTitle] = useState('');
+  const [expCategory, setExpCategory] = useState<StudioExpense['category']>('Domain & Hosting');
+  const [expAmount, setExpAmount] = useState(1499);
+  const [expPaidBy, setExpPaidBy] = useState<ExpensePaidBy>('Vansh');
+
+  // Quick Add Payment
+  const [payClient, setPayClient] = useState('');
+  const [payTitle, setPayTitle] = useState('');
+  const [payAmount, setPayAmount] = useState(10000);
+  const [payMode, setPayMode] = useState<ClientPayment['paymentMode']>('UPI');
+  const [payAccount, setPayAccount] = useState<ExpensePaidBy>('Studio Account');
+  const [payMilestone, setPayMilestone] = useState<ClientPayment['milestone']>('Advance (50%)');
+
+  // Single Canonical Financial Calculation (Part 5 & Part 13)
+  const finances = calculateStudioFinances(expenses, payments, clients, metaCampaigns);
+
+  const handleCreateExpense = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!expTitle.trim()) return;
+    onAddExpense({
+      id: `exp-${Date.now()}`,
+      title: expTitle.trim(),
+      category: expCategory,
+      amount: Number(expAmount),
+      paidBy: expPaidBy,
+      date: new Date().toISOString().slice(0, 10),
+      clientRelated: 'Studio Operations',
+      reimbursed: expPaidBy === 'Studio Account',
+      notes: 'Logged in Studio Finance module.',
+    });
+    setExpTitle('');
   };
 
-  const finance = calculateStudioFinances(expenses, payments, clients);
-
-  const filteredExpenses = expenses.filter(
-    (e) => categoryFilter === 'ALL' || e.category === categoryFilter
-  );
-
-  const handleLogPaymentSubmit = (e: React.FormEvent) => {
+  const handleCreatePayment = (e: React.FormEvent) => {
     e.preventDefault();
-    const numeric = Number(payAmount);
-    if (!payClientName.trim() || !numeric || numeric <= 0) return;
-
+    if (!payClient.trim()) return;
+    const matchedClient = clients.find(
+      (c) => c.businessName.toLowerCase().trim() === payClient.toLowerCase().trim()
+    );
     onAddPayment({
       id: `pay-${Date.now()}`,
-      date: new Date().toISOString().slice(0, 10),
-      clientName: payClientName.trim(),
-      amountReceived: numeric,
+      clientId: matchedClient?.id,
+      clientName: matchedClient ? matchedClient.businessName : payClient.trim(),
+      projectTitle:
+        payTitle.trim() ||
+        (matchedClient ? `${matchedClient.packageTier} — Payment` : 'Website & Growth Package'),
+      totalProjectValue: matchedClient ? matchedClient.finalAgreedPrice : Number(payAmount),
+      amountReceived: Number(payAmount),
+      paymentDate: new Date().toISOString().slice(0, 10),
       paymentMode: payMode,
-      receivedBy: payReceivedBy,
-      notes: payNotes.trim() || 'Client payment logged via Studio Finance.',
+      receivedInAccount: payAccount,
+      milestone: payMilestone,
     });
-    setPayAmount('');
-    setPayNotes('');
+    setPayClient('');
+    setPayTitle('');
   };
 
+  // Accounts Receivable breakdown per client
+  const receivableClients = clients.filter(
+    (c) =>
+      c.stage !== 'Rejected / Dropped' &&
+      (c.finalAgreedPrice > 0 || c.advancePaid > 0)
+  );
+
+  // Niche revenue analytics
+  const nicheBreakdown = ['Banquet/Lawns', 'Clinic/Hospital', 'Retail/Electronics', 'Cafe/Restaurant', 'Real Estate/Interior'].map(
+    (nicheName) => {
+      const nicheClients = clients.filter(
+        (c) => c.niche === nicheName && c.stage !== 'Rejected / Dropped'
+      );
+      const contracted = nicheClients.reduce((s, c) => s + c.finalAgreedPrice, 0);
+      const collected = nicheClients.reduce((s, c) => s + c.advancePaid, 0);
+      return {
+        nicheName,
+        count: nicheClients.length,
+        contracted,
+        collected,
+      };
+    }
+  );
+
   return (
-    <div className="space-y-5 sm:space-y-6">
-      {/* Top Financial Summary Bar */}
-      <div className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 lg:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-5 sm:space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] mb-1">
+            MANAGEMENT · UNIFIED FINANCIAL LEDGER & ANALYTICS
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
+            {activeTab === 'analytics'
+              ? 'Studio Analytics & Financial Reports'
+              : 'Treasury, Ledger & Co-Founder Split'}
+          </h1>
+          <p className="text-xs sm:text-sm text-[#64748B] mt-0.5">
+            Strictly separates <strong>Agency Revenue</strong>, <strong>Client Pass-Through Ad Spend</strong>, and <strong>Operational Expenses</strong>. 100% synchronized with CRM Pipeline.
+          </p>
+        </div>
+
+        {/* Sub-view Switcher */}
+        <div className="flex flex-wrap items-center gap-1.5 bg-[#F8F9FA] p-1 rounded-2xl border border-[#EAECEF]">
+          {[
+            { id: 'payments', label: `Client Inflows (${payments.length})` },
+            { id: 'receivables', label: `Receivables (${formatINR(finances.pendingReceivables)})` },
+            { id: 'expenses', label: `Expenses (${expenses.length})` },
+            { id: 'analytics', label: 'Analytics & Reports' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as typeof activeTab)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                activeTab === tab.id
+                  ? 'bg-[#0B0F19] text-white shadow-xs'
+                  : 'text-[#64748B] hover:text-[#0B0F19]'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* PART 5: 3-STREAM FINANCIAL SEPARATION (Agency Revenue vs Client Ad Spend vs Studio Expenses) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Stream 1: Agency Revenue & Receivables */}
+        <div className="bg-[#0B0F19] text-white rounded-3xl p-5 border border-[#0B0F19] flex flex-col justify-between space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-[#34D399] font-bold">
+              STREAM 01 · AGENCY REVENUE
+            </span>
+            <TrendingUp className="w-4 h-4 text-[#34D399]" />
+          </div>
           <div>
-            <span className="text-xs font-bold tracking-wider uppercase text-[#2563EB] block">
-              07 / STUDIO FINANCE, REVENUE &amp; CO-FOUNDER SPLIT LEDGER
+            <div className="text-3xl font-extrabold font-mono text-white">
+              {formatINR(finances.totalRevenueCollected)}
+            </div>
+            <div className="text-xs text-[#94A3B8] mt-1">
+              Web Builds: <strong className="text-white">{formatINR(finances.clientProjectRevenue)}</strong> · Ad Retainers:{' '}
+              <strong className="text-white">{formatINR(finances.agencyRetainerRevenue)}</strong>
+            </div>
+          </div>
+          <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs">
+            <span className="text-[#94A3B8]">Pending Client Receivables:</span>
+            <span className="font-mono font-bold text-amber-400">
+              {formatINR(finances.pendingReceivables)}
             </span>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
-              Studio Treasury &amp; Co-Founder Settlement Engine
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-600 mt-1">
-              Transparent INR ledger tracking client inflows, out-of-pocket expenses, and Krishna vs Vansh reimbursements.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={onAddExpenseModal}
-            className="px-4 py-2.5 rounded-full bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors self-start lg:self-auto cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Log Studio / Tech / Chai Expense</span>
-          </button>
-        </div>
-
-        {/* 3 Primary Financial Pillars */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4">
-          <div className="p-4 sm:p-5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Total Revenue Collected (₹)</span>
-              <ArrowDownLeft className="w-4 h-4 text-[#059669]" />
-            </div>
-            <div className="font-mono text-2xl sm:text-3xl font-bold text-[#059669] mt-2">
-              {formatINR(finance.totalRevenueCollected)}
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Across {payments.length} verified client payments (+{formatINR(finance.pendingReceivables)} receivables pending)
-            </p>
-          </div>
-
-          <div className="p-4 sm:p-5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
-            <div className="flex items-center justify-between text-xs text-slate-500">
-              <span>Total Studio Expenses (₹)</span>
-              <ArrowUpRight className="w-4 h-4 text-rose-600" />
-            </div>
-            <div className="font-mono text-2xl sm:text-3xl font-bold text-[#0B0F19] mt-2">
-              {formatINR(finance.totalStudioExpenses)}
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Across {expenses.length} studio, tech, chai &amp; client-billable entries
-            </p>
-          </div>
-
-          <div className="p-4 sm:p-5 rounded-2xl bg-[#0B0F19] text-white">
-            <div className="flex items-center justify-between text-xs text-[#94A3B8]">
-              <span>Net Studio Profit (₹)</span>
-              <span className="font-mono text-emerald-400">Net Margin</span>
-            </div>
-            <div className="font-mono text-2xl sm:text-3xl font-bold text-white mt-2">
-              {formatINR(finance.netProfit)}
-            </div>
-            <p className="text-xs text-[#94A3B8] mt-1">
-              50/50 Co-Founder Profit Share:{' '}
-              <strong className="font-mono text-emerald-400">
-                {formatINR(Math.round(finance.netProfit / 2))} each
-              </strong>
-            </p>
           </div>
         </div>
 
-        {/* Co-Founder Out-of-Pocket Split Calculator */}
-        <div className="p-4 sm:p-6 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Scale className="w-4 h-4 text-[#2563EB] shrink-0" />
-              <h2 className="text-xs sm:text-sm font-bold text-[#0B0F19]">
-                Co-Founder Out-of-Pocket Split &amp; Reimbursement Calculator
-              </h2>
+        {/* Stream 2: Agency Operational Expenses & Net Profit */}
+        <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between space-y-4 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-[#2563EB] font-bold">
+              STREAM 02 · STUDIO NET PROFIT & OPS
+            </span>
+            <Wallet className="w-4 h-4 text-[#2563EB]" />
+          </div>
+          <div>
+            <div className="text-3xl font-extrabold font-mono text-[#0B0F19]">
+              {formatINR(finances.netProfit)}
             </div>
-            <span className="text-[11px] sm:text-xs font-mono text-slate-500">
-              Unreimbursed Personal Spend Settlement
+            <div className="text-xs text-[#64748B] mt-1">
+              50% Vansh: <strong className="text-[#059669]">{formatINR(finances.vanshProfitShare50)}</strong> · 50% Krishna:{' '}
+              <strong className="text-[#059669]">{formatINR(finances.krishnaProfitShare50)}</strong>
+            </div>
+          </div>
+          <div className="pt-3 border-t border-[#F1F5F9] flex items-center justify-between text-xs">
+            <span className="text-[#64748B]">Agency Operational Expenses:</span>
+            <span className="font-mono font-bold text-rose-600">
+              {formatINR(finances.totalStudioExpenses)}
             </span>
           </div>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 text-xs">
-            <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-[#EAECEF]">
-              <span className="text-slate-500 block">
-                Krishna Paid Out-of-Pocket (Personal)
-              </span>
-              <span className="font-mono text-lg sm:text-xl font-bold text-[#0B0F19] mt-1 block">
-                {formatINR(finance.krishnaOutOfPocket)}
-              </span>
-              <span className="text-[11px] text-slate-500 mt-1 block">
-                Client Payments Received Directly: <strong className="font-mono">{formatINR(finance.krishnaCollectedDirect)}</strong>
-              </span>
+        {/* Stream 3: Client Advertising Expenditure (Strictly Separated Pass-Through) */}
+        <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between space-y-4 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono uppercase tracking-widest text-indigo-600 font-bold">
+              STREAM 03 · CLIENT AD SPEND (PASS-THROUGH)
+            </span>
+            <Megaphone className="w-4 h-4 text-indigo-600" />
+          </div>
+          <div>
+            <div className="text-3xl font-extrabold font-mono text-[#0B0F19]">
+              {formatINR(finances.totalClientAdSpendPassThrough)}
             </div>
-
-            <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-[#EAECEF]">
-              <span className="text-slate-500 block">
-                Vansh Paid Out-of-Pocket (Personal)
-              </span>
-              <span className="font-mono text-lg sm:text-xl font-bold text-[#0B0F19] mt-1 block">
-                {formatINR(finance.vanshOutOfPocket)}
-              </span>
-              <span className="text-[11px] text-slate-500 mt-1 block">
-                Client Payments Received Directly: <strong className="font-mono">{formatINR(finance.vanshCollectedDirect)}</strong>
-              </span>
-            </div>
-
-            <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-[#EAECEF]">
-              <span className="text-slate-500 block">
-                Paid from Shared Studio Account
-              </span>
-              <span className="font-mono text-lg sm:text-xl font-bold text-[#2563EB] mt-1 block">
-                {formatINR(finance.studioAccountExpenses)}
-              </span>
-              <span className="text-[11px] text-slate-500 mt-1 block">
-                Inflows to Studio Account: <strong className="font-mono">{formatINR(finance.studioAccountCollected)}</strong>
-              </span>
+            <div className="text-xs text-[#64748B] mt-1">
+              Out of <strong className="text-[#0B0F19]">{formatINR(finances.totalAdBudgetManaged)}</strong> client ad budget managed
             </div>
           </div>
-
-          <div className="p-3.5 rounded-xl bg-[#D1FAE5]/60 border border-[#059669]/25 text-xs font-medium text-[#0D281D]">
-            <strong>Settlement Verdict:</strong> {finance.settlementHeadline}
+          <div className="pt-3 border-t border-[#F1F5F9] flex items-center justify-between text-xs">
+            <span className="text-[#64748B]">Aethel Agency Retainer Earned:</span>
+            <span className="font-mono font-bold text-[#059669]">
+              {formatINR(finances.totalMetaAgencyFees)}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* Sub-Tabs: Expenses Tracker vs Client Payments / Inflow Log */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="inline-flex items-center p-1 bg-white border border-[#EAECEF] rounded-full overflow-x-auto no-scrollbar max-w-full">
-          <button
-            type="button"
-            onClick={() => setSubTab('expenses')}
-            className={`px-3.5 sm:px-5 py-2 rounded-full text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
-              subTab === 'expenses'
-                ? 'bg-[#0B0F19] text-white'
-                : 'text-slate-600 hover:text-[#0B0F19]'
-            }`}
-          >
-            1. Expenses ({expenses.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setSubTab('payments')}
-            className={`px-3.5 sm:px-5 py-2 rounded-full text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
-              subTab === 'payments'
-                ? 'bg-[#0B0F19] text-white'
-                : 'text-slate-600 hover:text-[#0B0F19]'
-            }`}
-          >
-            2. Client Payments ({payments.length})
-          </button>
+      {/* Co-Founder Out-of-Pocket Split & Reimbursement Calculator */}
+      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 pb-4 border-b border-[#EAECEF]">
+          <div className="flex items-center gap-2">
+            <Scale className="w-5 h-5 text-[#2563EB]" />
+            <h2 className="text-base font-extrabold text-[#0B0F19]">
+              Co-Founder Out-of-Pocket Split & Reimbursement Calculator
+            </h2>
+          </div>
+          <span className="text-xs font-mono text-[#64748B]">
+            Unreimbursed Personal Spend Settlement
+          </span>
         </div>
 
-        {subTab === 'expenses' && (
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
-            {EXPENSE_CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                type="button"
-                onClick={() => setCategoryFilter(cat)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
-                  categoryFilter === cat
-                    ? 'bg-[#2563EB] text-white'
-                    : 'bg-white border border-[#EAECEF] text-slate-600 hover:text-[#0B0F19]'
-                }`}
-              >
-                {cat === 'ALL' ? 'All Categories' : cat}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {subTab === 'expenses' ? (
-        <div className="space-y-3">
-          {/* Mobile Expenses Card List (md:hidden) */}
-          <div className="md:hidden space-y-3">
-            {filteredExpenses.length === 0 ? (
-              <div className="bg-white border border-[#EAECEF] rounded-2xl p-6 text-center text-xs text-slate-400">
-                No expenses recorded in this category.
-              </div>
-            ) : (
-              filteredExpenses.map((exp) => (
-                <div
-                  key={exp.id}
-                  className="bg-white border border-[#EAECEF] rounded-2xl p-4 shadow-2xs space-y-2.5 text-xs"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <span className="font-bold text-[#0B0F19] text-sm block">
-                        {exp.title}
-                      </span>
-                      <span className="text-slate-500 block mt-0.5">
-                        {exp.category} · <span className="font-mono">{exp.date}</span>
-                      </span>
-                    </div>
-                    <span className="font-mono text-sm font-bold text-[#0B0F19] shrink-0">
-                      {formatINR(exp.amount)}
-                    </span>
-                  </div>
-
-                  {exp.notes && (
-                    <p className="text-slate-500 text-xs">
-                      {exp.notes}
-                      {exp.linkedClient ? ` · Client: ${exp.linkedClient}` : ''}
-                    </p>
-                  )}
-
-                  <div className="pt-2 border-t border-[#EAECEF] flex items-center justify-between">
-                    <span className="text-slate-600">
-                      Paid by: <strong className="text-[#0B0F19]">{exp.paidBy}</strong>
-                    </span>
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onUpdateExpense({
-                            ...exp,
-                            reimbursed: !exp.reimbursed,
-                          })
-                        }
-                        className={`inline-flex items-center gap-1 text-xs font-semibold cursor-pointer ${
-                          exp.reimbursed ? 'text-[#059669]' : 'text-amber-700'
-                        }`}
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>{exp.reimbursed ? 'Settled' : 'Pending Split'}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteExpense(exp.id)}
-                        aria-label={`Delete expense ${exp.title}`}
-                        className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-
-          {/* Desktop Expenses Table (hidden md:block) */}
-          <div className="hidden md:block bg-white border border-[#EAECEF] rounded-3xl overflow-hidden shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[#EAECEF] bg-[#F8F9FA] text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                    <th className="py-3.5 px-4">Date</th>
-                    <th className="py-3.5 px-4">Expense Item &amp; Notes</th>
-                    <th className="py-3.5 px-4">Category</th>
-                    <th className="py-3.5 px-4">Paid By</th>
-                    <th className="py-3.5 px-4 text-right">Amount (₹)</th>
-                    <th className="py-3.5 px-4">Reimbursed</th>
-                    <th className="py-3.5 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#EAECEF] text-xs">
-                  {filteredExpenses.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-10 text-center text-slate-400">
-                        No expenses recorded in this category.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredExpenses.map((exp) => (
-                      <tr key={exp.id} className="hover:bg-slate-50/80">
-                        <td className="py-3.5 px-4 font-mono text-slate-600 whitespace-nowrap">
-                          {exp.date}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <span className="font-bold text-[#0B0F19] block">
-                            {exp.title}
-                          </span>
-                          <span className="text-slate-500">
-                            {exp.notes}
-                            {exp.linkedClient ? ` · Client: ${exp.linkedClient}` : ''}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 font-medium text-slate-700">
-                          {exp.category}
-                        </td>
-                        <td className="py-3.5 px-4 font-semibold text-[#0B0F19]">
-                          {exp.paidBy}
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0B0F19]">
-                          {formatINR(exp.amount)}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onUpdateExpense({
-                                ...exp,
-                                reimbursed: !exp.reimbursed,
-                              })
-                            }
-                            className={`inline-flex items-center gap-1 text-xs font-semibold cursor-pointer ${
-                              exp.reimbursed ? 'text-[#059669]' : 'text-amber-700'
-                            }`}
-                          >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>{exp.reimbursed ? 'Settled' : 'Pending Split'}</span>
-                          </button>
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => onDeleteExpense(exp.id)}
-                            aria-label={`Delete expense ${exp.title}`}
-                            className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+          <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+            <div className="text-xs font-bold text-[#64748B] mb-1">
+              Vansh Personal Out-of-Pocket (Unreimbursed)
+            </div>
+            <div className="text-2xl font-extrabold font-mono text-[#0B0F19]">
+              {formatINR(finances.vanshOutOfPocketUnreimbursed)}
+            </div>
+            <div className="text-[11px] text-[#64748B] mt-1">
+              Client Payments Received Directly:{' '}
+              <span className="font-mono font-semibold text-[#0B0F19]">
+                {formatINR(finances.vanshCollectedDirectly)}
+              </span>
             </div>
           </div>
+
+          <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+            <div className="text-xs font-bold text-[#64748B] mb-1">
+              Krishna Personal Out-of-Pocket (Unreimbursed)
+            </div>
+            <div className="text-2xl font-extrabold font-mono text-[#0B0F19]">
+              {formatINR(finances.krishnaOutOfPocketUnreimbursed)}
+            </div>
+            <div className="text-[11px] text-[#64748B] mt-1">
+              Client Payments Received Directly:{' '}
+              <span className="font-mono font-semibold text-[#0B0F19]">
+                {formatINR(finances.krishnaCollectedDirectly)}
+              </span>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-[#EFF6FF]/60 border border-[#BFDBFE] flex flex-col justify-center">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-[#2563EB] mb-1">
+              Settlement Verdict
+            </div>
+            <p className="text-xs text-[#0B0F19] font-medium leading-relaxed">
+              {finances.settlementSummary}
+            </p>
+          </div>
         </div>
-      ) : (
-        <div className="space-y-4 sm:space-y-5">
-          {/* Quick Inline Client Payment Logger (Live Synced with Pipeline Accounts) */}
+      </div>
+
+      {/* TAB 1: CLIENT PAYMENTS / INFLOW LOG */}
+      {activeTab === 'payments' && (
+        <div className="space-y-4">
           <form
-            onSubmit={handleLogPaymentSubmit}
-            className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-5 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end"
+            onSubmit={handleCreatePayment}
+            className="bg-white rounded-3xl p-5 border border-[#EAECEF] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end"
           >
-            <div className="sm:col-span-2 lg:col-span-2">
-              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
-                Pipeline Client (Auto-Syncs Balance)
+            <div className="sm:col-span-2">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1">
+                Client Name (Syncs with CRM Pipeline)
               </label>
-              {clients.length > 0 ? (
-                <select
-                  aria-label="Select pipeline client for payment"
-                  value={payClientName}
-                  onChange={(e) => handleSelectClientChange(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
-                >
-                  {clients.map((c) => {
-                    const due = calculatePendingBalance(
-                      c.finalAgreedPrice,
-                      c.advancePaid
+              <input
+                type="text"
+                required
+                list="finance-client-list"
+                value={payClient}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setPayClient(val);
+                  const matched = clients.find(
+                    (c) => c.businessName.toLowerCase() === val.trim().toLowerCase()
+                  );
+                  if (matched) {
+                    const remaining = Math.max(
+                      0,
+                      matched.finalAgreedPrice - matched.advancePaid
                     );
-                    return (
-                      <option key={c.id} value={c.businessName}>
-                        {c.businessName}{' '}
-                        {due > 0
-                          ? `(Due: ${formatINR(due)})`
-                          : `(Settled: ${formatINR(c.advancePaid)})`}
-                      </option>
-                    );
-                  })}
-                </select>
-              ) : (
-                <input
-                  type="text"
-                  value={payClientName}
-                  onChange={(e) => setPayClientName(e.target.value)}
-                  placeholder="Client name"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
-                />
-              )}
+                    if (remaining > 0) setPayAmount(remaining);
+                    if (!payTitle) setPayTitle(matched.packageTier);
+                  }
+                }}
+                placeholder="Select or type client business name..."
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-xs bg-[#F8F9FA] focus:bg-white"
+              />
+              <datalist id="finance-client-list">
+                {clients.map((c) => (
+                  <option key={c.id} value={c.businessName} />
+                ))}
+              </datalist>
             </div>
-
             <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1">
                 Amount Received (₹)
               </label>
               <input
                 type="number"
+                required
                 value={payAmount}
-                onChange={(e) => setPayAmount(e.target.value)}
-                placeholder="Enter ₹ amount"
-                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono text-xs font-bold text-[#059669]"
+                onChange={(e) => setPayAmount(Number(e.target.value))}
+                className="w-full px-3 py-2 rounded-xl border border-[#EAECEF] text-xs font-mono font-bold text-[#059669] bg-[#F8F9FA]"
               />
             </div>
-
             <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1">
                 Payment Mode
               </label>
               <select
                 value={payMode}
-                onChange={(e) => setPayMode(e.target.value as PaymentMode)}
-                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
+                onChange={(e) =>
+                  setPayMode(e.target.value as ClientPayment['paymentMode'])
+                }
+                className="w-full px-3 py-2 rounded-xl border border-[#EAECEF] text-xs bg-[#F8F9FA]"
               >
                 <option value="UPI">UPI</option>
-                <option value="Bank Transfer">Bank Transfer</option>
+                <option value="Bank NEFT/IMPS">Bank NEFT/IMPS</option>
                 <option value="Cash">Cash</option>
               </select>
             </div>
-
             <div>
-              <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1">
                 Received By
               </label>
               <select
-                value={payReceivedBy}
-                onChange={(e) => setPayReceivedBy(e.target.value as PaymentAccount)}
-                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
+                value={payAccount}
+                onChange={(e) => setPayAccount(e.target.value as ExpensePaidBy)}
+                className="w-full px-3 py-2 rounded-xl border border-[#EAECEF] text-xs bg-[#F8F9FA]"
               >
                 <option value="Studio Account">Studio Account</option>
-                <option value="Krishna">Krishna</option>
                 <option value="Vansh">Vansh</option>
+                <option value="Krishna">Krishna</option>
               </select>
             </div>
-
             <button
               type="submit"
-              className="w-full px-4 py-2.5 sm:py-2 rounded-xl bg-[#0D281D] hover:bg-[#059669] text-white text-xs font-semibold transition-colors cursor-pointer"
+              className="py-2.5 px-4 rounded-xl bg-[#059669] text-white text-xs font-bold hover:bg-[#047857] cursor-pointer"
             >
               + Record Inflow
             </button>
           </form>
 
-          {/* Mobile Client Payments Card List (md:hidden) */}
-          <div className="md:hidden space-y-3">
-            {payments.map((pay) => (
-              <div
-                key={pay.id}
-                className="bg-white border border-[#EAECEF] rounded-2xl p-4 shadow-2xs space-y-2 text-xs"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="font-bold text-[#0B0F19] text-sm block">
-                      {pay.clientName}
-                    </span>
-                    <span className="font-mono text-slate-500 text-[11px]">
-                      {pay.date} · {pay.paymentMode}
-                    </span>
-                  </div>
-                  <span className="font-mono text-sm font-bold text-[#059669] shrink-0">
-                    +{formatINR(pay.amountReceived)}
-                  </span>
-                </div>
-                <p className="text-slate-500">{pay.notes}</p>
-                <div className="pt-2 border-t border-[#EAECEF] flex items-center justify-between">
-                  <span className="text-slate-600">
-                    Received by: <strong className="text-[#0B0F19]">{pay.receivedBy}</strong>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => onDeletePayment(pay.id)}
-                    aria-label={`Delete payment from ${pay.clientName}`}
-                    className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Desktop Inflow Table (hidden md:block) */}
-          <div className="hidden md:block bg-white border border-[#EAECEF] rounded-3xl overflow-hidden shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+          <div className="bg-white rounded-3xl border border-[#EAECEF] overflow-hidden shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-[#EAECEF] bg-[#F8F9FA] text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                    <th className="py-3.5 px-4">Date</th>
-                    <th className="py-3.5 px-4">Client &amp; Milestone Note</th>
+                  <tr className="bg-[#F8F9FA] border-b border-[#EAECEF] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                    <th className="py-3.5 px-5">Date</th>
+                    <th className="py-3.5 px-4">Client & Milestone Note</th>
                     <th className="py-3.5 px-4">Payment Mode</th>
                     <th className="py-3.5 px-4">Received By</th>
                     <th className="py-3.5 px-4 text-right">Amount Received (₹)</th>
-                    <th className="py-3.5 px-4 text-right">Actions</th>
+                    <th className="py-3.5 px-5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EAECEF] text-xs">
                   {payments.map((pay) => (
-                    <tr key={pay.id} className="hover:bg-slate-50/80">
-                      <td className="py-3.5 px-4 font-mono text-slate-600">
-                        {pay.date}
+                    <tr key={pay.id} className="hover:bg-[#F8F9FA]/60 transition-colors">
+                      <td className="py-3.5 px-5 font-mono text-[#64748B]">
+                        {pay.paymentDate}
                       </td>
                       <td className="py-3.5 px-4">
-                        <span className="font-bold text-[#0B0F19] block">
-                          {pay.clientName}
-                        </span>
-                        <span className="text-slate-500">{pay.notes}</span>
+                        <div className="font-bold text-[#0B0F19]">{pay.clientName}</div>
+                        <div className="text-[11px] text-[#64748B]">
+                          {pay.projectTitle} · {pay.milestone}
+                        </div>
                       </td>
-                      <td className="py-3.5 px-4 font-medium text-slate-700">
+                      <td className="py-3.5 px-4 font-semibold text-[#475569]">
                         {pay.paymentMode}
                       </td>
-                      <td className="py-3.5 px-4 font-semibold text-[#0B0F19]">
-                        {pay.receivedBy}
+                      <td className="py-3.5 px-4 font-bold text-[#0B0F19]">
+                        {pay.receivedInAccount}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-bold text-[#059669]">
+                      <td className="py-3.5 px-4 text-right font-mono font-extrabold text-[#059669]">
                         +{formatINR(pay.amountReceived)}
                       </td>
-                      <td className="py-3.5 px-4 text-right">
+                      <td className="py-3.5 px-5 text-right">
                         <button
-                          type="button"
                           onClick={() => onDeletePayment(pay.id)}
                           aria-label={`Delete payment from ${pay.clientName}`}
-                          className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                          className="p-1.5 rounded-lg text-[#94A3B8] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 2: ACCOUNTS RECEIVABLE PER CLIENT */}
+      {activeTab === 'receivables' && (
+        <div className="bg-white rounded-3xl border border-[#EAECEF] overflow-hidden shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+          <div className="p-5 border-b border-[#EAECEF] flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-extrabold text-[#0B0F19]">
+                Client Accounts Receivable & Collection Schedule
+              </h3>
+              <p className="text-xs text-[#64748B]">
+                Every rupee here is directly derived from the unified Client Pipeline.
+              </p>
+            </div>
+            <span className="font-mono text-sm font-extrabold text-amber-700">
+              Total Due: {formatINR(finances.pendingReceivables)}
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-[#F8F9FA] border-b border-[#EAECEF] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                  <th className="py-3.5 px-5">Client Account</th>
+                  <th className="py-3.5 px-4">Stage</th>
+                  <th className="py-3.5 px-4 text-right">Agreed Value</th>
+                  <th className="py-3.5 px-4 text-right">Paid to Date</th>
+                  <th className="py-3.5 px-4 text-right">Balance Due</th>
+                  <th className="py-3.5 px-5 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#EAECEF] text-xs">
+                {receivableClients.map((client) => {
+                  const due = calculatePendingBalance(
+                    client.finalAgreedPrice,
+                    client.advancePaid
+                  );
+                  return (
+                    <tr key={client.id} className="hover:bg-[#F8F9FA]/60">
+                      <td className="py-3.5 px-5">
+                        <div className="font-bold text-[#0B0F19]">{client.businessName}</div>
+                        <div className="text-[11px] text-[#64748B]">
+                          {client.contactPerson} · {client.packageTier}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 font-semibold text-[#475569]">
+                        {client.stage}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0B0F19]">
+                        {formatINR(client.finalAgreedPrice)}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-[#059669]">
+                        {formatINR(client.advancePaid)}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-extrabold">
+                        {due > 0 ? (
+                          <span className="text-amber-700">{formatINR(due)}</span>
+                        ) : (
+                          <span className="text-[#059669]">Settled</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-5 text-right">
+                        {due > 0 ? (
+                          <button
+                            onClick={() => {
+                              setPayClient(client.businessName);
+                              setPayAmount(due);
+                              setPayTitle(`${client.packageTier} — Balance Settlement`);
+                              setActiveTab('payments');
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-[#059669] text-white font-bold text-[11px] cursor-pointer"
+                          >
+                            Collect {formatINR(due)}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => onOpenClient360 && onOpenClient360(client.id)}
+                            className="px-3 py-1.5 rounded-xl bg-[#F8F9FA] text-[#475569] font-bold text-[11px] cursor-pointer"
+                          >
+                            360° Dossier
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: EXPENSES TRACKER */}
+      {activeTab === 'expenses' && (
+        <div className="space-y-4">
+          <form
+            onSubmit={handleCreateExpense}
+            className="bg-white rounded-3xl p-5 border border-[#EAECEF] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end"
+          >
+            <div className="sm:col-span-2">
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1">
+                Expense Item
+              </label>
+              <input
+                type="text"
+                required
+                value={expTitle}
+                onChange={(e) => setExpTitle(e.target.value)}
+                placeholder="e.g., Hostinger .in Domain or Figma Seat"
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-xs bg-[#F8F9FA]"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1">
+                Category
+              </label>
+              <select
+                value={expCategory}
+                onChange={(e) =>
+                  setExpCategory(e.target.value as StudioExpense['category'])
+                }
+                className="w-full px-3 py-2 rounded-xl border border-[#EAECEF] text-xs bg-[#F8F9FA]"
+              >
+                <option value="Domain & Hosting">Domain & Hosting</option>
+                <option value="Software / SaaS">Software / SaaS</option>
+                <option value="Marketing & Samples">Marketing & Samples</option>
+                <option value="Operations / Travel">Operations / Travel</option>
+                <option value="Equipment">Equipment</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1">
+                Amount (₹) & Paid By
+              </label>
+              <div className="flex gap-1.5">
+                <input
+                  type="number"
+                  required
+                  value={expAmount}
+                  onChange={(e) => setExpAmount(Number(e.target.value))}
+                  className="w-24 px-2.5 py-2 rounded-xl border border-[#EAECEF] text-xs font-mono bg-[#F8F9FA]"
+                />
+                <select
+                  value={expPaidBy}
+                  onChange={(e) => setExpPaidBy(e.target.value as ExpensePaidBy)}
+                  className="flex-1 px-2 py-2 rounded-xl border border-[#EAECEF] text-xs bg-[#F8F9FA]"
+                >
+                  <option value="Vansh">Vansh</option>
+                  <option value="Krishna">Krishna</option>
+                  <option value="Studio Account">Studio</option>
+                </select>
+              </div>
+            </div>
+            <button
+              type="submit"
+              className="py-2.5 px-4 rounded-xl bg-[#0B0F19] text-white text-xs font-bold hover:bg-[#1E293B] cursor-pointer"
+            >
+              + Add Expense
+            </button>
+          </form>
+
+          <div className="bg-white rounded-3xl border border-[#EAECEF] overflow-hidden shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-[#F8F9FA] border-b border-[#EAECEF] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                    <th className="py-3.5 px-5">Date</th>
+                    <th className="py-3.5 px-4">Expense Description</th>
+                    <th className="py-3.5 px-4">Category</th>
+                    <th className="py-3.5 px-4">Paid By</th>
+                    <th className="py-3.5 px-4 text-right">Amount (₹)</th>
+                    <th className="py-3.5 px-5 text-right">Status & Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#EAECEF] text-xs">
+                  {expenses.map((exp) => (
+                    <tr key={exp.id} className="hover:bg-[#F8F9FA]/60">
+                      <td className="py-3.5 px-5 font-mono text-[#64748B]">{exp.date}</td>
+                      <td className="py-3.5 px-4 font-bold text-[#0B0F19]">{exp.title}</td>
+                      <td className="py-3.5 px-4 text-[#475569]">{exp.category}</td>
+                      <td className="py-3.5 px-4 font-bold text-[#0B0F19]">{exp.paidBy}</td>
+                      <td className="py-3.5 px-4 text-right font-mono font-bold text-rose-600">
+                        -{formatINR(exp.amount)}
+                      </td>
+                      <td className="py-3.5 px-5 text-right">
+                        <div className="inline-flex items-center gap-2">
+                          <button
+                            onClick={() =>
+                              onUpdateExpense({ ...exp, reimbursed: !exp.reimbursed })
+                            }
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer ${
+                              exp.reimbursed
+                                ? 'bg-[#D1FAE5] text-[#059669]'
+                                : 'bg-amber-50 text-amber-800 border border-amber-200'
+                            }`}
+                          >
+                            {exp.reimbursed ? '✓ Reimbursed' : 'Mark Reimbursed'}
+                          </button>
+                          <button
+                            onClick={() => onDeleteExpense(exp.id)}
+                            aria-label={`Delete expense ${exp.title}`}
+                            className="p-1.5 rounded-lg text-[#94A3B8] hover:text-rose-600 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: ANALYTICS & REPORTS */}
+      {activeTab === 'analytics' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-3xl p-6 border border-[#EAECEF] space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB]">
+                  INDUSTRY PERFORMANCE
+                </div>
+                <h3 className="text-lg font-extrabold text-[#0B0F19]">
+                  Revenue by Client Niche
+                </h3>
+              </div>
+              <BarChart3 className="w-5 h-5 text-[#2563EB]" />
+            </div>
+
+            <div className="space-y-3">
+              {nicheBreakdown.map((item) => {
+                const pct =
+                  finances.totalContractedVolume > 0
+                    ? Math.round((item.contracted / finances.totalContractedVolume) * 100)
+                    : 0;
+                return (
+                  <div
+                    key={item.nicheName}
+                    className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-2"
+                  >
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-bold text-[#0B0F19]">
+                        {item.nicheName} ({item.count} deals)
+                      </span>
+                      <span className="font-mono font-bold text-[#059669]">
+                        {formatINR(item.collected)} / {formatINR(item.contracted)}
+                      </span>
+                    </div>
+                    <div className="w-full h-2 bg-[#E2E8F0] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#2563EB] rounded-full"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl p-6 border border-[#EAECEF] space-y-4">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB]">
+                CO-FOUNDER PERFORMANCE
+              </div>
+              <h3 className="text-lg font-extrabold text-[#0B0F19]">
+                Deal Ownership & Cashflow Split
+              </h3>
+            </div>
+
+            <div className="space-y-3">
+              {(['Krishna', 'Vansh', 'Both'] as const).map((owner) => {
+                const ownerDeals = clients.filter(
+                  (c) => c.assignedTo === owner && c.stage !== 'Rejected / Dropped'
+                );
+                const vol = ownerDeals.reduce((s, c) => s + c.finalAgreedPrice, 0);
+                const paid = ownerDeals.reduce((s, c) => s + c.advancePaid, 0);
+                return (
+                  <div
+                    key={owner}
+                    className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="text-sm font-extrabold text-[#0B0F19]">
+                        {owner === 'Both' ? 'Joint Studio Deals (Both)' : `${owner} Khakole`}
+                      </div>
+                      <div className="text-xs text-[#64748B]">
+                        {ownerDeals.length} active/pitched client accounts
+                      </div>
+                    </div>
+                    <div className="text-right font-mono">
+                      <div className="text-sm font-extrabold text-[#0B0F19]">
+                        {formatINR(vol)}
+                      </div>
+                      <div className="text-xs text-[#059669] font-bold">
+                        Collected: {formatINR(paid)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

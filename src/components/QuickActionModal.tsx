@@ -1,1037 +1,1374 @@
 import React, { useState, useEffect } from 'react';
-import { X, Zap } from 'lucide-react';
-import type {
+import {
+  X,
+  Users,
+  Wallet,
+  Wrench,
+  Megaphone,
+  Globe,
+  CheckCircle2,
+  Search,
+  CheckSquare,
+  ArrowRight,
+  Sparkles,
+  MessageSquare,
+  Command,
+  CreditCard,
+} from 'lucide-react';
+import {
+  AethelDatabaseState,
   ClientLead,
-  ClientLocation,
-  ClientNiche,
-  PipelineStage,
-  PlanTier,
-  AssignedPerson,
-  ExpenseItem,
-  ExpenseCategory,
-  PaymentAccount,
-  DeliveryTicket,
-  TicketCategory,
-  TicketPriority,
-  ScopeBillingTag,
-  MetaCampaign,
-  CampaignObjective,
-  PackageDuration,
-  PrototypeItem,
-  PrototypeStage,
-  TechAsset,
-  HostingPlatform,
-  DomainRegistrar,
-  VaultCredential,
+  StudioExpense,
+  ClientPayment,
+  ClientTicket,
+  MetaAdCampaign,
+  HostedWebsite,
+  FounderName,
+  ExpensePaidBy,
+  StudioTask,
 } from '../types';
-import { encryptSecret } from '../utils/cryptoService';
-
-export type QuickActionTab =
-  | 'client'
-  | 'expense'
-  | 'ticket'
-  | 'campaign'
-  | 'prototype'
-  | 'website'
-  | 'vault';
 
 interface QuickActionModalProps {
   isOpen: boolean;
-  initialTab: QuickActionTab;
   onClose: () => void;
-  masterPassphrase: string;
-  onAddClient: (c: ClientLead) => void;
-  onAddExpense: (e: ExpenseItem) => void;
-  onAddTicket: (t: DeliveryTicket) => void;
-  onAddCampaign: (m: MetaCampaign) => void;
-  onAddPrototype: (p: PrototypeItem) => void;
-  onAddWebsite: (w: TechAsset) => void;
-  onAddVaultCredential: (v: VaultCredential) => void;
-  onNotify: (msg: string) => void;
+  dbState: AethelDatabaseState;
+  activeClientContext?: ClientLead | null;
+  onAddLead: (lead: ClientLead) => void;
+  onAddExpense: (expense: StudioExpense) => void;
+  onAddPayment: (payment: ClientPayment) => void;
+  onAddTicket: (ticket: ClientTicket) => void;
+  onAddCampaign: (campaign: MetaAdCampaign) => void;
+  onAddWebsite: (website: HostedWebsite) => void;
+  onAddTask?: (task: StudioTask) => void;
+  onOpenClient360?: (clientId: string) => void;
 }
+
+type ActionTab = 'palette' | 'lead' | 'payment' | 'expense' | 'ticket' | 'task' | 'campaign' | 'domain';
 
 export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   isOpen,
-  initialTab,
   onClose,
-  masterPassphrase,
-  onAddClient,
+  dbState,
+  activeClientContext,
+  onAddLead,
   onAddExpense,
+  onAddPayment,
   onAddTicket,
   onAddCampaign,
-  onAddPrototype,
   onAddWebsite,
-  onAddVaultCredential,
-  onNotify,
+  onAddTask,
+  onOpenClient360,
 }) => {
-  const [activeTab, setActiveTab] = useState<QuickActionTab>(initialTab);
+  const [activeTab, setActiveTab] = useState<ActionTab>('palette');
+  const [commandQuery, setCommandQuery] = useState('');
 
-  useEffect(() => {
-    setActiveTab(initialTab);
-  }, [initialTab]);
+  // Pre-fill client name if a Client 360 profile is currently open
+  const defaultClientName = activeClientContext?.businessName || '';
 
-  // 1. Client Lead State
+  // Lead Form State
   const [businessName, setBusinessName] = useState('');
   const [contactPerson, setContactPerson] = useState('');
   const [phone, setPhone] = useState('+91 ');
-  const [location, setLocation] = useState<ClientLocation>('Pune');
-  const [niche, setNiche] = useState<ClientNiche>('Hospital/Clinic');
-  const [planSelected, setPlanSelected] = useState<PlanTier>('Custom Website & Brand Experience');
-  const [stage, setStage] = useState<PipelineStage>('Query / Lead');
-  const [quotedPrice, setQuotedPrice] = useState('25000');
-  const [finalAgreedPrice, setFinalAgreedPrice] = useState('25000');
-  const [advancePaid, setAdvancePaid] = useState('0');
-  const [assignedLead, setAssignedLead] = useState<AssignedPerson>('Krishna');
-  const [nextFollowUpDate, setNextFollowUpDate] = useState(
-    new Date().toISOString().slice(0, 10)
-  );
-  const [initialNote, setInitialNote] = useState('');
+  const [city, setCity] = useState('Pune');
+  const [niche, setNiche] = useState<ClientLead['niche']>('Banquet/Lawns');
+  const [packageTier, setPackageTier] = useState('Custom Website + Lead Funnel');
+  const [quotedPrice, setQuotedPrice] = useState(25000);
+  const [finalAgreedPrice, setFinalAgreedPrice] = useState(22000);
+  const [assignedTo, setAssignedTo] = useState<FounderName>('Vansh');
+  const [sampleLinkSent, setSampleLinkSent] = useState('');
+  const [leadNotes, setLeadNotes] = useState('');
 
-  // 2. Expense State
+  // Payment Form State
+  const [payClientName, setPayClientName] = useState(defaultClientName);
+  const [payProjectTitle, setPayProjectTitle] = useState('');
+  const [payTotalValue, setPayTotalValue] = useState(22000);
+  const [payAmountReceived, setPayAmountReceived] = useState(11000);
+  const [payMode, setPayMode] = useState<ClientPayment['paymentMode']>('UPI');
+  const [payAccount, setPayAccount] = useState<ExpensePaidBy>('Studio Account');
+  const [payMilestone, setPayMilestone] = useState<ClientPayment['milestone']>('Advance (50%)');
+
+  // Expense Form State
   const [expTitle, setExpTitle] = useState('');
-  const [expCategory, setExpCategory] = useState<ExpenseCategory>('Studio Expense');
-  const [expAmount, setExpAmount] = useState('');
-  const [expPaidBy, setExpPaidBy] = useState<PaymentAccount>('Vansh');
-  const [expLinkedClient, setExpLinkedClient] = useState('');
+  const [expCategory, setExpCategory] = useState<StudioExpense['category']>('Domain & Hosting');
+  const [expAmount, setExpAmount] = useState(1499);
+  const [expPaidBy, setExpPaidBy] = useState<ExpensePaidBy>('Vansh');
+  const [expClient, setExpClient] = useState(defaultClientName);
   const [expNotes, setExpNotes] = useState('');
 
-  // 3. Ticket State
+  // Ticket Form State
+  const [tktClientName, setTktClientName] = useState(defaultClientName);
+  const [tktDomain, setTktDomain] = useState('');
   const [tktTitle, setTktTitle] = useState('');
-  const [tktClient, setTktClient] = useState('The Imperial Pavilion & Lawns');
-  const [tktUrl, setTktUrl] = useState('https://imperialpavilionlawns.in');
-  const [tktCategory, setTktCategory] = useState<TicketCategory>('Website Bugs / Issues');
-  const [tktPriority, setTktPriority] = useState<TicketPriority>('High');
-  const [tktBilling, setTktBilling] = useState<ScopeBillingTag>('Included in Plan');
-  const [tktAssigned, setTktAssigned] = useState<'Krishna' | 'Vansh'>('Vansh');
-  const [tktNotes, setTktNotes] = useState('');
+  const [tktCategory, setTktCategory] = useState<ClientTicket['category']>('Copy/Image Update');
+  const [tktPriority, setTktPriority] = useState<ClientTicket['priority']>('High');
+  const [tktAssigned, setTktAssigned] = useState<FounderName>('Vansh');
+  const [tktDesc, setTktDesc] = useState('');
 
-  // 4. Meta Campaign State
-  const [camClient, setCamClient] = useState('');
-  const [camNiche, setCamNiche] = useState<ClientNiche>('Banquet/Lawns');
-  const [camObjective, setCamObjective] = useState<CampaignObjective>('WhatsApp Inquiries');
-  const [camPackage, setCamPackage] = useState<PackageDuration>('15 Days');
-  const [camBudget, setCamBudget] = useState('12000');
-  const [camFee, setCamFee] = useState('4999');
-  const [camNotes, setCamNotes] = useState('');
+  // Task / Follow-up Form State
+  const [taskClientName, setTaskClientName] = useState(defaultClientName);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [taskType, setTaskType] = useState<StudioTask['type']>('Follow-up');
+  const [taskPriority, setTaskPriority] = useState<StudioTask['priority']>('High');
+  const [taskAssigned, setTaskAssigned] = useState<FounderName>('Krishna');
+  const [taskDueDate, setTaskDueDate] = useState(
+    new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  );
+  const [taskNotes, setTaskNotes] = useState('');
 
-  // 5. R&D Prototype State
-  const [protoName, setProtoName] = useState('');
-  const [protoStage, setProtoStage] = useState<PrototypeStage>('Working On / In Development');
-  const [protoIndustry, setProtoIndustry] = useState('Hospital/Clinic & Diagnostics');
-  const [protoHook, setProtoHook] = useState('');
-  const [protoUrl, setProtoUrl] = useState('https://demo.aethelstudios.workers.dev');
-  const [protoPrompt, setProtoPrompt] = useState('');
+  // Meta Campaign State
+  const [metaClient, setMetaClient] = useState(defaultClientName);
+  const [metaName, setMetaName] = useState('');
+  const [metaObjective, setMetaObjective] = useState<MetaAdCampaign['objective']>('WhatsApp Messages');
+  const [metaBudget, setMetaBudget] = useState(10000);
+  const [metaFee, setMetaFee] = useState(4000);
 
-  // 6. Website / Domain State
-  const [webProject, setWebProject] = useState('');
-  const [webClient, setWebClient] = useState('');
-  const [webLiveUrl, setWebLiveUrl] = useState('https://');
-  const [webStagingUrl, setWebStagingUrl] = useState('https://preview.aethelstudios.workers.dev');
-  const [webPlatform, setWebPlatform] = useState<HostingPlatform>('Cloudflare Pages/Workers');
-  const [webRegistrar, setWebRegistrar] = useState<DomainRegistrar>('Hostinger');
-  const [webRenewalDate, setWebRenewalDate] = useState('2026-12-10');
-  const [webRenewalCost, setWebRenewalCost] = useState('1499');
-  const [webStack, setWebStack] = useState('React 19 + Tailwind CSS + Supabase');
+  // Domain State
+  const [domClient, setDomClient] = useState(defaultClientName);
+  const [domName, setDomName] = useState('');
+  const [domRegistrar, setDomRegistrar] = useState<HostedWebsite['registrar']>('Hostinger');
+  const [domPlatform, setDomPlatform] = useState<HostedWebsite['hostingPlatform']>('Vercel');
+  const [domCost, setDomCost] = useState(1499);
 
-  // 7. Vault Secret State
-  const [vltService, setVltService] = useState('');
-  const [vltOwner, setVltOwner] = useState('Aethel Studios Core');
-  const [vltUsername, setVltUsername] = useState('aethelstudios.in@gmail.com');
-  const [vltSecret, setVltSecret] = useState('');
-  const [vltUrl, setVltUrl] = useState('https://');
-  const [vltNotes, setVltNotes] = useState('');
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab('palette');
+      setCommandQuery('');
+      if (activeClientContext) {
+        setPayClientName(activeClientContext.businessName);
+        setPayProjectTitle(activeClientContext.packageTier);
+        setPayTotalValue(activeClientContext.finalAgreedPrice);
+        setPayAmountReceived(
+          Math.max(0, activeClientContext.finalAgreedPrice - activeClientContext.advancePaid) || 5000
+        );
+        setTktClientName(activeClientContext.businessName);
+        setTaskClientName(activeClientContext.businessName);
+        setMetaClient(activeClientContext.businessName);
+        setDomClient(activeClientContext.businessName);
+        setExpClient(activeClientContext.businessName);
+      }
+    }
+  }, [isOpen, activeClientContext]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const handleLeadSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (activeTab === 'client') {
-      if (!businessName.trim() || !contactPerson.trim()) {
-        onNotify('Please enter Business Name and Contact Person.');
-        return;
-      }
-      const newClient: ClientLead = {
-        id: `cli-${Date.now()}`,
-        businessName: businessName.trim(),
-        contactPerson: contactPerson.trim(),
-        phone: phone.trim() || '+91 98000 00000',
-        location,
-        niche,
-        stage,
-        planSelected: planSelected.trim() || 'Custom Website & Brand Experience',
-        quotedPrice: Number(quotedPrice) || 20000,
-        finalAgreedPrice: Number(finalAgreedPrice) || 20000,
-        advancePaid: Number(advancePaid) || 0,
-        assignedLead,
-        nextFollowUpDate,
-        notesLog: [
-          {
-            id: `n-${Date.now()}`,
-            timestamp: new Date().toISOString().slice(0, 16).replace('T', ' '),
-            author: assignedLead === 'Vansh' ? 'Vansh' : 'Krishna',
-            text: initialNote.trim() || `Created lead for ${planSelected}.`,
-          },
-        ],
-        createdAt: new Date().toISOString().slice(0, 10),
-      };
-      onAddClient(newClient);
-      setBusinessName('');
-      setContactPerson('');
-      onClose();
-      return;
-    }
-
-    if (activeTab === 'expense') {
-      const amt = Number(expAmount);
-      if (!expTitle.trim() || !amt || amt <= 0) {
-        onNotify('Please enter an Expense Title and valid INR Amount.');
-        return;
-      }
-      onAddExpense({
-        id: `exp-${Date.now()}`,
-        title: expTitle.trim(),
-        category: expCategory,
-        amount: amt,
-        date: new Date().toISOString().slice(0, 10),
-        paidBy: expPaidBy,
-        linkedClient: expLinkedClient.trim() || undefined,
-        notes: expNotes.trim() || 'Logged via Quick Action.',
-        reimbursed: expPaidBy === 'Studio Account',
-      });
-      setExpTitle('');
-      setExpAmount('');
-      onClose();
-      return;
-    }
-
-    if (activeTab === 'ticket') {
-      if (!tktTitle.trim()) {
-        onNotify('Please enter a Ticket Title.');
-        return;
-      }
-      onAddTicket({
-        id: `tkt-${Date.now()}`,
-        title: tktTitle.trim(),
-        clientName: tktClient.trim() || 'Aethel Client',
-        websiteUrl: tktUrl.trim(),
-        category: tktCategory,
-        state: 'Reported / To-Do',
-        priority: tktPriority,
-        billingTag: tktBilling,
-        assignedTo: tktAssigned,
-        notes: tktNotes.trim() || 'Reported via Quick Action.',
-        createdAt: new Date().toISOString().slice(0, 10),
-      });
-      setTktTitle('');
-      onClose();
-      return;
-    }
-
-    if (activeTab === 'campaign') {
-      if (!camClient.trim()) {
-        onNotify('Please enter the Client Name for this Meta Ad campaign.');
-        return;
-      }
-      const start = new Date();
-      const daysToAdd =
-        camPackage === '7 Days' ? 7 : camPackage === '15 Days' ? 15 : 30;
-      const end = new Date(start.getTime() + daysToAdd * 86400000);
-      onAddCampaign({
-        id: `cam-${Date.now()}`,
-        clientName: camClient.trim(),
-        niche: camNiche,
-        objective: camObjective,
-        packageDuration: camPackage,
-        startDate: start.toISOString().slice(0, 10),
-        endDate: end.toISOString().slice(0, 10),
-        status: 'Active & Scaling',
-        totalAdBudget: Number(camBudget) || 10000,
-        adSpendUsed: 1500,
-        agencyFee: Number(camFee) || 4999,
-        leadsGenerated: 18,
-        metaPixelInstalled: true,
-        whatsappFlowConnected: true,
-        gbpSynced: false,
-        audienceNotes:
-          camNotes.trim() ||
-          'Local 30km radius • Direct WhatsApp click-to-chat ad funnel.',
-        assignedLead: 'Krishna',
-      });
-      setCamClient('');
-      onClose();
-      return;
-    }
-
-    if (activeTab === 'prototype') {
-      if (!protoName.trim()) {
-        onNotify('Please enter a Prototype / R&D Project Name.');
-        return;
-      }
-      onAddPrototype({
-        id: `rnd-${Date.now()}`,
-        projectName: protoName.trim(),
-        stage: protoStage,
-        targetIndustry: protoIndustry.trim() || 'Local Business',
-        coreUxHook: protoHook.trim() || 'High-converting interactive pitch experience.',
-        devStack: ['Google AI Studio', 'React + Tailwind', 'Supabase'],
-        livePrototypeUrl: protoUrl.trim() || 'https://aethelstudios.in',
-        masterPromptNotes:
-          protoPrompt.trim() || 'Editorial bright-mode UI with instant WhatsApp flow.',
-        leadBuilder: 'Vansh',
-        updatedAt: new Date().toISOString().slice(0, 10),
-      });
-      setProtoName('');
-      onClose();
-      return;
-    }
-
-    if (activeTab === 'website') {
-      if (!webProject.trim() || !webClient.trim()) {
-        onNotify('Please enter Project Name and Client Name.');
-        return;
-      }
-      onAddWebsite({
-        id: `web-${Date.now()}`,
-        projectName: webProject.trim(),
-        clientName: webClient.trim(),
-        liveDomainUrl: webLiveUrl.trim() || 'https://aethelstudios.in',
-        stagingUrl: webStagingUrl.trim(),
-        hostingPlatform: webPlatform,
-        deployingEmail: 'aethelstudios.in@gmail.com',
-        domainRegistrar: webRegistrar,
-        domainOwner: 'Aethel Managed',
-        renewalDate: webRenewalDate,
-        annualRenewalCost: Number(webRenewalCost) || 1499,
-        githubRepoUrl: 'https://github.com/aethelstudios',
-        techStack: webStack.trim(),
-        healthStatus: 'Live & Healthy',
-        assignedLead: 'Vansh',
-      });
-      setWebProject('');
-      onClose();
-      return;
-    }
-
-    if (activeTab === 'vault') {
-      if (!vltService.trim() || !vltSecret.trim()) {
-        onNotify('Service Platform and Secret are required.');
-        return;
-      }
-      const keyToUse = masterPassphrase || 'aethel2026';
-      const encrypted = await encryptSecret(vltSecret.trim(), keyToUse);
-      onAddVaultCredential({
-        id: `vlt-${Date.now()}`,
-        servicePlatform: vltService.trim(),
-        ownerClientTag: vltOwner.trim(),
-        usernameEmail: vltUsername.trim(),
-        ciphertext: encrypted.ciphertext,
-        iv: encrypted.iv,
-        salt: encrypted.salt,
-        url: vltUrl.trim(),
-        notes: vltNotes.trim(),
-        createdAt: new Date().toISOString().slice(0, 10),
-      });
-      setVltService('');
-      setVltSecret('');
-      onClose();
-    }
+    if (!businessName.trim()) return;
+    onAddLead({
+      id: `cli-${Date.now()}`,
+      businessName: businessName.trim(),
+      contactPerson: contactPerson.trim() || 'Owner',
+      phone: phone.trim(),
+      city: city.trim(),
+      niche,
+      packageTier,
+      quotedPrice: Number(quotedPrice),
+      finalAgreedPrice: Number(finalAgreedPrice),
+      advancePaid: 0,
+      stage: 'Cold Lead',
+      assignedTo,
+      sampleLinkSent: sampleLinkSent.trim(),
+      followUpDate: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10),
+      notes: leadNotes.trim(),
+      createdAt: today,
+    });
+    onClose();
   };
 
-  const TABS: { id: QuickActionTab; label: string }[] = [
-    { id: 'client', label: '+ Client Lead' },
-    { id: 'expense', label: '+ Expense' },
-    { id: 'ticket', label: '+ Bug / Ticket' },
-    { id: 'campaign', label: '+ Meta Campaign' },
-    { id: 'prototype', label: '+ R&D Prototype' },
-    { id: 'website', label: '+ Domain Asset' },
-    { id: 'vault', label: '+ Vault Secret' },
+  const handlePaymentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!payClientName.trim()) return;
+    onAddPayment({
+      id: `pay-${Date.now()}`,
+      clientId: activeClientContext?.id,
+      clientName: payClientName.trim(),
+      projectTitle: payProjectTitle.trim() || 'Website & Growth Package',
+      totalProjectValue: Number(payTotalValue),
+      amountReceived: Number(payAmountReceived),
+      paymentDate: today,
+      paymentMode: payMode,
+      receivedInAccount: payAccount,
+      milestone: payMilestone,
+    });
+    onClose();
+  };
+
+  const handleExpenseSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!expTitle.trim()) return;
+    onAddExpense({
+      id: `exp-${Date.now()}`,
+      title: expTitle.trim(),
+      category: expCategory,
+      amount: Number(expAmount),
+      paidBy: expPaidBy,
+      date: today,
+      clientRelated: expClient.trim() || 'Studio Core',
+      reimbursed: expPaidBy === 'Studio Account',
+      notes: expNotes.trim(),
+    });
+    onClose();
+  };
+
+  const handleTicketSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tktTitle.trim()) return;
+    onAddTicket({
+      id: `tkt-${Date.now()}`,
+      clientId: activeClientContext?.id,
+      clientName: tktClientName.trim() || 'Studio Client',
+      domainName: tktDomain.trim() || 'client-site.in',
+      title: tktTitle.trim(),
+      category: tktCategory,
+      priority: tktPriority,
+      status: 'Open',
+      assignedTo: tktAssigned,
+      dueDate: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10),
+      description: tktDesc.trim(),
+      createdAt: today,
+    });
+    onClose();
+  };
+
+  const handleTaskSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!taskTitle.trim() || !onAddTask) return;
+    onAddTask({
+      id: `tsk-${Date.now()}`,
+      clientId: activeClientContext?.id,
+      clientName: taskClientName.trim() || 'Aethel Studio',
+      title: taskTitle.trim(),
+      type: taskType,
+      priority: taskPriority,
+      status: 'Pending',
+      assignedTo: taskAssigned,
+      dueDate: taskDueDate,
+      notes: taskNotes.trim(),
+      createdAt: today,
+    });
+    onClose();
+  };
+
+  const handleCampaignSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!metaClient.trim() || !metaName.trim()) return;
+    onAddCampaign({
+      id: `meta-${Date.now()}`,
+      clientId: activeClientContext?.id,
+      clientName: metaClient.trim(),
+      campaignName: metaName.trim(),
+      objective: metaObjective,
+      status: 'Active',
+      totalBudget: Number(metaBudget),
+      amountSpent: 0,
+      agencyFee: Number(metaFee),
+      leadsGenerated: 0,
+      startDate: today,
+      endDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+      notes: 'Campaign initialized via Aethel OS Command Palette.',
+    });
+    onClose();
+  };
+
+  const handleDomainSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!domName.trim()) return;
+    const cleanDom = domName.trim().replace(/^https?:\/\//, '');
+    onAddWebsite({
+      id: `web-${Date.now()}`,
+      clientId: activeClientContext?.id,
+      clientName: domClient.trim() || 'Studio Client',
+      domainName: cleanDom,
+      liveUrl: `https://${cleanDom}`,
+      registrar: domRegistrar,
+      hostingPlatform: domPlatform,
+      purchaseDate: today,
+      expiryDate: new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
+      renewalCostINR: Number(domCost),
+      sslStatus: 'Active',
+      siteStatus: 'Online',
+      githubRepo: `aethel-studios/${cleanDom.split('.')[0]}`,
+      notes: 'Added via Command Palette.',
+    });
+    onClose();
+  };
+
+  const commandItems = [
+    {
+      id: 'cmd-lead',
+      title: 'Create a new Client / Sales Lead',
+      subtitle: 'Add a prospect to CRM & Pipeline with custom scope & pricing',
+      category: 'CLIENT OPERATIONS',
+      icon: Users,
+      action: () => setActiveTab('lead'),
+    },
+    {
+      id: 'cmd-payment',
+      title: activeClientContext
+        ? `Record Payment for ${activeClientContext.businessName}`
+        : 'Record Client Payment Inflow',
+      subtitle: 'Logs verified payment in Finance Ledger & syncs CRM Paid balance automatically',
+      category: 'FINANCE & LEDGER',
+      icon: CreditCard,
+      action: () => setActiveTab('payment'),
+    },
+    {
+      id: 'cmd-task',
+      title: activeClientContext
+        ? `Schedule Task / Follow-up for ${activeClientContext.businessName}`
+        : 'Schedule a Task or Client Follow-up',
+      subtitle: 'Assign a high-priority call, demo, or payment follow-up to Krishna or Vansh',
+      category: 'CLIENT OPERATIONS',
+      icon: CheckSquare,
+      action: () => setActiveTab('task'),
+    },
+    {
+      id: 'cmd-ticket',
+      title: activeClientContext
+        ? `Create Revision / Bug Ticket for ${activeClientContext.businessName}`
+        : 'Create Delivery Revision or Bug Ticket',
+      subtitle: 'Track client website updates, Meta Pixel installation, or SSL fixes',
+      category: 'PROJECTS & DELIVERIES',
+      icon: Wrench,
+      action: () => setActiveTab('ticket'),
+    },
+    {
+      id: 'cmd-expense',
+      title: 'Record Studio Operational Expense',
+      subtitle: 'Log hosting, SaaS, or travel spend & track 50/50 founder reimbursement',
+      category: 'FINANCE & LEDGER',
+      icon: Wallet,
+      action: () => setActiveTab('expense'),
+    },
+    {
+      id: 'cmd-campaign',
+      title: activeClientContext
+        ? `Launch Meta Ad Campaign for ${activeClientContext.businessName}`
+        : 'Launch Meta Ad Campaign',
+      subtitle: 'Track client ad budget, CPL, leads generated, and agency retainer fee',
+      category: 'GROWTH',
+      icon: Megaphone,
+      action: () => setActiveTab('campaign'),
+    },
+    {
+      id: 'cmd-domain',
+      title: activeClientContext
+        ? `Register Domain / Website for ${activeClientContext.businessName}`
+        : 'Register Client Domain & Hosting',
+      subtitle: 'Monitor domain expiry countdown, SSL status, and Vercel/Hostinger deployment',
+      category: 'INFRASTRUCTURE',
+      icon: Globe,
+      action: () => setActiveTab('domain'),
+    },
   ];
 
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Universal Quick Action Command Modal"
-      className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
-    >
-      <div className="bg-white border border-[#EAECEF] rounded-t-3xl sm:rounded-3xl w-full max-w-2xl p-4 sm:p-8 shadow-2xl space-y-5 sm:space-y-6 max-h-[92dvh] sm:max-h-[90vh] overflow-y-auto">
-        <div className="flex items-start justify-between gap-4 border-b border-[#EAECEF] pb-3.5 sm:pb-4">
-          <div>
-            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#2563EB] flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5" />
-              <span>UNIVERSAL COMMAND BAR (CTRL+K)</span>
-            </span>
-            <h2 className="text-lg sm:text-xl font-bold text-[#0B0F19] mt-0.5">
-              Rapid Studio Action &amp; Record Creator
-            </h2>
-          </div>
+  const filteredCommands = commandItems.filter(
+    (c) =>
+      c.title.toLowerCase().includes(commandQuery.toLowerCase()) ||
+      c.subtitle.toLowerCase().includes(commandQuery.toLowerCase()) ||
+      c.category.toLowerCase().includes(commandQuery.toLowerCase())
+  );
 
+  const matchingClients =
+    commandQuery.trim().length > 0
+      ? dbState.clients
+          .filter(
+            (c) =>
+              c.businessName.toLowerCase().includes(commandQuery.toLowerCase()) ||
+              c.contactPerson.toLowerCase().includes(commandQuery.toLowerCase())
+          )
+          .slice(0, 4)
+      : [];
+
+  return (
+    <div className="fixed inset-0 z-50 bg-[#0B0F19]/60 backdrop-blur-sm flex items-start sm:items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-3xl border border-[#EAECEF] shadow-2xl max-w-2xl w-full overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
+        {/* Top Command Header */}
+        <div className="bg-[#0B0F19] text-white px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-[#2563EB] flex items-center justify-center shrink-0">
+              <Command className="w-4 h-4 text-white" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-mono uppercase tracking-widest text-[#60A5FA] font-semibold">
+                  AETHEL COMMAND PALETTE (CTRL+K)
+                </span>
+                {activeClientContext && (
+                  <span className="px-2 py-0.5 rounded-md bg-white/10 text-[10px] font-bold text-emerald-300 truncate">
+                    Context: {activeClientContext.businessName}
+                  </span>
+                )}
+              </div>
+              <h2 className="text-base font-bold tracking-tight truncate">
+                {activeTab === 'palette'
+                  ? 'What would you like to do?'
+                  : activeTab === 'lead'
+                  ? 'Create New Client / Sales Lead'
+                  : activeTab === 'payment'
+                  ? 'Record Verified Client Payment'
+                  : activeTab === 'task'
+                  ? 'Schedule Task or Follow-up'
+                  : activeTab === 'ticket'
+                  ? 'Create Revision / Delivery Ticket'
+                  : activeTab === 'expense'
+                  ? 'Record Studio Operational Expense'
+                  : activeTab === 'campaign'
+                  ? 'Launch Client Meta Ad Campaign'
+                  : 'Register Client Domain & Hosting'}
+              </h2>
+            </div>
+          </div>
           <button
-            type="button"
             onClick={onClose}
-            aria-label="Close Quick Action Modal"
-            className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer shrink-0"
+            aria-label="Close Command Palette"
+            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-slate-300 hover:text-white transition-colors cursor-pointer shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Action Switcher Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setActiveTab(t.id)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === t.id
-                  ? 'bg-[#0B0F19] text-white'
-                  : 'bg-[#F8F9FA] text-slate-600 hover:text-[#0B0F19]'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+        {/* Navigation Pills to switch between Command Search & Direct Forms */}
+        <div className="px-4 py-2.5 bg-[#F8F9FA] border-b border-[#EAECEF] flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          {[
+            { id: 'palette', label: '⌘ Search Commands', icon: Search },
+            { id: 'lead', label: '+ Client Lead', icon: Users },
+            { id: 'payment', label: '+ Payment', icon: CreditCard },
+            { id: 'task', label: '+ Task', icon: CheckSquare },
+            { id: 'ticket', label: '+ Revision', icon: Wrench },
+            { id: 'expense', label: '+ Expense', icon: Wallet },
+            { id: 'campaign', label: '+ Meta Ad', icon: Megaphone },
+            { id: 'domain', label: '+ Domain', icon: Globe },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const active = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as ActionTab)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer shrink-0 ${
+                  active
+                    ? 'bg-[#2563EB] text-white shadow-xs'
+                    : 'bg-white text-[#475569] hover:text-[#0B0F19] border border-[#EAECEF]'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Dynamic Form */}
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          {activeTab === 'client' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Business Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={businessName}
-                  onChange={(e) => setBusinessName(e.target.value)}
-                  placeholder="e.g., Royal Heritage Lawns"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Contact Person *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={contactPerson}
-                  onChange={(e) => setContactPerson(e.target.value)}
-                  placeholder="e.g., Siddharth Patil"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Phone (+91)
-                </label>
-                <input
-                  type="text"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Location
-                </label>
-                <select
-                  value={location}
-                  onChange={(e) => setLocation(e.target.value as ClientLocation)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                >
-                  <option value="Pune">Pune</option>
-                  <option value="Risod">Risod</option>
-                  <option value="Washim">Washim</option>
-                  <option value="Maharashtra / Remote">Maharashtra / Remote</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Business Niche
-                </label>
-                <select
-                  value={niche}
-                  onChange={(e) => setNiche(e.target.value as ClientNiche)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                >
-                  <option value="Hospital/Clinic">Hospital/Clinic</option>
-                  <option value="Banquet/Lawns">Banquet/Lawns</option>
-                  <option value="Stay Hotel">Stay Hotel</option>
-                  <option value="Retail/Electronics">Retail/Electronics</option>
-                  <option value="Restaurant/Cafe">Restaurant/Cafe</option>
-                  <option value="Coaching/Institute">Coaching/Institute</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Custom Requirement / Project Scope
-                </label>
-                <input
-                  type="text"
-                  value={planSelected}
-                  onChange={(e) => setPlanSelected(e.target.value)}
-                  placeholder="e.g., 3D Venue Website + Booking Flow"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Final Agreed Price (₹)
-                </label>
-                <input
-                  type="number"
-                  value={finalAgreedPrice}
-                  onChange={(e) => {
-                    setFinalAgreedPrice(e.target.value);
-                    setQuotedPrice(e.target.value);
-                  }}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Advance Paid (₹)
-                </label>
-                <input
-                  type="number"
-                  value={advancePaid}
-                  onChange={(e) => setAdvancePaid(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Pipeline Stage
-                </label>
-                <select
-                  value={stage}
-                  onChange={(e) => setStage(e.target.value as PipelineStage)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                >
-                  <option value="Query / Lead">Query / Lead</option>
-                  <option value="In Talks / Demo Shown">In Talks / Demo Shown</option>
-                  <option value="Follow-up Scheduled">Follow-up Scheduled</option>
-                  <option value="In Building">In Building</option>
-                  <option value="Live / Payment Pending">Live / Payment Pending</option>
-                  <option value="Delivered / Live">Delivered / Live</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Assigned Co-Founder
-                </label>
-                <select
-                  value={assignedLead}
-                  onChange={(e) => setAssignedLead(e.target.value as AssignedPerson)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                >
-                  <option value="Krishna">Krishna</option>
-                  <option value="Vansh">Vansh</option>
-                  <option value="Both">Both</option>
-                </select>
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Initial Call / Pitch Note
-                </label>
-                <input
-                  type="text"
-                  value={initialNote}
-                  onChange={(e) => setInitialNote(e.target.value)}
-                  placeholder="Summary of requirements or next follow-up context..."
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
+        {/* BODY: Either Raycast/Linear Command Search OR Selected Action Form */}
+        {activeTab === 'palette' ? (
+          <div className="p-4 sm:p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-[#64748B] absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                autoFocus
+                value={commandQuery}
+                onChange={(e) => setCommandQuery(e.target.value)}
+                placeholder="Type a command or client name (e.g. 'Record payment', 'Create client', 'Lawns')..."
+                className="w-full pl-10 pr-4 py-3 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] focus:bg-white focus:border-[#2563EB] text-sm text-[#0B0F19] placeholder-[#94A3B8] focus:outline-none transition-all"
+              />
             </div>
-          )}
 
-          {activeTab === 'expense' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div className="sm:col-span-2">
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Expense Title / Description *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={expTitle}
-                  onChange={(e) => setExpTitle(e.target.value)}
-                  placeholder="e.g., Irani Chai & Snacks during Sprint / Cloudflare Renewal"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
+            {/* Context-Aware Quick Strip when a Client 360° Profile is active */}
+            {activeClientContext && (
+              <div className="p-3.5 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> Active Client Context: {activeClientContext.businessName}
+                  </span>
+                  <span className="text-[11px] font-mono text-[#1E40AF]">
+                    Stage: {activeClientContext.stage}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setActiveTab('payment')}
+                    className="px-3 py-1.5 rounded-xl bg-[#2563EB] text-white text-xs font-bold hover:bg-[#1D4ED8] transition-colors cursor-pointer"
+                  >
+                    + Record Payment for {activeClientContext.businessName}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('task')}
+                    className="px-3 py-1.5 rounded-xl bg-white text-[#0B0F19] border border-[#BFDBFE] text-xs font-semibold hover:bg-[#F8F9FA] transition-colors cursor-pointer"
+                  >
+                    + Add Follow-up Task
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('ticket')}
+                    className="px-3 py-1.5 rounded-xl bg-white text-[#0B0F19] border border-[#BFDBFE] text-xs font-semibold hover:bg-[#F8F9FA] transition-colors cursor-pointer"
+                  >
+                    + Log Revision Request
+                  </button>
+                  <a
+                    href={`https://wa.me/${activeClientContext.phone.replace(/[^0-9]/g, '')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-3 py-1.5 rounded-xl bg-[#059669] text-white text-xs font-bold flex items-center gap-1 hover:bg-[#047857] transition-colors"
+                  >
+                    <MessageSquare className="w-3 h-3" /> WhatsApp Client
+                  </a>
+                </div>
               </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Expense Category
-                </label>
-                <select
-                  value={expCategory}
-                  onChange={(e) => setExpCategory(e.target.value as ExpenseCategory)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                >
-                  <option value="Studio Expense">Studio Expense</option>
-                  <option value="Tech Expense">Tech Expense</option>
-                  <option value="Food & Chai Expense">Food &amp; Chai Expense</option>
-                  <option value="Client-Billable Expense">Client-Billable Expense</option>
-                </select>
+            )}
+
+            {/* Matching Client 360 Jump Results */}
+            {matchingClients.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-[#94A3B8] px-1">
+                  Open Client 360° Dossier
+                </div>
+                {matchingClients.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => {
+                      if (onOpenClient360) onOpenClient360(c.id);
+                      onClose();
+                    }}
+                    className="w-full flex items-center justify-between p-3 rounded-2xl border border-[#EAECEF] hover:border-[#2563EB] hover:bg-[#F8F9FA] transition-all text-left cursor-pointer"
+                  >
+                    <div>
+                      <div className="text-xs font-bold text-[#0B0F19]">{c.businessName}</div>
+                      <div className="text-[11px] text-[#64748B]">
+                        {c.contactPerson} · {c.city} · {c.stage}
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold text-[#2563EB] flex items-center gap-1">
+                      Open 360° <ArrowRight className="w-3.5 h-3.5" />
+                    </span>
+                  </button>
+                ))}
               </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Amount (₹ INR) *
-                </label>
-                <input
-                  type="number"
-                  required
-                  value={expAmount}
-                  onChange={(e) => setExpAmount(e.target.value)}
-                  placeholder="e.g., 650"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono"
-                />
+            )}
+
+            {/* Command List */}
+            <div className="space-y-1.5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#94A3B8] px-1">
+                Studio Operations & Quick Actions
               </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Paid By (For Co-Founder Split)
-                </label>
-                <select
-                  value={expPaidBy}
-                  onChange={(e) => setExpPaidBy(e.target.value as PaymentAccount)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                >
-                  <option value="Krishna">Krishna (Personal Out-of-Pocket)</option>
-                  <option value="Vansh">Vansh (Personal Out-of-Pocket)</option>
-                  <option value="Studio Account">Studio Account</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Linked Client (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={expLinkedClient}
-                  onChange={(e) => setExpLinkedClient(e.target.value)}
-                  placeholder="If Client-Billable"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
+              {filteredCommands.map((cmd) => {
+                const Icon = cmd.icon;
+                return (
+                  <button
+                    key={cmd.id}
+                    onClick={cmd.action}
+                    className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-[#F8F9FA] border border-transparent hover:border-[#EAECEF] transition-all text-left group cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-[#F1F5F9] group-hover:bg-[#EFF6FF] text-[#475569] group-hover:text-[#2563EB] flex items-center justify-center shrink-0 transition-colors">
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-[#0B0F19] group-hover:text-[#2563EB] truncate">
+                          {cmd.title}
+                        </div>
+                        <div className="text-[11px] text-[#64748B] truncate">{cmd.subtitle}</div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-[#94A3B8] group-hover:text-[#2563EB] shrink-0 ml-2 flex items-center gap-1">
+                      {cmd.category} <ArrowRight className="w-3 h-3" />
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-          )}
-
-          {activeTab === 'ticket' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div className="sm:col-span-2">
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Bug / Change Request Title *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={tktTitle}
-                  onChange={(e) => setTktTitle(e.target.value)}
-                  placeholder="e.g., Add WhatsApp floating CTA on mobile gallery page"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Client / Project Name
-                </label>
-                <input
-                  type="text"
-                  value={tktClient}
-                  onChange={(e) => setTktClient(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Ticket Category
-                </label>
-                <select
-                  value={tktCategory}
-                  onChange={(e) => setTktCategory(e.target.value as TicketCategory)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                >
-                  <option value="Website Bugs / Issues">Website Bugs / Issues</option>
-                  <option value="Client Change Requests">Client Change Requests</option>
-                  <option value="Core Delivery Milestones">Core Delivery Milestones</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Priority
-                </label>
-                <select
-                  value={tktPriority}
-                  onChange={(e) => setTktPriority(e.target.value as TicketPriority)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                >
-                  <option value="Critical - Site Down">Critical - Site Down</option>
-                  <option value="High">High</option>
-                  <option value="Medium">Medium</option>
-                  <option value="Low">Low</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Scope Billing Tag
-                </label>
-                <select
-                  value={tktBilling}
-                  onChange={(e) => setTktBilling(e.target.value as ScopeBillingTag)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                >
-                  <option value="Included in Plan">Included in Plan</option>
-                  <option value="Free Goodwill">Free Goodwill</option>
-                  <option value="Billable Extra ₹">Billable Extra ₹</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Assigned To
-                </label>
-                <select
-                  value={tktAssigned}
-                  onChange={(e) => setTktAssigned(e.target.value as 'Krishna' | 'Vansh')}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                >
-                  <option value="Vansh">Vansh</option>
-                  <option value="Krishna">Krishna</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Detailed Notes
-                </label>
-                <input
-                  type="text"
-                  value={tktNotes}
-                  onChange={(e) => setTktNotes(e.target.value)}
-                  placeholder="Steps to reproduce or WhatsApp voice note summary..."
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'campaign' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Linked Client Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={camClient}
-                  onChange={(e) => setCamClient(e.target.value)}
-                  placeholder="e.g., Sanjeevani Multispeciality Hospital"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Campaign Objective
-                </label>
-                <select
-                  value={camObjective}
-                  onChange={(e) => setCamObjective(e.target.value as CampaignObjective)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                >
-                  <option value="WhatsApp Inquiries">WhatsApp Inquiries</option>
-                  <option value="Lead Generation Form">Lead Generation Form</option>
-                  <option value="Local Store Visits / Reach">Local Store Visits / Reach</option>
-                  <option value="Instagram Profile Visits">Instagram Profile Visits</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Package Duration
-                </label>
-                <select
-                  value={camPackage}
-                  onChange={(e) => setCamPackage(e.target.value as PackageDuration)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                >
-                  <option value="7 Days">7 Days</option>
-                  <option value="15 Days">15 Days</option>
-                  <option value="30 Days">30 Days</option>
-                  <option value="Monthly Retainer">Monthly Retainer</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Total Ad Budget (₹)
-                </label>
-                <input
-                  type="number"
-                  value={camBudget}
-                  onChange={(e) => setCamBudget(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Agency Management Fee (₹)
-                </label>
-                <input
-                  type="number"
-                  value={camFee}
-                  onChange={(e) => setCamFee(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Audience &amp; Hook Notes
-                </label>
-                <input
-                  type="text"
-                  value={camNotes}
-                  onChange={(e) => setCamNotes(e.target.value)}
-                  placeholder="City radius, age group, reel hook..."
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'prototype' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Prototype / Project Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={protoName}
-                  onChange={(e) => setProtoName(e.target.value)}
-                  placeholder="e.g., Smart Coaching Institute Fee & Rank Portal"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  R&amp;D Stage
-                </label>
-                <select
-                  value={protoStage}
-                  onChange={(e) => setProtoStage(e.target.value as PrototypeStage)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                >
-                  <option value="Raw Idea">Raw Idea</option>
-                  <option value="Working On / In Development">Working On / In Development</option>
-                  <option value="Interactive Prototype">Interactive Prototype</option>
-                  <option value="Finished Product / Reusable System">
-                    Finished Product / Reusable System
-                  </option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Target Industry
-                </label>
-                <input
-                  type="text"
-                  value={protoIndustry}
-                  onChange={(e) => setProtoIndustry(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Live Prototype URL
-                </label>
-                <input
-                  type="text"
-                  value={protoUrl}
-                  onChange={(e) => setProtoUrl(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Core UX Hook
-                </label>
-                <input
-                  type="text"
-                  value={protoHook}
-                  onChange={(e) => setProtoHook(e.target.value)}
-                  placeholder="What makes business owners say yes in 30 seconds?"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-              <div className="sm:col-span-2">
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Saved Master Prompt / Architecture Notes
-                </label>
-                <textarea
-                  rows={2}
-                  value={protoPrompt}
-                  onChange={(e) => setProtoPrompt(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono"
-                />
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'website' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Project Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={webProject}
-                  onChange={(e) => setWebProject(e.target.value)}
-                  placeholder="e.g., Sanjeevani Hospital Portal"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Client Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={webClient}
-                  onChange={(e) => setWebClient(e.target.value)}
-                  placeholder="e.g., Sanjeevani Multispeciality Hospital"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Live Domain URL
-                </label>
-                <input
-                  type="text"
-                  value={webLiveUrl}
-                  onChange={(e) => setWebLiveUrl(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Staging / Worker URL
-                </label>
-                <input
-                  type="text"
-                  value={webStagingUrl}
-                  onChange={(e) => setWebStagingUrl(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Hosting Platform
-                </label>
-                <select
-                  value={webPlatform}
-                  onChange={(e) => setWebPlatform(e.target.value as HostingPlatform)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                >
-                  <option value="Cloudflare Pages/Workers">Cloudflare Pages/Workers</option>
-                  <option value="Vercel">Vercel</option>
-                  <option value="Netlify">Netlify</option>
-                  <option value="Firebase">Firebase</option>
-                  <option value="Hostinger">Hostinger</option>
-                  <option value="Supabase">Supabase</option>
-                </select>
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Domain Renewal Date
-                </label>
-                <input
-                  type="date"
-                  value={webRenewalDate}
-                  onChange={(e) => setWebRenewalDate(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono"
-                />
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'vault' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Service / Platform *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={vltService}
-                  onChange={(e) => setVltService(e.target.value)}
-                  placeholder="e.g., Cloudflare DNS API Token"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Client / Owner Tag
-                </label>
-                <input
-                  type="text"
-                  value={vltOwner}
-                  onChange={(e) => setVltOwner(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA]"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-slate-600 mb-1">
-                  Username / Email
-                </label>
-                <input
-                  type="text"
-                  value={vltUsername}
-                  onChange={(e) => setVltUsername(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono"
-                />
-              </div>
-              <div>
-                <label className="block font-semibold text-[#2563EB] mb-1">
-                  Plain Password / API Key *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={vltSecret}
-                  onChange={(e) => setVltSecret(e.target.value)}
-                  placeholder="Encrypted via AES-GCM 256-bit"
-                  className="w-full px-3.5 py-2 rounded-xl border border-[#2563EB] bg-[#F8F9FA] font-mono"
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="pt-4 border-t border-[#EAECEF] flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-full border border-[#EAECEF] text-xs font-semibold text-slate-600 cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 rounded-full bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold transition-colors cursor-pointer"
-            >
-              Save &amp; Sync Record
-            </button>
           </div>
-        </form>
+        ) : (
+          <div className="p-5 sm:p-6">
+            {activeTab === 'lead' && (
+              <form onSubmit={handleLeadSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Business / Client Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={businessName}
+                      onChange={(e) => setBusinessName(e.target.value)}
+                      placeholder="e.g., Samruddhi Royal Lawns"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Decision Maker Name
+                    </label>
+                    <input
+                      type="text"
+                      value={contactPerson}
+                      onChange={(e) => setContactPerson(e.target.value)}
+                      placeholder="e.g., Suresh Patil"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      WhatsApp Phone
+                    </label>
+                    <input
+                      type="text"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+91 98230 00000"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm font-mono focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      City / Area (Maharashtra)
+                    </label>
+                    <input
+                      type="text"
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      placeholder="Pune (Wakad / Baner)"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Industry Niche
+                    </label>
+                    <select
+                      value={niche}
+                      onChange={(e) => setNiche(e.target.value as ClientLead['niche'])}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white focus:outline-none focus:border-[#2563EB]"
+                    >
+                      <option value="Banquet/Lawns">Banquet/Lawns</option>
+                      <option value="Clinic/Hospital">Clinic/Hospital</option>
+                      <option value="Cafe/Restaurant">Cafe/Restaurant</option>
+                      <option value="Retail/Electronics">Retail/Electronics</option>
+                      <option value="Real Estate/Interior">Real Estate/Interior</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Custom Scope / Deliverables
+                    </label>
+                    <input
+                      type="text"
+                      value={packageTier}
+                      onChange={(e) => setPackageTier(e.target.value)}
+                      placeholder="e.g., Custom Website + Booking Flow + Meta Ads"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Initial Quoted Price (₹)
+                    </label>
+                    <input
+                      type="number"
+                      value={quotedPrice}
+                      onChange={(e) => setQuotedPrice(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm font-mono focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Final Agreed Price (₹)
+                    </label>
+                    <input
+                      type="number"
+                      value={finalAgreedPrice}
+                      onChange={(e) => setFinalAgreedPrice(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm font-mono focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Sample Prototype URL
+                    </label>
+                    <input
+                      type="text"
+                      value={sampleLinkSent}
+                      onChange={(e) => setSampleLinkSent(e.target.value)}
+                      placeholder="https://demo-site.vercel.app"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Lead Owner
+                    </label>
+                    <select
+                      value={assignedTo}
+                      onChange={(e) => setAssignedTo(e.target.value as FounderName)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white focus:outline-none focus:border-[#2563EB]"
+                    >
+                      <option value="Vansh">Vansh Khakole</option>
+                      <option value="Krishna">Krishna Khakole</option>
+                      <option value="Both">Both Founders</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                    Pitch Notes
+                  </label>
+                  <input
+                    type="text"
+                    value={leadNotes}
+                    onChange={(e) => setLeadNotes(e.target.value)}
+                    placeholder="Specific client requirement or demo feedback..."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('palette')}
+                    className="px-4 py-2.5 rounded-full text-xs font-semibold text-[#64748B] hover:bg-[#F1F5F9]"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex items-center gap-1.5 px-6 py-2.5 rounded-full text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-sm cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" /> Save Lead to Pipeline
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {activeTab === 'payment' && (
+              <form onSubmit={handlePaymentSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Client Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      list="quick-action-client-list"
+                      value={payClientName}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setPayClientName(val);
+                        const match = dbState.clients.find(
+                          (c) => c.businessName.toLowerCase() === val.trim().toLowerCase()
+                        );
+                        if (match) {
+                          setPayTotalValue(match.finalAgreedPrice);
+                          if (!payProjectTitle) setPayProjectTitle(match.packageTier);
+                        }
+                      }}
+                      placeholder="Select or type client name..."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                    <datalist id="quick-action-client-list">
+                      {dbState.clients.map((c) => (
+                        <option key={c.id} value={c.businessName} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Project / Retainer Description
+                    </label>
+                    <input
+                      type="text"
+                      value={payProjectTitle}
+                      onChange={(e) => setPayProjectTitle(e.target.value)}
+                      placeholder="e.g., 50% Advance — Custom Web Build"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Amount Received Now (₹) *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      value={payAmountReceived}
+                      onChange={(e) => setPayAmountReceived(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm font-mono font-bold text-[#059669] focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Total Project Value (₹)
+                    </label>
+                    <input
+                      type="number"
+                      value={payTotalValue}
+                      onChange={(e) => setPayTotalValue(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm font-mono focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Received In Account
+                    </label>
+                    <select
+                      value={payAccount}
+                      onChange={(e) => setPayAccount(e.target.value as ExpensePaidBy)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white focus:outline-none focus:border-[#2563EB]"
+                    >
+                      <option value="Studio Account">Studio Primary Account</option>
+                      <option value="Vansh">Vansh Personal UPI/Bank</option>
+                      <option value="Krishna">Krishna Personal UPI/Bank</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Payment Milestone
+                    </label>
+                    <select
+                      value={payMilestone}
+                      onChange={(e) => setPayMilestone(e.target.value as ClientPayment['milestone'])}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white focus:outline-none focus:border-[#2563EB]"
+                    >
+                      <option value="Advance (50%)">Advance (50%)</option>
+                      <option value="Final Delivery (50%)">Final Delivery (50%)</option>
+                      <option value="Full Upfront">Full Upfront</option>
+                      <option value="Meta Ads Retainer">Meta Ads Retainer</option>
+                      <option value="Domain Renewal">Domain Renewal</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('palette')}
+                    className="px-4 py-2.5 rounded-full text-xs font-semibold text-[#64748B] hover:bg-[#F1F5F9]"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex items-center gap-1.5 px-6 py-2.5 rounded-full text-xs font-bold bg-[#059669] hover:bg-[#047857] text-white shadow-sm cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" /> Record Inflow & Sync CRM
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {activeTab === 'task' && (
+              <form onSubmit={handleTaskSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Task / Action Title *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={taskTitle}
+                      onChange={(e) => setTaskTitle(e.target.value)}
+                      placeholder="e.g., Call client to finalize domain & collect 50% advance"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Client Name
+                    </label>
+                    <input
+                      type="text"
+                      list="quick-action-client-list"
+                      value={taskClientName}
+                      onChange={(e) => setTaskClientName(e.target.value)}
+                      placeholder="Associated client..."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Task Type
+                    </label>
+                    <select
+                      value={taskType}
+                      onChange={(e) => setTaskType(e.target.value as StudioTask['type'])}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white focus:outline-none focus:border-[#2563EB]"
+                    >
+                      <option value="Follow-up">Follow-up</option>
+                      <option value="Call">Client Call / Demo</option>
+                      <option value="Payment Collection">Payment Collection</option>
+                      <option value="Delivery">Project Milestone Delivery</option>
+                      <option value="Proposal">Send Proposal / Invoice</option>
+                      <option value="Internal">Internal Ops</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Priority
+                    </label>
+                    <select
+                      value={taskPriority}
+                      onChange={(e) => setTaskPriority(e.target.value as StudioTask['priority'])}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white focus:outline-none focus:border-[#2563EB]"
+                    >
+                      <option value="Urgent">Urgent (Today)</option>
+                      <option value="High">High</option>
+                      <option value="Normal">Normal</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Assigned Founder
+                    </label>
+                    <select
+                      value={taskAssigned}
+                      onChange={(e) => setTaskAssigned(e.target.value as FounderName)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white focus:outline-none focus:border-[#2563EB]"
+                    >
+                      <option value="Krishna">Krishna Khakole</option>
+                      <option value="Vansh">Vansh Khakole</option>
+                      <option value="Both">Both Founders</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Deadline Date
+                    </label>
+                    <input
+                      type="date"
+                      value={taskDueDate}
+                      onChange={(e) => setTaskDueDate(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm font-mono focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Context Notes
+                    </label>
+                    <input
+                      type="text"
+                      value={taskNotes}
+                      onChange={(e) => setTaskNotes(e.target.value)}
+                      placeholder="Key talking points..."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('palette')}
+                    className="px-4 py-2.5 rounded-full text-xs font-semibold text-[#64748B] hover:bg-[#F1F5F9]"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex items-center gap-1.5 px-6 py-2.5 rounded-full text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-sm cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" /> Schedule Task
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {activeTab === 'expense' && (
+              <form onSubmit={handleExpenseSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Expense Description *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={expTitle}
+                      onChange={(e) => setExpTitle(e.target.value)}
+                      placeholder="e.g., Hostinger .in Domain Registration for Client"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Category
+                    </label>
+                    <select
+                      value={expCategory}
+                      onChange={(e) => setExpCategory(e.target.value as StudioExpense['category'])}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white focus:outline-none focus:border-[#2563EB]"
+                    >
+                      <option value="Domain & Hosting">Domain & Hosting</option>
+                      <option value="Software / SaaS">Software / SaaS</option>
+                      <option value="Marketing & Samples">Marketing & Samples</option>
+                      <option value="Operations / Travel">Operations / Travel</option>
+                      <option value="Equipment">Equipment</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Amount (₹) *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      value={expAmount}
+                      onChange={(e) => setExpAmount(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm font-mono font-bold focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Paid By (Tracks 50/50 Split Reimbursement)
+                    </label>
+                    <select
+                      value={expPaidBy}
+                      onChange={(e) => setExpPaidBy(e.target.value as ExpensePaidBy)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white focus:outline-none focus:border-[#2563EB]"
+                    >
+                      <option value="Vansh">Vansh (Out-of-Pocket)</option>
+                      <option value="Krishna">Krishna (Out-of-Pocket)</option>
+                      <option value="Studio Account">Studio Shared Account</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Related Client (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={expClient}
+                      onChange={(e) => setExpClient(e.target.value)}
+                      placeholder="Studio Core or Client Name"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                    Notes
+                  </label>
+                  <input
+                    type="text"
+                    value={expNotes}
+                    onChange={(e) => setExpNotes(e.target.value)}
+                    placeholder="UPI ref or bill details..."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('palette')}
+                    className="px-4 py-2.5 rounded-full text-xs font-semibold text-[#64748B] hover:bg-[#F1F5F9]"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex items-center gap-1.5 px-6 py-2.5 rounded-full text-xs font-bold bg-[#0B0F19] hover:bg-[#1E293B] text-white shadow-sm cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" /> Log Expense
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {activeTab === 'ticket' && (
+              <form onSubmit={handleTicketSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Ticket / Revision Title *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={tktTitle}
+                      onChange={(e) => setTktTitle(e.target.value)}
+                      placeholder="e.g., Update WhatsApp CTA phone number & hero gallery"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Client Name
+                    </label>
+                    <input
+                      type="text"
+                      list="quick-action-client-list"
+                      value={tktClientName}
+                      onChange={(e) => setTktClientName(e.target.value)}
+                      placeholder="e.g., Aura Skin Clinic"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Domain Name
+                    </label>
+                    <input
+                      type="text"
+                      value={tktDomain}
+                      onChange={(e) => setTktDomain(e.target.value)}
+                      placeholder="auraskinclinicpune.com"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm font-mono focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Category
+                    </label>
+                    <select
+                      value={tktCategory}
+                      onChange={(e) => setTktCategory(e.target.value as ClientTicket['category'])}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white focus:outline-none focus:border-[#2563EB]"
+                    >
+                      <option value="Copy/Image Update">Copy/Image Update</option>
+                      <option value="Bug Fix">Bug Fix</option>
+                      <option value="New Feature">New Feature</option>
+                      <option value="Meta Pixel/SEO">Meta Pixel/SEO</option>
+                      <option value="Domain/SSL">Domain/SSL</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Priority & Owner
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={tktPriority}
+                        onChange={(e) => setTktPriority(e.target.value as ClientTicket['priority'])}
+                        className="px-3 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white"
+                      >
+                        <option value="Urgent">Urgent</option>
+                        <option value="High">High</option>
+                        <option value="Normal">Normal</option>
+                      </select>
+                      <select
+                        value={tktAssigned}
+                        onChange={(e) => setTktAssigned(e.target.value as FounderName)}
+                        className="px-3 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white"
+                      >
+                        <option value="Vansh">Vansh</option>
+                        <option value="Krishna">Krishna</option>
+                        <option value="Both">Both</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                    Technical Details
+                  </label>
+                  <input
+                    type="text"
+                    value={tktDesc}
+                    onChange={(e) => setTktDesc(e.target.value)}
+                    placeholder="Exact steps or client WhatsApp voice note summary..."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                  />
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('palette')}
+                    className="px-4 py-2.5 rounded-full text-xs font-semibold text-[#64748B] hover:bg-[#F1F5F9]"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex items-center gap-1.5 px-6 py-2.5 rounded-full text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-sm cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" /> Create Delivery Ticket
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {activeTab === 'campaign' && (
+              <form onSubmit={handleCampaignSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Client Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      list="quick-action-client-list"
+                      value={metaClient}
+                      onChange={(e) => setMetaClient(e.target.value)}
+                      placeholder="e.g., The Imperial Pavilion"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Campaign Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={metaName}
+                      onChange={(e) => setMetaName(e.target.value)}
+                      placeholder="Monsoon Wedding Bookings — Pune 15km"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Campaign Objective
+                    </label>
+                    <select
+                      value={metaObjective}
+                      onChange={(e) => setMetaObjective(e.target.value as MetaAdCampaign['objective'])}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white focus:outline-none focus:border-[#2563EB]"
+                    >
+                      <option value="WhatsApp Messages">WhatsApp Messages</option>
+                      <option value="Lead Generation Form">Lead Generation Form</option>
+                      <option value="Website Traffic">Website Traffic</option>
+                      <option value="Instagram Reach">Instagram Reach</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                        Client Ad Budget (₹)
+                      </label>
+                      <input
+                        type="number"
+                        value={metaBudget}
+                        onChange={(e) => setMetaBudget(Number(e.target.value))}
+                        className="w-full px-3 py-2.5 rounded-xl border border-[#EAECEF] text-sm font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                        Aethel Retainer (₹)
+                      </label>
+                      <input
+                        type="number"
+                        value={metaFee}
+                        onChange={(e) => setMetaFee(Number(e.target.value))}
+                        className="w-full px-3 py-2.5 rounded-xl border border-[#EAECEF] text-sm font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('palette')}
+                    className="px-4 py-2.5 rounded-full text-xs font-semibold text-[#64748B] hover:bg-[#F1F5F9]"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex items-center gap-1.5 px-6 py-2.5 rounded-full text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-sm cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" /> Launch Campaign Tracker
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {activeTab === 'domain' && (
+              <form onSubmit={handleDomainSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Domain Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={domName}
+                      onChange={(e) => setDomName(e.target.value)}
+                      placeholder="royalorchidlawns.in"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm font-mono focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Client Name
+                    </label>
+                    <input
+                      type="text"
+                      list="quick-action-client-list"
+                      value={domClient}
+                      onChange={(e) => setDomClient(e.target.value)}
+                      placeholder="Royal Orchid Wedding Lawns"
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm focus:outline-none focus:border-[#2563EB]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                      Registrar
+                    </label>
+                    <select
+                      value={domRegistrar}
+                      onChange={(e) => setDomRegistrar(e.target.value as HostedWebsite['registrar'])}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white"
+                    >
+                      <option value="Hostinger">Hostinger</option>
+                      <option value="GoDaddy">GoDaddy</option>
+                      <option value="Namecheap">Namecheap</option>
+                      <option value="Cloudflare">Cloudflare</option>
+                      <option value="Client Owned">Client Owned</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                        Hosting
+                      </label>
+                      <select
+                        value={domPlatform}
+                        onChange={(e) => setDomPlatform(e.target.value as HostedWebsite['hostingPlatform'])}
+                        className="w-full px-3 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white"
+                      >
+                        <option value="Vercel">Vercel</option>
+                        <option value="Hostinger VPS">Hostinger VPS</option>
+                        <option value="Netlify">Netlify</option>
+                        <option value="Cloudflare Pages">Cloudflare</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                        Renewal (₹/yr)
+                      </label>
+                      <input
+                        type="number"
+                        value={domCost}
+                        onChange={(e) => setDomCost(Number(e.target.value))}
+                        className="w-full px-3 py-2.5 rounded-xl border border-[#EAECEF] text-sm font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('palette')}
+                    className="px-4 py-2.5 rounded-full text-xs font-semibold text-[#64748B] hover:bg-[#F1F5F9]"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex items-center gap-1.5 px-6 py-2.5 rounded-full text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-sm cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" /> Add Domain to Vault
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

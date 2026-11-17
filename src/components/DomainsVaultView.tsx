@@ -1,364 +1,338 @@
 import React, { useState } from 'react';
 import {
+  Globe,
   Plus,
   ExternalLink,
+  ShieldCheck,
+  AlertTriangle,
+  Server,
   GitBranch,
-  Trash2,
-  Globe,
-  Search,
-  Edit3,
+  Calendar,
+  ArrowUpRight,
 } from 'lucide-react';
-import type { TechAsset, HealthStatus } from '../types';
-import { formatINR, calculateDaysRemaining } from '../utils/calculations';
+import { HostedWebsite } from '../types';
+import { calculateDaysUntilExpiry, formatINR } from '../utils/calculations';
 
 interface DomainsVaultViewProps {
-  websites: TechAsset[];
-  onUpdateWebsite: (w: TechAsset) => void;
-  onDeleteWebsite: (id: string) => void;
-  onOpenAddWebsite: () => void;
+  websites: HostedWebsite[];
+  onUpdateWebsite: (updated: HostedWebsite) => void;
+  onAddWebsite: (newSite: HostedWebsite) => void;
+  onOpenClient360?: (clientId: string) => void;
 }
-
-const HEALTH_STATUSES: HealthStatus[] = [
-  'Live & Healthy',
-  'Maintenance',
-  'Issue Reported',
-];
 
 export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
   websites,
   onUpdateWebsite,
-  onDeleteWebsite,
-  onOpenAddWebsite,
+  onAddWebsite,
+  onOpenClient360,
 }) => {
-  const [search, setSearch] = useState('');
-  const [editingWebsiteId, setEditingWebsiteId] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [clientName, setClientName] = useState('');
+  const [domainName, setDomainName] = useState('');
+  const [registrar, setRegistrar] = useState<HostedWebsite['registrar']>('Hostinger');
+  const [hostingPlatform, setHostingPlatform] =
+    useState<HostedWebsite['hostingPlatform']>('Vercel');
+  const [expiryDate, setExpiryDate] = useState(
+    new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10)
+  );
+  const [renewalCostINR, setRenewalCostINR] = useState(1499);
+  const [githubRepo, setGithubRepo] = useState('');
 
-  const filtered = websites.filter((w) => {
-    const q = search.toLowerCase();
-    return (
-      !q ||
-      w.projectName.toLowerCase().includes(q) ||
-      w.clientName.toLowerCase().includes(q) ||
-      w.liveDomainUrl.toLowerCase().includes(q) ||
-      w.hostingPlatform.toLowerCase().includes(q)
-    );
-  });
+  const handleCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!domainName.trim()) return;
+    const cleanDomain = domainName.trim().replace(/^https?:\/\//, '');
+    onAddWebsite({
+      id: `web-${Date.now()}`,
+      clientName: clientName.trim() || 'Aethel Client',
+      domainName: cleanDomain,
+      liveUrl: `https://${cleanDomain}`,
+      registrar,
+      hostingPlatform,
+      purchaseDate: new Date().toISOString().slice(0, 10),
+      expiryDate,
+      renewalCostINR: Number(renewalCostINR),
+      sslStatus: 'Active',
+      siteStatus: 'Online',
+      githubRepo: githubRepo.trim() || `aethel-studios/${cleanDomain.split('.')[0]}`,
+      notes: 'Configured with edge caching & SSL.',
+    });
+    setClientName('');
+    setDomainName('');
+    setGithubRepo('');
+    setShowAdd(false);
+  };
 
-  const totalAnnualRenewal = websites.reduce(
-    (sum, w) => sum + w.annualRenewalCost,
-    0
+  // Sort websites by upcoming renewal date for the Renewal Calendar Strip
+  const sortedByRenewal = [...websites].sort(
+    (a, b) => calculateDaysUntilExpiry(a.expiryDate) - calculateDaysUntilExpiry(b.expiryDate)
   );
 
   return (
-    <div className="space-y-5 sm:space-y-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 lg:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <span className="text-xs font-bold tracking-wider uppercase text-[#2563EB] block">
-              04 / TECH ASSETS, DOMAINS &amp; HOSTING VAULT
-            </span>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
-              Production Websites, Edge Workers &amp; Domain Registry
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-600 mt-1">
-              Tracking {websites.length} deployed properties · Total Annual Renewal Commitment:{' '}
-              <span className="font-mono font-bold text-[#0B0F19]">
-                {formatINR(totalAnnualRenewal)}/yr
-              </span>
-            </p>
+      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] mb-1">
+            GROWTH & INFRASTRUCTURE · DOMAINS, SSL & HOSTING
           </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
+            Live Websites & Renewal Calendar
+          </h1>
+          <p className="text-xs sm:text-sm text-[#64748B] mt-0.5">
+            Track registrar renewals, SSL health, Vercel/Hostinger deployments, and client ownership.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowAdd(!showAdd)}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-[#1E293B] text-white text-xs font-bold shadow-xs cursor-pointer"
+        >
+          <Plus className="w-4 h-4 text-[#60A5FA]" />
+          Register Domain
+        </button>
+      </div>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3">
-            <div className="relative flex-1 sm:flex-initial">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search domain, client, or stack..."
-                aria-label="Search deployed websites"
-                className="w-full sm:w-64 pl-10 pr-4 py-2 rounded-full bg-[#F8F9FA] border border-[#EAECEF] text-xs text-[#0B0F19] focus:outline-none focus:border-[#2563EB]"
-              />
-            </div>
-
-            <button
-              type="button"
-              onClick={onOpenAddWebsite}
-              className="px-4 py-2.5 rounded-full bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Register Deployed Site</span>
-            </button>
+      {/* PART 5: DOMAIN RENEWAL TIMELINE & CALENDAR STRIP */}
+      <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs font-extrabold text-[#0B0F19]">
+            <Calendar className="w-4 h-4 text-[#2563EB]" /> Upcoming Domain Renewal Schedule
           </div>
+          <span className="text-[11px] font-mono text-[#64748B]">
+            Annual Renewal Liability:{' '}
+            <strong className="text-[#0B0F19]">
+              {formatINR(websites.reduce((s, w) => s + w.renewalCostINR, 0))}/yr
+            </strong>
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+          {sortedByRenewal.map((site) => {
+            const daysLeft = calculateDaysUntilExpiry(site.expiryDate);
+            const isSoon = daysLeft <= 45;
+            return (
+              <div
+                key={site.id}
+                className={`p-3 rounded-2xl border text-xs ${
+                  isSoon
+                    ? 'bg-amber-50/70 border-amber-200'
+                    : 'bg-[#F8F9FA] border-[#EAECEF]'
+                }`}
+              >
+                <div className="flex items-center justify-between font-mono text-[10px]">
+                  <span className={isSoon ? 'text-amber-800 font-bold' : 'text-[#64748B]'}>
+                    {daysLeft}d remaining
+                  </span>
+                  <span className="font-bold text-[#0B0F19]">
+                    {formatINR(site.renewalCostINR)}
+                  </span>
+                </div>
+                <div className="font-mono font-bold text-[#0B0F19] truncate mt-1">
+                  {site.domainName}
+                </div>
+                <div className="text-[11px] text-[#64748B] truncate">{site.clientName}</div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      {/* Cards Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        {filtered.map((site) => {
-          const daysLeft = calculateDaysRemaining(site.renewalDate);
-          const isExpiringUnder30 = daysLeft <= 30;
-          const isEditing = editingWebsiteId === site.id;
-
-          return (
-            <div
-              key={site.id}
-              className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between space-y-5"
-            >
-              <div className="space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <span className="text-xs font-bold text-[#2563EB]">
-                      {site.clientName}
-                    </span>
-                    <h2 className="text-lg font-bold text-[#0B0F19] mt-0.5">
-                      {site.projectName}
-                    </h2>
-                    <div className="text-xs text-slate-500 mt-0.5">
-                      <span>{site.hostingPlatform}</span>
-                      <span aria-hidden="true"> · </span>
-                      <span>{site.domainRegistrar}</span>
-                      <span aria-hidden="true"> · </span>
-                      <span>{site.domainOwner}</span>
-                    </div>
-                  </div>
-
-                  <select
-                    aria-label={`Health status for ${site.projectName}`}
-                    value={site.healthStatus}
-                    onChange={(e) =>
-                      onUpdateWebsite({
-                        ...site,
-                        healthStatus: e.target.value as HealthStatus,
-                      })
-                    }
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border ${
-                      site.healthStatus === 'Live & Healthy'
-                        ? 'bg-[#D1FAE5]/60 border-[#059669]/30 text-[#0D281D]'
-                        : site.healthStatus === 'Issue Reported'
-                        ? 'bg-rose-50 border-rose-200 text-rose-800'
-                        : 'bg-amber-50 border-amber-200 text-amber-800'
-                    }`}
-                  >
-                    {HEALTH_STATUSES.map((st) => (
-                      <option key={st} value={st}>
-                        {st}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Live Domain & Staging Worker Links */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-[#F8F9FA] p-4 rounded-2xl border border-[#EAECEF] text-xs">
-                  <div>
-                    <span className="text-slate-400 text-[11px] font-semibold uppercase block">
-                      Live Production Domain
-                    </span>
-                    <a
-                      href={site.liveDomainUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono font-bold text-[#0B0F19] hover:text-[#2563EB] flex items-center gap-1 mt-0.5 truncate"
-                    >
-                      <Globe className="w-3.5 h-3.5 shrink-0 text-[#2563EB]" />
-                      <span className="truncate">
-                        {site.liveDomainUrl.replace(/^https?:\/\//, '')}
-                      </span>
-                      <ExternalLink className="w-3 h-3 shrink-0" />
-                    </a>
-                  </div>
-
-                  <div>
-                    <span className="text-slate-400 text-[11px] font-semibold uppercase block">
-                      Staging / Worker Endpoint
-                    </span>
-                    <a
-                      href={site.stagingUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-slate-700 hover:text-[#2563EB] flex items-center gap-1 mt-0.5 truncate"
-                    >
-                      <span className="truncate">
-                        {site.stagingUrl.replace(/^https?:\/\//, '')}
-                      </span>
-                      <ExternalLink className="w-3 h-3 shrink-0" />
-                    </a>
-                  </div>
-                </div>
-
-                {/* Inline Field Editor */}
-                {isEditing && (
-                  <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#2563EB]/40 grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Project Name
-                      </label>
-                      <input
-                        type="text"
-                        value={site.projectName}
-                        onChange={(e) =>
-                          onUpdateWebsite({
-                            ...site,
-                            projectName: e.target.value,
-                          })
-                        }
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white text-xs font-semibold"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Client Name
-                      </label>
-                      <input
-                        type="text"
-                        value={site.clientName}
-                        onChange={(e) =>
-                          onUpdateWebsite({
-                            ...site,
-                            clientName: e.target.value,
-                          })
-                        }
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white text-xs font-semibold"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Live Domain URL
-                      </label>
-                      <input
-                        type="text"
-                        value={site.liveDomainUrl}
-                        onChange={(e) =>
-                          onUpdateWebsite({
-                            ...site,
-                            liveDomainUrl: e.target.value,
-                          })
-                        }
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white font-mono text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Renewal Date
-                      </label>
-                      <input
-                        type="date"
-                        value={site.renewalDate}
-                        onChange={(e) =>
-                          onUpdateWebsite({
-                            ...site,
-                            renewalDate: e.target.value,
-                          })
-                        }
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white font-mono text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Annual Renewal Cost (₹)
-                      </label>
-                      <input
-                        type="number"
-                        value={site.annualRenewalCost}
-                        onChange={(e) =>
-                          onUpdateWebsite({
-                            ...site,
-                            annualRenewalCost: Number(e.target.value) || 0,
-                          })
-                        }
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white font-mono text-xs"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Tech Stack
-                      </label>
-                      <input
-                        type="text"
-                        value={site.techStack}
-                        onChange={(e) =>
-                          onUpdateWebsite({
-                            ...site,
-                            techStack: e.target.value,
-                          })
-                        }
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white text-xs"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Metadata Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-                  <div>
-                    <span className="text-slate-500 block">Deploying Account</span>
-                    <span className="font-mono text-[11px] font-semibold text-[#0B0F19] break-all">
-                      {site.deployingEmail}
-                    </span>
-                  </div>
-
-                  <div>
-                    <span className="text-slate-500 block">Renewal Countdown</span>
-                    <span
-                      className={`font-mono font-bold ${
-                        isExpiringUnder30 ? 'text-rose-600' : 'text-[#0B0F19]'
-                      }`}
-                    >
-                      {site.renewalDate} ({daysLeft}d left)
-                    </span>
-                  </div>
-
-                  <div>
-                    <span className="text-slate-500 block">Annual Cost</span>
-                    <span className="font-mono font-bold text-[#0B0F19]">
-                      {formatINR(site.annualRenewalCost)}/yr
-                    </span>
-                  </div>
-                </div>
-
-                <div className="text-xs text-slate-600 pt-2 border-t border-[#EAECEF] flex flex-wrap items-center justify-between gap-2">
-                  <span>
-                    Stack: <strong className="text-[#0B0F19]">{site.techStack}</strong>
-                  </span>
-                  <a
-                    href={site.githubRepoUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-xs text-[#2563EB] hover:underline flex items-center gap-1"
-                  >
-                    <GitBranch className="w-3.5 h-3.5" />
-                    <span>GitHub Repo</span>
-                  </a>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-[#EAECEF] flex items-center justify-between text-xs text-slate-500">
-                <span>Assigned Engineer: {site.assignedLead}</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setEditingWebsiteId(isEditing ? null : site.id)
-                    }
-                    className="px-2.5 py-1 rounded-full border border-[#EAECEF] hover:border-[#2563EB] text-xs font-semibold text-[#2563EB] flex items-center gap-1 cursor-pointer"
-                  >
-                    <Edit3 className="w-3 h-3" />
-                    <span>{isEditing ? 'Done' : 'Edit Asset'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDeleteWebsite(site.id)}
-                    aria-label={`Remove ${site.projectName}`}
-                    className="text-slate-400 hover:text-rose-600 p-1 transition-colors cursor-pointer"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
+      {showAdd && (
+        <form
+          onSubmit={handleCreate}
+          className="bg-white rounded-3xl p-6 border-2 border-[#2563EB]/20 shadow-lg space-y-4"
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Domain Name *
+              </label>
+              <input
+                type="text"
+                required
+                value={domainName}
+                onChange={(e) => setDomainName(e.target.value)}
+                placeholder="imperialpavilion.in"
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
+              />
             </div>
-          );
-        })}
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Client Business Name
+              </label>
+              <input
+                type="text"
+                value={clientName}
+                onChange={(e) => setClientName(e.target.value)}
+                placeholder="The Imperial Pavilion"
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Registrar
+              </label>
+              <select
+                value={registrar}
+                onChange={(e) =>
+                  setRegistrar(e.target.value as HostedWebsite['registrar'])
+                }
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm bg-white"
+              >
+                <option value="Hostinger">Hostinger</option>
+                <option value="GoDaddy">GoDaddy</option>
+                <option value="Namecheap">Namecheap</option>
+                <option value="Cloudflare">Cloudflare</option>
+                <option value="Client Owned">Client Owned</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Hosting Platform
+              </label>
+              <select
+                value={hostingPlatform}
+                onChange={(e) =>
+                  setHostingPlatform(e.target.value as HostedWebsite['hostingPlatform'])
+                }
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm bg-white"
+              >
+                <option value="Vercel">Vercel</option>
+                <option value="Hostinger VPS">Hostinger VPS</option>
+                <option value="Netlify">Netlify</option>
+                <option value="Cloudflare Pages">Cloudflare Pages</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Expiry Date
+              </label>
+              <input
+                type="date"
+                value={expiryDate}
+                onChange={(e) => setExpiryDate(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Annual Renewal (₹)
+              </label>
+              <input
+                type="number"
+                value={renewalCostINR}
+                onChange={(e) => setRenewalCostINR(Number(e.target.value))}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              className="px-6 py-2.5 rounded-full bg-[#2563EB] text-white text-xs font-bold cursor-pointer"
+            >
+              Add Domain Record
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Domains Table */}
+      <div className="bg-white rounded-3xl border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-[#F8F9FA] border-b border-[#EAECEF] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                <th className="py-4 px-6">Domain & Live URL</th>
+                <th className="py-4 px-4">Client</th>
+                <th className="py-4 px-4">Registrar & Edge Host</th>
+                <th className="py-4 px-4">SSL & Status</th>
+                <th className="py-4 px-4">Expiry Countdown</th>
+                <th className="py-4 px-6 text-right">Renewal Cost</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#EAECEF] text-xs">
+              {websites.map((site) => {
+                const daysLeft = calculateDaysUntilExpiry(site.expiryDate);
+                const isExpiring = daysLeft <= 45;
+
+                return (
+                  <tr key={site.id} className="hover:bg-[#F8F9FA]/60 transition-colors">
+                    <td className="py-4 px-6">
+                      <div className="flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-[#2563EB] shrink-0" />
+                        <div>
+                          <a
+                            href={site.liveUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-mono font-bold text-[#0B0F19] hover:text-[#2563EB] flex items-center gap-1"
+                          >
+                            {site.domainName}
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                          <div className="text-[11px] text-[#64748B] flex items-center gap-1 mt-0.5 font-mono">
+                            <GitBranch className="w-3 h-3" />
+                            {site.githubRepo}
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="py-4 px-4 font-bold text-[#0B0F19]">
+                      {site.clientId && onOpenClient360 ? (
+                        <button
+                          onClick={() => onOpenClient360(site.clientId!)}
+                          className="text-[#2563EB] hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          {site.clientName} <ArrowUpRight className="w-3 h-3" />
+                        </button>
+                      ) : (
+                        site.clientName
+                      )}
+                    </td>
+                    <td className="py-4 px-4">
+                      <div className="font-semibold text-[#0B0F19]">{site.registrar}</div>
+                      <div className="text-[11px] text-[#64748B] flex items-center gap-1">
+                        <Server className="w-3 h-3" /> {site.hostingPlatform}
+                      </div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`inline-flex items-center gap-1 font-bold text-[11px] ${
+                            site.siteStatus === 'Online'
+                              ? 'text-[#059669]'
+                              : 'text-amber-700'
+                          }`}
+                        >
+                          ● {site.siteStatus}
+                        </span>
+                        <span className="text-[#CBD5E1]">·</span>
+                        <span className="inline-flex items-center gap-1 text-[11px] text-[#475569]">
+                          <ShieldCheck className="w-3.5 h-3.5 text-[#059669]" />
+                          SSL {site.sslStatus}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-4">
+                      <div
+                        className={`inline-flex items-center gap-1.5 font-mono font-bold text-xs ${
+                          isExpiring ? 'text-amber-700' : 'text-[#0B0F19]'
+                        }`}
+                      >
+                        {isExpiring && <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />}
+                        {daysLeft} days ({site.expiryDate})
+                      </div>
+                    </td>
+                    <td className="py-4 px-6 text-right font-mono font-bold text-[#0B0F19]">
+                      {formatINR(site.renewalCostINR)}/yr
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

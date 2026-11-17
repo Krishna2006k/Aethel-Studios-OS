@@ -1,630 +1,762 @@
 import React from 'react';
 import {
   ArrowUpRight,
-  MessageCircle,
-  AlertTriangle,
-  Sparkles,
+  AlertCircle,
   CheckCircle2,
-  ExternalLink,
-  Calendar,
+  Clock,
+  Globe,
+  Megaphone,
   TrendingUp,
+  Users,
+  Wallet,
+  Wrench,
+  MessageSquare,
+  Plus,
+  Sparkles,
+  CheckSquare,
+  Activity,
+  Layers,
+  ChevronRight,
 } from 'lucide-react';
-import type {
+import {
   AethelDatabaseState,
-  FounderFilter,
+  FounderName,
   ModuleId,
-  ClientLead,
-  DeliveryTicket,
+  ProjectMilestoneStage,
 } from '../types';
 import {
-  formatINR,
-  calculateStudioFinances,
-  calculateDaysRemaining,
+  calculateClientProjectProgress,
+  calculateDaysUntilExpiry,
   calculatePendingBalance,
-  buildWhatsAppUrl,
+  calculateStudioFinances,
+  formatINR,
 } from '../utils/calculations';
 
 interface CommandCenterViewProps {
-  db: AethelDatabaseState;
-  founderFilter: FounderFilter;
-  onChangeFounderFilter: (f: FounderFilter) => void;
-  onNavigateModule: (m: ModuleId) => void;
-  onSelectClientForDrawer: (client: ClientLead) => void;
-  onResolveTicketQuick: (ticketId: string) => void;
-  onOpenQuickActionWithTab: (tab: 'client' | 'expense' | 'ticket' | 'campaign' | 'prototype' | 'vault') => void;
+  dbState: AethelDatabaseState;
+  onNavigate: (module: ModuleId) => void;
+  onOpenQuickAction: () => void;
+  activeFounderFilter: 'All' | FounderName;
+  onChangeFounderFilter: (f: 'All' | FounderName) => void;
+  onOpenClient360: (clientId: string) => void;
+  onToggleMilestone: (clientId: string, stage: ProjectMilestoneStage) => void;
+  onToggleTaskStatus: (taskId: string) => void;
 }
 
 export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
-  db,
-  founderFilter,
+  dbState,
+  onNavigate,
+  onOpenQuickAction,
+  activeFounderFilter,
   onChangeFounderFilter,
-  onNavigateModule,
-  onSelectClientForDrawer,
-  onResolveTicketQuick,
-  onOpenQuickActionWithTab,
+  onOpenClient360,
+  onToggleMilestone,
+  onToggleTaskStatus,
 }) => {
-  const matchesFounder = (assigned: string) => {
-    if (founderFilter === 'All Studio') return true;
-    return assigned === founderFilter || assigned === 'Both';
+  const matchesFounder = (owner: FounderName) => {
+    if (activeFounderFilter === 'All') return true;
+    return owner === activeFounderFilter || owner === 'Both';
   };
 
-  const finance = calculateStudioFinances(db.expenses, db.payments, db.clients);
+  // Canonical Financial Engine — 100% identical to CRM & Finance Ledger
+  const finances = calculateStudioFinances(
+    dbState.expenses,
+    dbState.payments,
+    dbState.clients,
+    dbState.metaCampaigns,
+    dbState.tickets,
+    dbState.tasks || []
+  );
 
-  const filteredClients = db.clients.filter((c) => matchesFounder(c.assignedLead));
-  const followUpsDue = filteredClients.filter((c) => {
-    if (c.stage === 'Rejected / Dropped') return false;
-    const days = calculateDaysRemaining(c.nextFollowUpDate);
-    return days <= 1; // Due today, tomorrow, or overdue
+  const filteredClients = dbState.clients.filter((c) => matchesFounder(c.assignedTo));
+  const filteredTickets = dbState.tickets.filter((t) => matchesFounder(t.assignedTo));
+  const filteredTasks = (dbState.tasks || []).filter((t) => matchesFounder(t.assignedTo));
+
+  const activeClients = filteredClients.filter(
+    (c) =>
+      c.stage === 'In Building' ||
+      c.stage === 'Live / Payment Pending' ||
+      c.stage === 'Delivered / Live'
+  );
+
+  const activeBuildProjects = filteredClients.filter(
+    (c) => c.stage === 'In Building' || c.stage === 'Live / Payment Pending'
+  );
+
+  const openTickets = filteredTickets.filter((t) => t.status !== 'Resolved');
+  const pendingTasks = filteredTasks.filter((t) => t.status !== 'Completed');
+
+  const expiringDomains = dbState.websites.filter(
+    (w) => calculateDaysUntilExpiry(w.expiryDate) <= 45
+  );
+
+  // Build unified "Today's Priorities" table rows
+  interface PriorityRow {
+    id: string;
+    priority: 'Urgent' | 'High' | 'Normal';
+    taskTitle: string;
+    categoryBadge: string;
+    clientName: string;
+    clientId?: string;
+    assignedTo: FounderName;
+    deadline: string;
+    phone?: string;
+    taskId?: string;
+    actionLabel: string;
+    onAction: () => void;
+  }
+
+  const priorityRows: PriorityRow[] = [];
+
+  // 1. Live / Payment Pending clients (Highest financial priority, if not already in pendingTasks)
+  filteredClients
+    .filter(
+      (c) =>
+        c.stage === 'Live / Payment Pending' &&
+        calculatePendingBalance(c.finalAgreedPrice, c.advancePaid) > 0 &&
+        !pendingTasks.some(
+          (t) =>
+            (t.clientId === c.id ||
+              t.clientName.toLowerCase() === c.businessName.toLowerCase()) &&
+            t.type === 'Payment Collection'
+        )
+    )
+    .forEach((c) => {
+      const due = calculatePendingBalance(c.finalAgreedPrice, c.advancePaid);
+      priorityRows.push({
+        id: `prio-pay-${c.id}`,
+        priority: 'Urgent',
+        taskTitle: `Collect pending balance (${formatINR(due)}) — site is live`,
+        categoryBadge: 'Receivable',
+        clientName: c.businessName,
+        clientId: c.id,
+        assignedTo: c.assignedTo,
+        deadline: c.followUpDate || 'Today',
+        phone: c.phone,
+        actionLabel: 'Collect / 360°',
+        onAction: () => onOpenClient360(c.id),
+      });
+    });
+
+  // 2. Pending Studio Tasks
+  pendingTasks.forEach((tsk) => {
+    const matchedClient = dbState.clients.find(
+      (c) =>
+        c.id === tsk.clientId ||
+        c.businessName.toLowerCase() === tsk.clientName.toLowerCase()
+    );
+    priorityRows.push({
+      id: `prio-tsk-${tsk.id}`,
+      priority: tsk.priority,
+      taskTitle: tsk.title,
+      categoryBadge: tsk.type,
+      clientName: tsk.clientName,
+      clientId: matchedClient?.id,
+      assignedTo: tsk.assignedTo,
+      deadline: tsk.dueDate || 'Today',
+      phone: matchedClient?.phone,
+      taskId: tsk.id,
+      actionLabel: matchedClient ? 'Client 360°' : 'Mark Done',
+      onAction: () => {
+        if (matchedClient) {
+          onOpenClient360(matchedClient.id);
+        } else {
+          onToggleTaskStatus(tsk.id);
+        }
+      },
+    });
   });
 
-  const activeCampaigns = db.metaCampaigns.filter(
-    (m) => m.status !== 'Completed' && m.status !== 'Paused' && matchesFounder(m.assignedLead)
-  );
-  const totalMetaBudgetUnderMgmt = activeCampaigns.reduce((s, c) => s + c.totalAdBudget, 0);
-  const totalMetaSpendSoFar = activeCampaigns.reduce((s, c) => s + c.adSpendUsed, 0);
-  const campaignsEndingSoon = activeCampaigns.filter(
-    (c) => calculateDaysRemaining(c.endDate) <= 3
-  );
-
-  const openHighTickets = db.tickets.filter(
-    (t) =>
-      t.state !== 'Deployed & Resolved' &&
-      (t.priority === 'Critical - Site Down' || t.priority === 'High') &&
-      matchesFounder(t.assignedTo)
-  );
-
-  const expiringDomains = db.websites.filter((w) => {
-    const days = calculateDaysRemaining(w.renewalDate);
-    return days <= 30 && matchesFounder(w.assignedLead);
+  // 3. Open Urgent/High Revision Tickets
+  openTickets.forEach((tkt) => {
+    const matchedClient = dbState.clients.find(
+      (c) =>
+        c.id === tkt.clientId ||
+        c.businessName.toLowerCase() === tkt.clientName.toLowerCase()
+    );
+    priorityRows.push({
+      id: `prio-tkt-${tkt.id}`,
+      priority: tkt.priority === 'Urgent' ? 'Urgent' : 'High',
+      taskTitle: `${tkt.title} (${tkt.domainName})`,
+      categoryBadge: tkt.category,
+      clientName: tkt.clientName,
+      clientId: matchedClient?.id,
+      assignedTo: tkt.assignedTo,
+      deadline: tkt.dueDate,
+      actionLabel: matchedClient ? 'Client 360°' : 'Open Ticket',
+      onAction: () => {
+        if (matchedClient) {
+          onOpenClient360(matchedClient.id);
+        } else {
+          onNavigate('tickets');
+        }
+      },
+    });
   });
 
-  const criticalAlertsCount = openHighTickets.length + expiringDomains.length;
-
-  const activePrototypes = db.prototypes.filter(
-    (p) =>
-      (p.stage === 'Working On / In Development' || p.stage === 'Interactive Prototype') &&
-      matchesFounder(p.leadBuilder)
-  );
-
-  const openTicketsQueue: DeliveryTicket[] = db.tickets.filter(
-    (t) => t.state !== 'Deployed & Resolved' && matchesFounder(t.assignedTo)
-  );
-
-  const todayFormatted = new Intl.DateTimeFormat('en-IN', {
-    weekday: 'short',
+  const formattedToday = new Intl.DateTimeFormat('en-IN', {
+    weekday: 'long',
     day: 'numeric',
-    month: 'short',
+    month: 'long',
     year: 'numeric',
   }).format(new Date());
 
+  const activityLogs = (dbState.activityLogs || []).slice(0, 8);
+
   return (
-    <div className="space-y-6 sm:space-y-8">
-      {/* Hero Editorial Banner */}
-      <section className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 lg:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 sm:gap-6">
-          <div className="space-y-2 max-w-3xl">
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs font-bold tracking-wider text-[#2563EB]">
-              <span>01 / COMMAND CENTER</span>
-              <span className="text-slate-300" aria-hidden="true">/</span>
-              <span className="font-mono text-slate-500 font-normal">{todayFormatted}</span>
-              <span className="text-slate-300" aria-hidden="true">/</span>
-              <span className="text-[#0D281D] font-medium">Pune • Risod • Washim</span>
-            </div>
-            <h1 className="text-xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-[#0B0F19] text-balance">
-              Good day, Vansh &amp; Krishna. Here is your live studio pulse.
-            </h1>
-            <p className="text-xs sm:text-base text-slate-600 leading-relaxed">
-              Active Sprint Focus: Closing <strong className="text-[#0B0F19] font-semibold">Sanjeevani Hospital Clinic OS</strong>, scaling <strong className="text-[#0B0F19] font-semibold">Imperial Pavilion Wedding Ads</strong>, and shipping <strong className="text-[#0B0F19] font-semibold">Aurelia Sanctuary</strong> suite booking flow.
-            </p>
+    <div className="space-y-6">
+      {/* SECTION A — WELCOME HEADER & FOUNDER LENS */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[#2563EB] mb-1">
+            <span>WORKSPACE OVERVIEW</span>
+            <span className="text-[#CBD5E1]">·</span>
+            <span className="font-mono text-[#64748B]">{formattedToday}</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
+            Good day, {activeFounderFilter === 'All' ? 'Krishna & Vansh' : activeFounderFilter}
+          </h1>
+          <p className="text-sm text-[#64748B] mt-1">
+            Here is what needs your attention across Aethel Studios today. Click any client or priority to open their unified 360° dossier.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Founder Filter Pill */}
+          <div className="inline-flex items-center bg-[#F8F9FA] border border-[#EAECEF] rounded-xl p-1">
+            {(['All', 'Krishna', 'Vansh'] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => onChangeFounderFilter(f)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  activeFounderFilter === f
+                    ? 'bg-[#0B0F19] text-white shadow-2xs'
+                    : 'text-[#64748B] hover:text-[#0B0F19]'
+                }`}
+              >
+                {f === 'All' ? 'All Studio' : `${f}'s Queue`}
+              </button>
+            ))}
           </div>
 
-          {/* Founder Quick-Filter Segmented Control */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-            <div
-              role="group"
-              aria-label="Filter Command Center by Co-Founder"
-              className="grid grid-cols-3 sm:inline-flex items-center p-1 bg-[#F8F9FA] border border-[#EAECEF] rounded-full"
-            >
-              {(['All Studio', 'Krishna', 'Vansh'] as FounderFilter[]).map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  onClick={() => onChangeFounderFilter(f)}
-                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap text-center cursor-pointer ${
-                    founderFilter === f
-                      ? 'bg-[#0B0F19] text-white shadow-xs'
-                      : 'text-slate-600 hover:text-[#0B0F19]'
-                  }`}
-                >
-                  {f}
-                </button>
-              ))}
+          <button
+            onClick={onOpenQuickAction}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Action</span>
+            <kbd className="hidden sm:inline-block ml-1 px-1.5 py-0.5 text-[10px] font-mono bg-white/20 rounded">
+              Ctrl+K
+            </kbd>
+          </button>
+        </div>
+      </div>
+
+      {/* SECTION B — 4 PRIMARY OPERATIONAL KPI CARDS (Part 2B) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Card 1: Active Clients */}
+        <div
+          onClick={() => onNavigate('pipeline')}
+          className="bg-white rounded-2xl p-5 border border-[#EAECEF] hover:border-[#2563EB] transition-all cursor-pointer group shadow-[0_8px_24px_-12px_rgba(11,15,25,0.05)]"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+              1. Active Clients
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center group-hover:bg-[#2563EB] group-hover:text-white transition-colors">
+              <Users className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="text-3xl font-extrabold font-mono text-[#0B0F19]">
+              {activeClients.length}
+            </div>
+            <span className="text-[11px] font-semibold text-[#059669]">
+              {filteredClients.length} total in CRM →
+            </span>
+          </div>
+          <div className="mt-2 pt-2 border-t border-[#F1F5F9] text-xs text-[#64748B] flex items-center justify-between">
+            <span>Contracted Volume</span>
+            <span className="font-mono font-bold text-[#0B0F19]">
+              {formatINR(finances.totalContractedVolume)}
+            </span>
+          </div>
+        </div>
+
+        {/* Card 2: Pending Receivables (Single Financial Source of Truth) */}
+        <div
+          onClick={() => onNavigate('finance')}
+          className="bg-white rounded-2xl p-5 border border-[#EAECEF] hover:border-[#2563EB] transition-all cursor-pointer group shadow-[0_8px_24px_-12px_rgba(11,15,25,0.05)]"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+              2. Pending Receivables
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:bg-amber-500 group-hover:text-white transition-colors">
+              <Wallet className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="text-3xl font-extrabold font-mono text-[#0B0F19]">
+              {formatINR(finances.pendingReceivables)}
+            </div>
+            <span className="text-[11px] font-semibold text-amber-700">
+              {finances.livePaymentPendingCount} live due →
+            </span>
+          </div>
+          <div className="mt-2 pt-2 border-t border-[#F1F5F9] text-xs text-[#64748B] flex items-center justify-between">
+            <span>Verified Collected</span>
+            <span className="font-mono font-bold text-[#059669]">
+              {formatINR(finances.totalRevenueCollected)}
+            </span>
+          </div>
+        </div>
+
+        {/* Card 3: Active Projects */}
+        <div
+          onClick={() => onNavigate('tickets')}
+          className="bg-white rounded-2xl p-5 border border-[#EAECEF] hover:border-[#2563EB] transition-all cursor-pointer group shadow-[0_8px_24px_-12px_rgba(11,15,25,0.05)]"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+              3. Active Projects
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-[#ECFDF5] text-[#059669] flex items-center justify-center group-hover:bg-[#059669] group-hover:text-white transition-colors">
+              <Layers className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="text-3xl font-extrabold font-mono text-[#0B0F19]">
+              {activeBuildProjects.length}
+            </div>
+            <span className="text-[11px] font-semibold text-[#2563EB]">
+              6-stage tracker →
+            </span>
+          </div>
+          <div className="mt-2 pt-2 border-t border-[#F1F5F9] text-xs text-[#64748B] flex items-center justify-between">
+            <span>Live Hosted Sites</span>
+            <span className="font-mono font-bold text-[#0B0F19]">
+              {dbState.websites.filter((w) => w.siteStatus === 'Online').length} online
+            </span>
+          </div>
+        </div>
+
+        {/* Card 4: Outstanding Tasks & Revisions */}
+        <div
+          onClick={() => onNavigate('tasks')}
+          className="bg-white rounded-2xl p-5 border border-[#EAECEF] hover:border-[#2563EB] transition-all cursor-pointer group shadow-[0_8px_24px_-12px_rgba(11,15,25,0.05)]"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+              4. Outstanding Tasks
+            </span>
+            <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center group-hover:bg-rose-600 group-hover:text-white transition-colors">
+              <CheckSquare className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="text-3xl font-extrabold font-mono text-[#0B0F19]">
+              {pendingTasks.length + openTickets.length}
+            </div>
+            <span className="text-[11px] font-semibold text-rose-600">
+              {openTickets.length} revisions · {pendingTasks.length} tasks →
+            </span>
+          </div>
+          <div className="mt-2 pt-2 border-t border-[#F1F5F9] text-xs text-[#64748B] flex items-center justify-between">
+            <span>Expiring Domains</span>
+            <span className="font-mono font-bold text-[#0B0F19]">
+              {expiringDomains.length} in 45d
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* UNIFIED STUDIO TREASURY STRIP (Guarantees 100% alignment between Overview, Pipeline & Finance) */}
+      <div className="bg-[#0B0F19] text-white rounded-2xl p-4 sm:px-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-[#60A5FA] shrink-0">
+            <TrendingUp className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-[10px] font-mono uppercase tracking-widest text-[#94A3B8]">
+              UNIFIED FINANCIAL LEDGER · CANONICAL SOURCE OF TRUTH
+            </div>
+            <div className="text-xs text-slate-300">
+              Synchronized across CRM Pipeline, Client 360° Dossiers, and Studio Finance
             </div>
           </div>
         </div>
-      </section>
 
-      {/* 4 High-Contrast KPI Cards (1 Obsidian #0B0F19 + 3 Crisp White #FFFFFF) */}
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">
-        {/* KPI 1: Obsidian Card - Net Studio Cashflow */}
-        <div className="bg-[#0B0F19] text-white rounded-3xl p-5 sm:p-6 flex flex-col justify-between shadow-[0_14px_34px_-12px_rgba(11,15,25,0.22)]">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 pt-3 lg:pt-0 border-t lg:border-t-0 border-white/10">
           <div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-bold tracking-wider uppercase text-[#94A3B8]">
-                NET STUDIO CASHFLOW
-              </span>
-              <button
-                type="button"
-                onClick={() => onNavigateModule('finance')}
-                className="text-xs font-medium text-[#94A3B8] hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
-              >
-                <span>Ledger</span>
-                <ArrowUpRight className="w-3.5 h-3.5" />
-              </button>
+            <div className="text-[10px] uppercase tracking-wider text-[#94A3B8]">
+              Agency Revenue Collected
             </div>
-            <div className="mt-3 font-mono text-3xl sm:text-4xl font-bold tracking-tight text-white tabular-nums">
-              {formatINR(finance.netProfit)}
+            <div className="text-base font-extrabold font-mono text-[#34D399]">
+              {formatINR(finances.totalRevenueCollected)}
             </div>
-            <p className="mt-1 text-xs text-[#94A3B8]">
-              Collected <span className="font-mono text-emerald-400">{formatINR(finance.totalRevenueCollected)}</span> − Expenses <span className="font-mono text-slate-300">{formatINR(finance.totalStudioExpenses)}</span>
-            </p>
           </div>
-
-          <div className="mt-6 pt-4 border-t border-white/10 flex items-center justify-between text-xs">
-            <div>
-              <span className="text-[#94A3B8] block">Pending Client Receivables</span>
-              <span className="font-mono font-bold text-sm text-[#D1FAE5] mt-0.5 block">
-                +{formatINR(finance.pendingReceivables)}
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-[#94A3B8]">
+              Studio Ops Expenses
+            </div>
+            <div className="text-base font-extrabold font-mono text-rose-400">
+              {formatINR(finances.totalStudioExpenses)}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-[#94A3B8]">
+              Net Studio Profit (50/50)
+            </div>
+            <div className="text-base font-extrabold font-mono text-white">
+              {formatINR(finances.netProfit)}{' '}
+              <span className="text-[10px] font-normal text-[#94A3B8]">
+                ({formatINR(finances.krishnaProfitShare50)} ea)
               </span>
             </div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-[#94A3B8]">
+              Client Ad Spend (Pass-Thru)
+            </div>
+            <div className="text-base font-extrabold font-mono text-[#60A5FA]">
+              {formatINR(finances.totalClientAdSpendPassThrough)}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION C — TODAY'S PRIORITIES TABLE (Part 2C) */}
+      <div className="bg-white rounded-3xl border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] overflow-hidden">
+        <div className="p-5 sm:px-6 border-b border-[#EAECEF] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB]">
+              ACTION QUEUE
+            </div>
+            <h2 className="text-lg font-extrabold text-[#0B0F19]">
+              Today's Priorities & Immediate Follow-ups ({priorityRows.length})
+            </h2>
+          </div>
+          <div className="flex items-center gap-2">
             <button
-              type="button"
-              onClick={() => onOpenQuickActionWithTab('expense')}
-              className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors cursor-pointer whitespace-nowrap"
+              onClick={() => onNavigate('tasks')}
+              className="px-3 py-1.5 rounded-xl bg-[#F8F9FA] hover:bg-[#F1F5F9] text-xs font-bold text-[#0B0F19] border border-[#EAECEF] cursor-pointer"
             >
-              + Log Entry
+              View All Tasks
+            </button>
+            <button
+              onClick={onOpenQuickAction}
+              className="px-3 py-1.5 rounded-xl bg-[#0B0F19] hover:bg-[#1E293B] text-white text-xs font-bold cursor-pointer"
+            >
+              + Add Task
             </button>
           </div>
         </div>
 
-        {/* KPI 2: Follow-ups Due Today / Overdue */}
-        <div className="bg-white border border-[#EAECEF] rounded-3xl p-6 flex flex-col justify-between shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+        {priorityRows.length === 0 ? (
+          <div className="p-8 text-center text-sm text-[#64748B]">
+            All priority tasks for {activeFounderFilter} are complete.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[720px]">
+              <thead>
+                <tr className="border-b border-[#EAECEF] bg-[#F8F9FA] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                  <th className="py-3 px-5">Priority</th>
+                  <th className="py-3 px-4">Task / Action Required</th>
+                  <th className="py-3 px-4">Client</th>
+                  <th className="py-3 px-4">Assigned</th>
+                  <th className="py-3 px-4">Deadline</th>
+                  <th className="py-3 px-5 text-right">Quick Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#F1F5F9] text-xs">
+                {priorityRows.slice(0, 8).map((row) => (
+                  <tr
+                    key={row.id}
+                    className="hover:bg-[#F8F9FA]/80 transition-colors group"
+                  >
+                    <td className="py-3.5 px-5 whitespace-nowrap">
+                      <span
+                        className={`inline-flex items-center gap-1.5 font-bold text-[11px] ${
+                          row.priority === 'Urgent'
+                            ? 'text-rose-600'
+                            : row.priority === 'High'
+                            ? 'text-amber-600'
+                            : 'text-[#2563EB]'
+                        }`}
+                      >
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            row.priority === 'Urgent'
+                              ? 'bg-rose-600'
+                              : row.priority === 'High'
+                              ? 'bg-amber-500'
+                              : 'bg-[#2563EB]'
+                          }`}
+                        />
+                        {row.priority}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="font-bold text-[#0B0F19]">{row.taskTitle}</div>
+                      <div className="text-[11px] text-[#64748B]">{row.categoryBadge}</div>
+                    </td>
+                    <td className="py-3.5 px-4 whitespace-nowrap">
+                      {row.clientId ? (
+                        <button
+                          onClick={() => onOpenClient360(row.clientId!)}
+                          className="font-bold text-[#2563EB] hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          {row.clientName}
+                          <ArrowUpRight className="w-3 h-3" />
+                        </button>
+                      ) : (
+                        <span className="font-semibold text-[#0B0F19]">{row.clientName}</span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 whitespace-nowrap text-[#475569] font-medium">
+                      {row.assignedTo}
+                    </td>
+                    <td className="py-3.5 px-4 whitespace-nowrap font-mono text-[11px] text-[#475569]">
+                      {row.deadline}
+                    </td>
+                    <td className="py-3.5 px-5 whitespace-nowrap text-right">
+                      <div className="inline-flex items-center gap-1.5">
+                        {row.taskId && (
+                          <button
+                            onClick={() => onToggleTaskStatus(row.taskId!)}
+                            title="Mark task completed"
+                            className="px-2.5 py-1 rounded-lg bg-[#ECFDF5] hover:bg-[#D1FAE5] text-[#059669] font-bold text-[11px] transition-colors cursor-pointer"
+                          >
+                            ✓ Done
+                          </button>
+                        )}
+                        {row.phone && (
+                          <a
+                            href={`https://wa.me/${row.phone.replace(/[^0-9]/g, '')}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-2.5 py-1 rounded-lg bg-[#F8F9FA] hover:bg-[#ECFDF5] text-[#059669] border border-[#EAECEF] font-bold text-[11px] transition-colors"
+                          >
+                            WA
+                          </a>
+                        )}
+                        <button
+                          onClick={row.onAction}
+                          className="px-3 py-1 rounded-lg bg-[#0B0F19] hover:bg-[#2563EB] text-white font-bold text-[11px] transition-colors cursor-pointer"
+                        >
+                          {row.actionLabel}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* SECTION D & E — ACTIVE PROJECTS (WITH MILESTONE PROGRESS) + RECENT ACTIVITY FEED */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* SECTION D: Active Projects (7 cols) */}
+        <div className="lg:col-span-7 bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between">
           <div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-bold tracking-wider uppercase text-[#2563EB]">
-                FOLLOW-UPS DUE / URGENT
-              </span>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB]">
+                  DELIVERY ENGINE
+                </div>
+                <h2 className="text-lg font-extrabold text-[#0B0F19]">
+                  Active Client Projects ({activeBuildProjects.length})
+                </h2>
+              </div>
               <button
-                type="button"
-                onClick={() => onNavigateModule('pipeline')}
-                className="text-xs font-medium text-slate-500 hover:text-[#0B0F19] flex items-center gap-1 cursor-pointer"
+                onClick={() => onNavigate('tickets')}
+                className="text-xs font-bold text-[#2563EB] hover:underline flex items-center gap-1 cursor-pointer"
               >
-                <span>Pipeline</span>
-                <ArrowUpRight className="w-3.5 h-3.5" />
+                All Projects & Milestones <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
-            <div className="mt-3 flex items-baseline gap-2.5">
-              <span className="font-mono text-3xl sm:text-4xl font-bold tracking-tight text-[#0B0F19] tabular-nums">
-                {followUpsDue.length}
-              </span>
-              <span className="text-xs text-slate-500">
-                client{followUpsDue.length === 1 ? '' : 's'} awaiting action
-              </span>
+
+            {activeBuildProjects.length === 0 ? (
+              <div className="p-6 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] text-center text-xs text-[#64748B]">
+                No projects currently in active build stage for this filter. Convert a lead from the CRM Pipeline to start tracking milestones!
+              </div>
+            ) : (
+              <div className="space-y-3.5">
+                {activeBuildProjects.map((client) => {
+                  const prog = calculateClientProjectProgress(
+                    client,
+                    dbState.tickets,
+                    dbState.websites
+                  );
+                  const pending = calculatePendingBalance(
+                    client.finalAgreedPrice,
+                    client.advancePaid
+                  );
+
+                  return (
+                    <div
+                      key={client.id}
+                      className="p-4 rounded-2xl border border-[#EAECEF] hover:border-[#2563EB]/50 bg-[#FAFBFC] transition-all space-y-3"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => onOpenClient360(client.id)}
+                              className="text-sm font-extrabold text-[#0B0F19] hover:text-[#2563EB] transition-colors cursor-pointer text-left"
+                            >
+                              {client.businessName}
+                            </button>
+                            <span className="text-[11px] text-[#64748B]">
+                              · {client.city}
+                            </span>
+                          </div>
+                          <div className="text-xs text-[#475569] mt-0.5">
+                            Service: <span className="font-semibold">{client.packageTier}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            onClick={() => onOpenClient360(client.id)}
+                            className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#0B0F19] text-[#0B0F19] hover:text-white border border-[#EAECEF] text-xs font-bold transition-colors cursor-pointer"
+                          >
+                            Open Project 360°
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div>
+                        <div className="flex items-center justify-between text-xs mb-1.5">
+                          <span className="font-semibold text-[#475569]">
+                            Progress:{' '}
+                            <span className="font-mono font-bold text-[#0B0F19]">
+                              {prog.percent}%
+                            </span>{' '}
+                            ({prog.completedMilestones}/{prog.totalMilestones} milestones)
+                          </span>
+                          <span className="text-[11px] font-mono text-[#2563EB] font-semibold">
+                            Next: {prog.nextMilestoneLabel}
+                          </span>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-[#E2E8F0] overflow-hidden">
+                          <div
+                            className="h-full bg-[#2563EB] rounded-full transition-all duration-300"
+                            style={{ width: `${prog.percent}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Interactive 6-Stage Milestone Strip */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px]">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {(client.milestones || []).map((m) => (
+                            <button
+                              key={m.stage}
+                              onClick={() => onToggleMilestone(client.id, m.stage)}
+                              title={`Click to toggle ${m.stage} milestone`}
+                              className={`px-2 py-0.5 rounded-md font-medium transition-all cursor-pointer ${
+                                m.completed
+                                  ? 'bg-[#D1FAE5] text-[#059669] font-semibold'
+                                  : 'bg-white border border-[#E2E8F0] text-[#64748B] hover:border-[#2563EB]'
+                              }`}
+                            >
+                              {m.completed ? '✓ ' : ''}
+                              {m.stage}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="text-[#64748B] font-mono">
+                          Assigned: <strong className="text-[#0B0F19]">{client.assignedTo}</strong>
+                          {pending > 0 && (
+                            <span className="ml-2 text-amber-700 font-bold">
+                              · Due: {formatINR(pending)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* SECTION E: Recent Activity Feed (5 cols) */}
+        <div className="lg:col-span-5 bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB] flex items-center gap-1">
+                  <Activity className="w-3 h-3" /> STUDIO AUDIT STREAM
+                </div>
+                <h2 className="text-lg font-extrabold text-[#0B0F19]">
+                  Recent Activity Feed
+                </h2>
+              </div>
+              <span className="text-[11px] font-mono text-[#64748B]">Live Sync</span>
             </div>
 
-            <div className="mt-3 space-y-2">
-              {followUpsDue.slice(0, 2).map((client) => {
-                const waUrl = buildWhatsAppUrl(
-                  client.phone,
-                  `Hi ${client.contactPerson}, this is ${
-                    client.assignedLead === 'Both' ? 'Vansh & Krishna' : client.assignedLead
-                  } from Aethel Studios regarding ${client.businessName}.`
-                );
+            <div className="space-y-3">
+              {activityLogs.map((log) => {
+                const timeStr = new Date(log.timestamp).toLocaleTimeString('en-IN', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
                 return (
                   <div
-                    key={client.id}
-                    className="flex items-center justify-between gap-2 py-1.5 border-b border-slate-100 last:border-b-0"
+                    key={log.id}
+                    className="flex items-start gap-3 p-3 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]"
                   >
-                    <button
-                      type="button"
-                      onClick={() => onSelectClientForDrawer(client)}
-                      className="text-xs font-semibold text-[#0B0F19] hover:text-[#2563EB] truncate text-left cursor-pointer"
+                    <div
+                      className={`w-7 h-7 rounded-lg text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5 ${
+                        log.actor === 'Krishna'
+                          ? 'bg-[#2563EB] text-white'
+                          : log.actor === 'Vansh'
+                          ? 'bg-[#0B0F19] text-white'
+                          : 'bg-[#059669] text-white'
+                      }`}
                     >
-                      {client.businessName}
-                    </button>
-                    <a
-                      href={waUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-2.5 py-1 rounded-full bg-[#D1FAE5] text-[#0D281D] hover:bg-[#059669] hover:text-white text-[11px] font-semibold flex items-center gap-1 transition-colors shrink-0"
-                    >
-                      <MessageCircle className="w-3 h-3" />
-                      <span>WhatsApp</span>
-                    </a>
+                      {log.actor.slice(0, 1)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs text-[#0B0F19] leading-snug">
+                        <span className="font-bold">{log.actor}</span>{' '}
+                        <span className="text-[#475569]">{log.action}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 text-[11px] text-[#64748B]">
+                        <span className="font-semibold text-[#0B0F19] truncate">
+                          {log.targetName}
+                        </span>
+                        <span>·</span>
+                        <span className="font-mono">{log.category}</span>
+                        <span>·</span>
+                        <span className="font-mono">{timeStr}</span>
+                      </div>
+                    </div>
                   </div>
                 );
               })}
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-[#EAECEF] flex items-center justify-between text-xs text-slate-500">
-            <span>Total active pipeline leads: {filteredClients.length}</span>
+          <div className="mt-4 pt-3 border-t border-[#F1F5F9] flex items-center justify-between text-xs text-[#64748B]">
+            <span>All studio events logged automatically</span>
             <button
-              type="button"
-              onClick={() => onOpenQuickActionWithTab('client')}
-              className="font-semibold text-[#2563EB] hover:underline cursor-pointer"
+              onClick={() => onNavigate('analytics')}
+              className="font-bold text-[#2563EB] hover:underline cursor-pointer"
             >
-              + Add Lead
+              View Studio Reports →
             </button>
           </div>
         </div>
-
-        {/* KPI 3: Active Meta Ads Spend & Live Campaigns */}
-        <div className="bg-white border border-[#EAECEF] rounded-3xl p-6 flex flex-col justify-between shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-bold tracking-wider uppercase text-[#2563EB]">
-                META ADS &amp; GROWTH
-              </span>
-              <button
-                type="button"
-                onClick={() => onNavigateModule('meta-ads')}
-                className="text-xs font-medium text-slate-500 hover:text-[#0B0F19] flex items-center gap-1 cursor-pointer"
-              >
-                <span>Campaigns</span>
-                <ArrowUpRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="mt-3 font-mono text-3xl sm:text-4xl font-bold tracking-tight text-[#0B0F19] tabular-nums">
-              {formatINR(totalMetaBudgetUnderMgmt)}
-            </div>
-            <p className="mt-1 text-xs text-slate-500">
-              <span className="font-mono font-semibold text-[#0B0F19]">{formatINR(totalMetaSpendSoFar)}</span> spent across {activeCampaigns.length} live campaigns
-            </p>
-          </div>
-
-          <div className="mt-6 pt-4 border-t border-[#EAECEF] flex items-center justify-between text-xs">
-            <span className="text-slate-600">
-              Ending in &le; 3 days:{' '}
-              <strong className="font-mono text-amber-700 font-bold">
-                {campaignsEndingSoon.length}
-              </strong>
-            </span>
-            <button
-              type="button"
-              onClick={() => onNavigateModule('meta-ads')}
-              className="font-semibold text-[#059669] hover:underline flex items-center gap-1 cursor-pointer"
-            >
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>View CPL</span>
-            </button>
-          </div>
-        </div>
-
-        {/* KPI 4: Critical Alerts (Bugs & Expiring Domains) */}
-        <div className="bg-white border border-[#EAECEF] rounded-3xl p-6 flex flex-col justify-between shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-bold tracking-wider uppercase text-[#2563EB]">
-                CRITICAL ALERTS
-              </span>
-              <button
-                type="button"
-                onClick={() => onNavigateModule('domains')}
-                className="text-xs font-medium text-slate-500 hover:text-[#0B0F19] flex items-center gap-1 cursor-pointer"
-              >
-                <span>Assets</span>
-                <ArrowUpRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="mt-3 flex items-baseline gap-2.5">
-              <span className="font-mono text-3xl sm:text-4xl font-bold tracking-tight text-[#0B0F19] tabular-nums">
-                {criticalAlertsCount}
-              </span>
-              <span className="text-xs text-slate-500">
-                priority item{criticalAlertsCount === 1 ? '' : 's'}
-              </span>
-            </div>
-            <div className="mt-3 space-y-1.5 text-xs text-slate-600">
-              <div className="flex items-center justify-between">
-                <span>High/Critical Website Bugs</span>
-                <span className="font-mono font-bold text-rose-600">{openHighTickets.length}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Domains Renewing &lt; 30 Days</span>
-                <span className="font-mono font-bold text-amber-700">{expiringDomains.length}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-4 pt-3 border-t border-[#EAECEF] flex items-center justify-between text-xs">
-            <button
-              type="button"
-              onClick={() => onNavigateModule('tickets')}
-              className="text-slate-600 hover:text-[#0B0F19] font-medium cursor-pointer"
-            >
-              Open Tickets ({openTicketsQueue.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => onOpenQuickActionWithTab('ticket')}
-              className="font-semibold text-[#2563EB] hover:underline cursor-pointer"
-            >
-              + Log Issue
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Today's Action Queue: Unified 3-Column Split View */}
-      <section className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <span className="text-xs font-bold tracking-wider uppercase text-[#2563EB] block">
-              TODAY&apos;S EXECUTION QUEUE
-            </span>
-            <h2 className="text-xl font-bold tracking-tight text-[#0B0F19]">
-              Urgent Client Follow-ups, Active Bugs &amp; R&amp;D Builds
-            </h2>
-          </div>
-          <div className="text-xs text-slate-500">
-            Showing items for <strong className="text-[#0B0F19]">{founderFilter}</strong>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Column 1: Urgent Client Follow-ups & Receivables */}
-          <div className="bg-white border border-[#EAECEF] rounded-3xl p-6 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-[#EAECEF] pb-3">
-                <div>
-                  <h3 className="text-sm font-bold text-[#0B0F19]">
-                    01. Client Follow-ups &amp; Dues
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Direct WhatsApp outreach with pre-filled context
-                  </p>
-                </div>
-                <span className="font-mono text-xs font-semibold text-slate-500">
-                  {followUpsDue.length} due
-                </span>
-              </div>
-
-              {followUpsDue.length === 0 ? (
-                <p className="text-xs text-slate-500 py-6 text-center">
-                  All scheduled follow-ups are clear for {founderFilter}.
-                </p>
-              ) : (
-                <div className="divide-y divide-[#EAECEF]">
-                  {followUpsDue.map((client) => {
-                    const isFinalizedOrLive =
-                      client.stage === 'In Building' ||
-                      client.stage === 'Live / Payment Pending' ||
-                      client.stage === 'Finalized / In Progress' ||
-                      client.stage === 'Delivered / Live';
-                    const pending = isFinalizedOrLive
-                      ? calculatePendingBalance(client.finalAgreedPrice, client.advancePaid)
-                      : 0;
-                    const waMsg =
-                      pending > 0
-                        ? `Namaskar ${client.contactPerson}, this is ${
-                            client.assignedLead === 'Both'
-                              ? 'Vansh & Krishna'
-                              : client.assignedLead
-                          } from Aethel Studios regarding ${
-                            client.businessName
-                          }. Checking in on the project & pending balance of ${formatINR(
-                            pending
-                          )}.`
-                        : `Namaskar ${client.contactPerson}, this is ${
-                            client.assignedLead === 'Both'
-                              ? 'Vansh & Krishna'
-                              : client.assignedLead
-                          } from Aethel Studios following up on our ${
-                            client.planSelected
-                          } demo for ${client.businessName}.`;
-
-                    return (
-                      <div key={client.id} className="py-3.5 first:pt-0 last:pb-0 space-y-2">
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <button
-                              type="button"
-                              onClick={() => onSelectClientForDrawer(client)}
-                              className="text-sm font-bold text-[#0B0F19] hover:text-[#2563EB] text-left transition-colors cursor-pointer"
-                            >
-                              {client.businessName}
-                            </button>
-                            <div className="text-xs text-slate-500 mt-0.5">
-                              <span>{client.contactPerson}</span>
-                              <span aria-hidden="true"> · </span>
-                              <span>{client.location}</span>
-                              <span aria-hidden="true"> · </span>
-                              <span>{client.stage}</span>
-                            </div>
-                          </div>
-                          {pending > 0 ? (
-                            <span className="font-mono text-xs font-bold text-amber-800 shrink-0">
-                              Due {formatINR(pending)}
-                            </span>
-                          ) : (
-                            <span className="font-mono text-xs font-semibold text-slate-500 shrink-0">
-                              Pitch {formatINR(client.finalAgreedPrice)}
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center justify-between gap-2 pt-1">
-                          <span className="font-mono text-[11px] text-slate-500 flex items-center gap-1">
-                            <Calendar className="w-3 h-3 text-slate-400" />
-                            Follow-up: {client.nextFollowUpDate} ({client.assignedLead})
-                          </span>
-                          <a
-                            href={buildWhatsAppUrl(client.phone, waMsg)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-3 py-1 rounded-full bg-[#0D281D] hover:bg-[#059669] text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                          >
-                            <MessageCircle className="w-3.5 h-3.5" />
-                            <span>WhatsApp</span>
-                          </a>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => onNavigateModule('pipeline')}
-              className="mt-5 w-full py-2.5 rounded-full border border-[#EAECEF] hover:border-[#0B0F19] text-xs font-semibold text-[#0B0F19] transition-colors cursor-pointer"
-            >
-              Open Full CRM Pipeline &rarr;
-            </button>
-          </div>
-
-          {/* Column 2: Open Website Bugs & Client Revisions */}
-          <div className="bg-white border border-[#EAECEF] rounded-3xl p-6 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-[#EAECEF] pb-3">
-                <div>
-                  <h3 className="text-sm font-bold text-[#0B0F19]">
-                    02. Open Website Bugs &amp; Revisions
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Post-sales execution &amp; domain expiry watch
-                  </p>
-                </div>
-                <span className="font-mono text-xs font-semibold text-slate-500">
-                  {openTicketsQueue.length} open
-                </span>
-              </div>
-
-              <div className="divide-y divide-[#EAECEF]">
-                {openTicketsQueue.map((ticket) => (
-                  <div key={ticket.id} className="py-3.5 first:pt-0 last:pb-0 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-semibold text-[#0B0F19] leading-snug">
-                        {ticket.title}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => onResolveTicketQuick(ticket.id)}
-                        title="Mark Deployed & Resolved"
-                        className="p-1 text-slate-400 hover:text-[#059669] transition-colors shrink-0 cursor-pointer"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      <span>{ticket.clientName}</span>
-                      <span aria-hidden="true"> · </span>
-                      <span
-                        className={
-                          ticket.priority === 'Critical - Site Down' || ticket.priority === 'High'
-                            ? 'text-rose-600 font-semibold'
-                            : 'text-slate-600'
-                        }
-                      >
-                        {ticket.priority}
-                      </span>
-                      <span aria-hidden="true"> · </span>
-                      <span>{ticket.billingTag}</span>
-                      <span aria-hidden="true"> · </span>
-                      <span>Assigned: {ticket.assignedTo}</span>
-                    </div>
-                  </div>
-                ))}
-
-                {expiringDomains.map((dom) => {
-                  const daysLeft = calculateDaysRemaining(dom.renewalDate);
-                  return (
-                    <div key={dom.id} className="py-3.5 first:pt-0 last:pb-0 space-y-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-bold text-amber-800 flex items-center gap-1.5">
-                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                          Domain Renewal: {dom.liveDomainUrl.replace('https://', '')}
-                        </span>
-                        <span className="font-mono text-xs font-bold text-rose-600">
-                          {daysLeft}d left
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500">
-                        {dom.domainRegistrar} ({dom.domainOwner}) · Annual cost{' '}
-                        <span className="font-mono">{formatINR(dom.annualRenewalCost)}</span>
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => onNavigateModule('tickets')}
-              className="mt-5 w-full py-2.5 rounded-full border border-[#EAECEF] hover:border-[#0B0F19] text-xs font-semibold text-[#0B0F19] transition-colors cursor-pointer"
-            >
-              Manage Deliveries &amp; Tickets &rarr;
-            </button>
-          </div>
-
-          {/* Column 3: Active R&D Lab & Pitch Prototypes */}
-          <div className="bg-white border border-[#EAECEF] rounded-3xl p-6 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-[#EAECEF] pb-3">
-                <div>
-                  <h3 className="text-sm font-bold text-[#0B0F19]">
-                    03. Active R&amp;D Prototypes &amp; IP
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Vibe-coded demos ready to pitch local businesses
-                  </p>
-                </div>
-                <Sparkles className="w-4 h-4 text-[#2563EB]" />
-              </div>
-
-              <div className="divide-y divide-[#EAECEF]">
-                {activePrototypes.map((proto) => (
-                  <div key={proto.id} className="py-3.5 first:pt-0 last:pb-0 space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <h4 className="text-sm font-bold text-[#0B0F19]">
-                          {proto.projectName}
-                        </h4>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {proto.stage} · Lead: {proto.leadBuilder}
-                        </p>
-                      </div>
-                      <a
-                        href={proto.livePrototypeUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1.5 rounded-full bg-slate-100 hover:bg-[#2563EB] hover:text-white text-slate-700 transition-colors shrink-0"
-                        title="Open Live Prototype"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    </div>
-                    <p className="text-xs text-slate-600 line-clamp-2">
-                      {proto.coreUxHook}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => onNavigateModule('rnd-lab')}
-              className="mt-5 w-full py-2.5 rounded-full border border-[#EAECEF] hover:border-[#0B0F19] text-xs font-semibold text-[#0B0F19] transition-colors cursor-pointer"
-            >
-              Explore R&amp;D Lab &amp; Prompts &rarr;
-            </button>
-          </div>
-        </div>
-      </section>
+      </div>
     </div>
   );
 };

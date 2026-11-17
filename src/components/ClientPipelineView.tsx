@@ -1,1603 +1,1749 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
-  Search,
+  Users,
   Plus,
-  MessageCircle,
+  Search,
+  ExternalLink,
+  MessageSquare,
+  IndianRupee,
+  CheckCircle2,
+  Edit3,
+  Trash2,
+  X,
+  Save,
   LayoutGrid,
   Table as TableIcon,
-  X,
-  Trash2,
-  Send,
-  Phone,
-  Calendar,
-  CheckCircle2,
-  Save,
+  Globe,
+  Megaphone,
+  Wrench,
+  CreditCard,
+  Layers,
+  CheckSquare,
+  ShieldCheck,
+  Sparkles,
+  Rocket,
+  FileText,
+  ArrowUpRight,
 } from 'lucide-react';
-import type {
+import {
+  AethelDatabaseState,
   ClientLead,
-  ClientLocation,
-  ClientNiche,
-  PipelineStage,
-  RejectionReason,
-  AssignedPerson,
+  ClientPayment,
+  ClientTicket,
+  ExpensePaidBy,
+  FounderName,
+  HostedWebsite,
+  LeadStage,
+  MetaAdCampaign,
+  ProjectMilestoneStage,
+  StudioTask,
 } from '../types';
 import {
-  formatINR,
+  calculateClientProjectProgress,
+  calculateCPL,
+  calculateDaysUntilExpiry,
   calculatePendingBalance,
-  buildWhatsAppUrl,
+  calculateStudioFinances,
+  formatINR,
 } from '../utils/calculations';
 
 interface ClientPipelineViewProps {
   clients: ClientLead[];
-  selectedClient: ClientLead | null;
-  onSelectClient: (c: ClientLead | null) => void;
-  onUpdateClient: (c: ClientLead) => void;
-  onDeleteClient: (id: string) => void;
-  onOpenAddClient: () => void;
+  dbState: AethelDatabaseState;
+  onUpdateClient: (updated: ClientLead) => void;
+  onAddClient: (newLead: ClientLead) => void;
+  onDeleteClient: (clientId: string) => void;
+  onConvertLeadToProject: (clientId: string, advanceNow?: number, receivedBy?: ExpensePaidBy) => void;
+  onToggleMilestone: (clientId: string, stage: ProjectMilestoneStage) => void;
+  onAddPayment: (payment: ClientPayment) => void;
+  onAddTicket: (ticket: ClientTicket) => void;
+  onAddCampaign: (campaign: MetaAdCampaign) => void;
+  onAddWebsite: (website: HostedWebsite) => void;
+  onAddTask: (task: StudioTask) => void;
+  onToggleTaskStatus: (taskId: string) => void;
+  selectedClient360Id: string | null;
+  onSelectClient360: (clientId: string | null) => void;
 }
 
-export const PIPELINE_STAGES: PipelineStage[] = [
-  'Query / Lead',
+const STAGES: LeadStage[] = [
+  'Cold Lead',
+  'Sample Sent / WhatsApp',
   'In Talks / Demo Shown',
-  'Follow-up Scheduled',
   'In Building',
   'Live / Payment Pending',
   'Delivered / Live',
   'Rejected / Dropped',
 ];
 
-export const CLIENT_NICHES: ClientNiche[] = [
-  'Hospital/Clinic',
-  'Banquet/Lawns',
-  'Stay Hotel',
-  'Retail/Electronics',
-  'Restaurant/Cafe',
-  'Coaching/Institute',
-];
-
-export const CLIENT_LOCATIONS: ClientLocation[] = [
-  'Pune',
-  'Risod',
-  'Washim',
-  'Maharashtra / Remote',
-];
-
-export const REQUIREMENT_SCOPE_SUGGESTIONS: string[] = [
-  'Custom Website & Brand Experience',
-  'Custom Website & Meta Ads 7 days',
-  '3D Venue Portal & Digital Wedding Invite System',
-  'Interactive Suite Explorer & Direct WhatsApp Booking',
-  'Single-Screen Clinic Management & Prescription OS',
-  'Smart Digital Catalog & Local Meta Ads',
-  'Editorial QR Table Menu & Pairing Upsell System',
-  'Custom Web App & Admin Dashboard',
-];
-
-export const REJECTION_REASONS: Exclude<RejectionReason, ''>[] = [
-  'Budget Issue',
-  'Ghosted',
-  'Delayed',
-  'Competitor',
-];
-
-type StageGroupFilter =
-  | 'ALL'
-  | 'ACTIVE_SALES'
-  | 'EXECUTION_AND_DUE'
-  | 'CLOSED';
+type StageGroupFilter = 'all' | 'sales' | 'execution' | 'closed';
+type Client360Tab =
+  | 'overview'
+  | 'projects'
+  | 'payments'
+  | 'meta-ads'
+  | 'domains'
+  | 'tasks'
+  | 'files';
 
 export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
   clients,
-  selectedClient,
-  onSelectClient,
+  dbState,
   onUpdateClient,
+  onAddClient,
   onDeleteClient,
-  onOpenAddClient,
+  onConvertLeadToProject,
+  onToggleMilestone,
+  onAddPayment,
+  onAddTicket,
+  onAddCampaign,
+  onAddWebsite,
+  onAddTask,
+  onToggleTaskStatus,
+  selectedClient360Id,
+  onSelectClient360,
 }) => {
-  const [viewMode, setViewMode] = useState<'kanban' | 'table'>('kanban');
-  const [stageGroup, setStageGroup] = useState<StageGroupFilter>('ALL');
-  const [mobileFocusedStage, setMobileFocusedStage] = useState<'SWIPE_ALL' | PipelineStage>('SWIPE_ALL');
+  // PART 3: Table View is now the Default View in CRM & Pipeline
+  const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table');
+  const [stageGroup, setStageGroup] = useState<StageGroupFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [nicheFilter, setNicheFilter] = useState<string>('ALL');
-  const [locationFilter, setLocationFilter] = useState<string>('ALL');
-  const [newNoteText, setNewNoteText] = useState('');
-  const [noteAuthor, setNoteAuthor] = useState<'Krishna' | 'Vansh'>('Krishna');
+  const [founderFilter, setFounderFilter] = useState<'All' | FounderName>('All');
+  const [nicheFilter, setNicheFilter] = useState<string>('All');
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  // Buffered Draft State for the Drawer so typing numbers (e.g. 3000) never fires per-keystroke payment syncs
-  const [draftClient, setDraftClient] = useState<ClientLead | null>(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  // Client 360° Active Tab
+  const [active360Tab, setActive360Tab] = useState<Client360Tab>('overview');
 
-  const normalizedClients = clients.map((c) =>
-    c.stage === 'Finalized / In Progress'
-      ? { ...c, stage: 'In Building' as PipelineStage }
-      : c
+  // Inline Quick Add States inside Client 360°
+  const [quickPayAmount, setQuickPayAmount] = useState<number>(0);
+  const [quickPayMode, setQuickPayMode] = useState<ClientPayment['paymentMode']>('UPI');
+  const [quickPayAccount, setQuickPayAccount] = useState<ExpensePaidBy>('Studio Account');
+  const [quickTaskTitle, setQuickTaskTitle] = useState('');
+  const [quickTaskDue, setQuickTaskDue] = useState(
+    new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+  );
+  const [quickTicketTitle, setQuickTicketTitle] = useState('');
+  const [quickCampaignName, setQuickCampaignName] = useState('');
+  const [quickCampaignBudget, setQuickCampaignBudget] = useState(12000);
+  const [quickCampaignFee, setQuickCampaignFee] = useState(4000);
+  const [quickDomainName, setQuickDomainName] = useState('');
+
+  // New Client Lead Form State
+  const [businessName, setBusinessName] = useState('');
+  const [contactPerson, setContactPerson] = useState('');
+  const [phone, setPhone] = useState('+91 ');
+  const [city, setCity] = useState('Pune');
+  const [niche, setNiche] = useState<ClientLead['niche']>('Banquet/Lawns');
+  const [packageTier, setPackageTier] = useState('Custom Website + Lead Funnel');
+  const [quotedPrice, setQuotedPrice] = useState(25000);
+  const [finalAgreedPrice, setFinalAgreedPrice] = useState(22000);
+  const [advancePaid, setAdvancePaid] = useState(0);
+  const [stage, setStage] = useState<LeadStage>('Sample Sent / WhatsApp');
+  const [assignedTo, setAssignedTo] = useState<FounderName>('Vansh');
+  const [sampleLinkSent, setSampleLinkSent] = useState('');
+  const [notes, setNotes] = useState('');
+
+  // Canonical Financial Engine so CRM Pipeline header matches Overview & Finance 100%
+  const canonicalFinances = calculateStudioFinances(
+    dbState.expenses,
+    dbState.payments,
+    dbState.clients,
+    dbState.metaCampaigns,
+    dbState.tickets,
+    dbState.tasks || []
   );
 
-  // Sync draftClient whenever selectedClient changes or opens
-  useEffect(() => {
-    if (!selectedClient) {
-      setDraftClient(null);
-      setHasUnsavedChanges(false);
-      return;
-    }
-    const latest =
-      normalizedClients.find((c) => c.id === selectedClient.id) ||
-      selectedClient;
-    setDraftClient(latest);
-    setHasUnsavedChanges(false);
-  }, [selectedClient?.id, clients]);
-
-  const filteredClients = normalizedClients.filter((c) => {
-    const q = searchQuery.toLowerCase();
+  const filteredClients = clients.filter((c) => {
     const matchesSearch =
-      !q ||
-      c.businessName.toLowerCase().includes(q) ||
-      c.contactPerson.toLowerCase().includes(q) ||
-      c.phone.toLowerCase().includes(q) ||
-      c.planSelected.toLowerCase().includes(q);
-    const matchesNiche = nicheFilter === 'ALL' || c.niche === nicheFilter;
-    const matchesLocation =
-      locationFilter === 'ALL' || c.location === locationFilter;
-    return matchesSearch && matchesNiche && matchesLocation;
+      c.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.contactPerson.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      c.packageTier.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesFounder =
+      founderFilter === 'All' || c.assignedTo === founderFilter || c.assignedTo === 'Both';
+    const matchesNiche = nicheFilter === 'All' || c.niche === nicheFilter;
+    const matchesStageGroup =
+      stageGroup === 'all'
+        ? true
+        : stageGroup === 'sales'
+        ? ['Cold Lead', 'Sample Sent / WhatsApp', 'In Talks / Demo Shown'].includes(c.stage)
+        : stageGroup === 'execution'
+        ? ['In Building', 'Live / Payment Pending'].includes(c.stage)
+        : ['Delivered / Live', 'Rejected / Dropped'].includes(c.stage);
+    return matchesSearch && matchesFounder && matchesNiche && matchesStageGroup;
   });
 
-  const visibleStages = PIPELINE_STAGES.filter((st) => {
-    if (stageGroup === 'ALL') return true;
-    if (stageGroup === 'ACTIVE_SALES') {
-      return (
-        st === 'Query / Lead' ||
-        st === 'In Talks / Demo Shown' ||
-        st === 'Follow-up Scheduled'
-      );
-    }
-    if (stageGroup === 'EXECUTION_AND_DUE') {
-      return st === 'In Building' || st === 'Live / Payment Pending';
-    }
-    if (stageGroup === 'CLOSED') {
-      return st === 'Delivered / Live' || st === 'Rejected / Dropped';
-    }
-    return true;
-  });
+  const visibleKanbanStages: LeadStage[] =
+    stageGroup === 'sales'
+      ? ['Cold Lead', 'Sample Sent / WhatsApp', 'In Talks / Demo Shown']
+      : stageGroup === 'execution'
+      ? ['In Building', 'Live / Payment Pending']
+      : stageGroup === 'closed'
+      ? ['Delivered / Live', 'Rejected / Dropped']
+      : STAGES;
 
-  const handleStageChange = (client: ClientLead, nextStage: PipelineStage) => {
-    const updated: ClientLead = {
-      ...client,
-      stage: nextStage,
-      rejectionReason:
-        nextStage === 'Rejected / Dropped'
-          ? client.rejectionReason || 'Budget Issue'
-          : undefined,
-    };
-    onUpdateClient(updated);
-    if (draftClient?.id === client.id) {
-      setDraftClient(updated);
-      setHasUnsavedChanges(false);
-    }
-  };
-
-  const handleSettleBalanceQuick = (client: ClientLead) => {
-    if (client.finalAgreedPrice <= client.advancePaid) return;
-    const updated: ClientLead = {
-      ...client,
-      advancePaid: client.finalAgreedPrice,
-      stage:
-        client.stage === 'Live / Payment Pending'
-          ? 'Delivered / Live'
-          : client.stage,
-    };
-    onUpdateClient(updated);
-    if (draftClient?.id === client.id) {
-      setDraftClient(updated);
-      setHasUnsavedChanges(false);
-    }
-  };
-
-  const handlePatchDraft = (patch: Partial<ClientLead>) => {
-    if (!draftClient) return;
-    setDraftClient((prev) => (prev ? { ...prev, ...patch } : null));
-    setHasUnsavedChanges(true);
-  };
-
-  const handleSaveDraftToDatabase = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!draftClient) return;
-    onUpdateClient(draftClient);
-    setHasUnsavedChanges(false);
-  };
-
-  const handleAddNote = (e: React.FormEvent) => {
+  const handleCreateLead = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!draftClient || !newNoteText.trim()) return;
-    const now = new Date();
-    const timestamp = `${now.toISOString().slice(0, 10)} ${now
-      .toTimeString()
-      .slice(0, 5)}`;
-    const updated: ClientLead = {
-      ...draftClient,
-      notesLog: [
-        {
-          id: `note-${Date.now()}`,
-          timestamp,
-          author: noteAuthor,
-          text: newNoteText.trim(),
-        },
-        ...draftClient.notesLog,
-      ],
-    };
-    setDraftClient(updated);
-    onUpdateClient(updated);
-    setHasUnsavedChanges(false);
-    setNewNoteText('');
+    if (!businessName.trim()) return;
+    onAddClient({
+      id: `cli-${Date.now()}`,
+      businessName: businessName.trim(),
+      contactPerson: contactPerson.trim() || 'Owner',
+      phone: phone.trim(),
+      city: city.trim(),
+      niche,
+      packageTier,
+      quotedPrice: Number(quotedPrice),
+      finalAgreedPrice: Number(finalAgreedPrice),
+      advancePaid: Number(advancePaid),
+      stage,
+      assignedTo,
+      sampleLinkSent: sampleLinkSent.trim(),
+      followUpDate: new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10),
+      notes: notes.trim(),
+      createdAt: new Date().toISOString().slice(0, 10),
+    });
+    setBusinessName('');
+    setContactPerson('');
+    setSampleLinkSent('');
+    setNotes('');
+    setShowAddForm(false);
   };
 
-  const handleDeleteNote = (noteId: string) => {
-    if (!draftClient) return;
-    const updated: ClientLead = {
-      ...draftClient,
-      notesLog: draftClient.notesLog.filter((n) => n.id !== noteId),
-    };
-    setDraftClient(updated);
-    onUpdateClient(updated);
-    setHasUnsavedChanges(false);
+  const openClient360 = (client: ClientLead, defaultTab: Client360Tab = 'overview') => {
+    onSelectClient360(client.id);
+    setActive360Tab(defaultTab);
+    const pending = calculatePendingBalance(client.finalAgreedPrice, client.advancePaid);
+    setQuickPayAmount(pending > 0 ? pending : 5000);
   };
 
-  const totalPipelineValue = filteredClients
-    .filter((c) => c.stage !== 'Rejected / Dropped')
-    .reduce((sum, c) => sum + c.finalAgreedPrice, 0);
+  const activeClient360 = selectedClient360Id
+    ? clients.find((c) => c.id === selectedClient360Id) || null
+    : null;
 
-  const totalAdvanceCollected = filteredClients
-    .filter((c) => c.stage !== 'Rejected / Dropped')
-    .reduce((sum, c) => sum + c.advancePaid, 0);
+  const generateWhatsAppPitch = (client: ClientLead) => {
+    const cleanPhone = client.phone.replace(/[^0-9]/g, '');
+    const balance = calculatePendingBalance(client.finalAgreedPrice, client.advancePaid);
+    const message =
+      client.stage === 'Live / Payment Pending' && balance > 0
+        ? `Hi ${client.contactPerson}, greetings from *Aethel Studios*! Your website for *${client.businessName}* is live. Kindly process the remaining milestone balance of *${formatINR(balance)}* via UPI/Bank so we can complete final handover.`
+        : `Hi ${client.contactPerson}, this is ${
+            client.assignedTo === 'Both' ? 'Vansh & Krishna' : client.assignedTo
+          } from *Aethel Studios* (aethelstudios.in). We built an interactive preview tailored for *${
+            client.businessName
+          }* (${client.city}): ${
+            client.sampleLinkSent || 'https://aethelstudios.in'
+          } — Let us know when we can walk you through it!`;
+    return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+  };
 
-  const inBuildingClients = filteredClients.filter(
-    (c) => c.stage === 'In Building'
-  );
-  const inBuildingPendingSum = inBuildingClients.reduce(
-    (sum, c) => sum + calculatePendingBalance(c.finalAgreedPrice, c.advancePaid),
-    0
-  );
-
-  const livePaymentPendingClients = filteredClients.filter(
-    (c) => c.stage === 'Live / Payment Pending'
-  );
-  const liveRemainingToCollectSum = livePaymentPendingClients.reduce(
-    (sum, c) => sum + calculatePendingBalance(c.finalAgreedPrice, c.advancePaid),
-    0
-  );
-
-  const getStageAccentClasses = (stage: PipelineStage) => {
-    switch (stage) {
-      case 'Live / Payment Pending':
-        return 'border-t-4 border-t-amber-500 bg-amber-50/30';
-      case 'In Building':
-        return 'border-t-4 border-t-[#2563EB] bg-blue-50/20';
+  const getStageStyle = (s: LeadStage) => {
+    switch (s) {
       case 'Delivered / Live':
-        return 'border-t-4 border-t-[#059669] bg-emerald-50/20';
-      case 'Rejected / Dropped':
-        return 'border-t-4 border-t-rose-400 bg-rose-50/20';
-      default:
-        return 'border-t-4 border-t-slate-300 bg-[#F8F9FA]';
-    }
-  };
-
-  const shortStageName = (stage: PipelineStage) => {
-    switch (stage) {
-      case 'Query / Lead':
-        return 'Query';
+        return 'text-[#059669] bg-[#D1FAE5]/60';
+      case 'Live / Payment Pending':
+        return 'text-amber-700 bg-amber-100/80';
+      case 'In Building':
+        return 'text-[#2563EB] bg-[#EFF6FF]';
       case 'In Talks / Demo Shown':
-        return 'In Talks';
-      case 'Follow-up Scheduled':
-        return 'Follow-up';
-      case 'In Building':
-        return 'In Building';
-      case 'Live / Payment Pending':
-        return 'Live Due';
-      case 'Delivered / Live':
-        return 'Delivered';
+        return 'text-indigo-700 bg-indigo-50';
       case 'Rejected / Dropped':
-        return 'Rejected';
+        return 'text-rose-600 bg-rose-50';
       default:
-        return stage;
+        return 'text-[#475569] bg-[#F1F5F9]';
     }
   };
 
   return (
-    <div className="space-y-5 sm:space-y-6">
-      {/* Module Header */}
-      <div className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 lg:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+    <div className="space-y-5">
+      {/* Header & Unified Financial Summary Strip */}
+      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
-            <span className="text-xs font-bold tracking-wider uppercase text-[#2563EB] block">
-              02 / CLIENT PIPELINE &amp; SALES CRM
-            </span>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
-              Local &amp; Enterprise Deal Pipeline
+            <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] mb-1">
+              CLIENT OPERATIONS · CENTRAL CRM & PIPELINE
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
+              Client Accounts & Deal Pipeline
             </h1>
-            <p className="text-xs sm:text-sm text-slate-600 mt-1 leading-relaxed">
-              Active Pipeline Volume:{' '}
-              <span className="font-mono font-bold text-[#0B0F19]">
-                {formatINR(totalPipelineValue)}
-              </span>{' '}
-              · Advance Collected (Synced to Finance):{' '}
-              <span className="font-mono font-bold text-[#059669]">
-                {formatINR(totalAdvanceCollected)}
-              </span>{' '}
-              across {filteredClients.length} accounts.
+            <p className="text-xs sm:text-sm text-[#64748B] mt-0.5">
+              Click any client row to open their <strong>Unified 7-Tab Client 360° Profile</strong> (Projects, Milestones, Payments, Meta Ads, Domains & Vault).
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between sm:justify-start gap-2.5 sm:gap-3">
-            {/* Kanban vs Table Toggle */}
-            <div className="inline-flex items-center p-1 bg-[#F8F9FA] border border-[#EAECEF] rounded-full">
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Table (Default) vs Kanban Switcher */}
+            <div className="flex items-center bg-[#F8F9FA] p-1 rounded-xl border border-[#EAECEF]">
               <button
-                type="button"
-                onClick={() => setViewMode('kanban')}
-                className={`px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-                  viewMode === 'kanban'
-                    ? 'bg-[#0B0F19] text-white'
-                    : 'text-slate-600 hover:text-[#0B0F19]'
-                }`}
-              >
-                <LayoutGrid className="w-3.5 h-3.5" />
-                <span>Kanban</span>
-              </button>
-              <button
-                type="button"
                 onClick={() => setViewMode('table')}
-                className={`px-3 sm:px-3.5 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   viewMode === 'table'
-                    ? 'bg-[#0B0F19] text-white'
-                    : 'text-slate-600 hover:text-[#0B0F19]'
+                    ? 'bg-[#0B0F19] text-white shadow-xs'
+                    : 'text-[#64748B] hover:text-[#0B0F19]'
                 }`}
               >
                 <TableIcon className="w-3.5 h-3.5" />
-                <span>Table</span>
+                Table View
+              </button>
+              <button
+                onClick={() => setViewMode('kanban')}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  viewMode === 'kanban'
+                    ? 'bg-[#0B0F19] text-white shadow-xs'
+                    : 'text-[#64748B] hover:text-[#0B0F19]'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                Kanban Board
               </button>
             </div>
 
             <button
-              type="button"
-              onClick={onOpenAddClient}
-              className="px-4 py-2 sm:py-2.5 rounded-full bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>Add Client Lead</span>
+              <span>Add Client / Lead</span>
             </button>
           </div>
         </div>
 
-        {/* Dedicated Execution & Collection Strip */}
-        <div className="mt-5 pt-5 border-t border-[#EAECEF] grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
-          <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] flex items-center justify-between gap-2">
-            <div>
-              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#2563EB] block">
-                IN BUILDING STAGE
-              </span>
-              <span className="text-xs sm:text-sm font-bold text-[#0B0F19] mt-0.5 block">
-                {inBuildingClients.length} Active Studio Build
-                {inBuildingClients.length === 1 ? '' : 's'}
-              </span>
-              <span className="text-[11px] sm:text-xs text-slate-500">
-                Milestone balance on completion:{' '}
-                <strong className="font-mono text-[#0B0F19]">
-                  {formatINR(inBuildingPendingSum)}
-                </strong>
-              </span>
+        {/* Canonical 4-Metric Financial Strip (Matches Overview & Finance 100%) */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-[#F1F5F9]">
+          <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+              Contracted Deal Volume
             </div>
-            <span className="font-mono text-xl sm:text-2xl font-bold text-[#2563EB]">
-              {inBuildingClients.length}
-            </span>
+            <div className="text-xl font-extrabold font-mono text-[#0B0F19] mt-0.5">
+              {formatINR(canonicalFinances.totalContractedVolume)}
+            </div>
+            <div className="text-[11px] text-[#64748B] mt-0.5">
+              Across {clients.filter((c) => c.stage !== 'Rejected / Dropped').length} active/pitched deals
+            </div>
           </div>
 
-          <div className="p-3.5 sm:p-4 rounded-2xl bg-[#0B0F19] text-white flex items-center justify-between gap-2">
-            <div>
-              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-amber-400 block">
-                LIVE — PAYMENT REMAINING TO COLLECT
-              </span>
-              <span className="font-mono text-lg sm:text-xl font-bold text-white mt-0.5 block">
-                {formatINR(liveRemainingToCollectSum)} Due
-              </span>
-              <span className="text-[11px] sm:text-xs text-[#94A3B8]">
-                Across {livePaymentPendingClients.length} live client website
-                {livePaymentPendingClients.length === 1 ? '' : 's'}
-              </span>
+          <div className="p-3.5 rounded-2xl bg-[#ECFDF5]/60 border border-[#A7F3D0]">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[#059669]">
+              Verified Revenue Collected
             </div>
-            <span className="font-mono text-xl sm:text-2xl font-bold text-emerald-400">
-              {livePaymentPendingClients.length}
-            </span>
+            <div className="text-xl font-extrabold font-mono text-[#059669] mt-0.5">
+              {formatINR(canonicalFinances.totalRevenueCollected)}
+            </div>
+            <div className="text-[11px] text-[#047857] mt-0.5">
+              100% synced with Studio Finance Ledger
+            </div>
           </div>
 
-          <div className="p-3.5 sm:p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] flex items-center justify-between gap-2">
-            <div>
-              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#059669] block">
-                DELIVERED &amp; FULL PAYMENT SETTLED
-              </span>
-              <span className="text-xs sm:text-sm font-bold text-[#0B0F19] mt-0.5 block">
-                {
-                  filteredClients.filter((c) => c.stage === 'Delivered / Live')
-                    .length
-                }{' '}
-                Completed Account
-                {filteredClients.filter((c) => c.stage === 'Delivered / Live')
-                  .length === 1
-                  ? ''
-                  : 's'}
-              </span>
-              <span className="text-[11px] sm:text-xs text-slate-500">
-                100% invoice collected &amp; synced to Finance
-              </span>
+          <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
+              Pending Receivables
             </div>
-            <span className="font-mono text-xl sm:text-2xl font-bold text-[#059669]">
-              {
-                filteredClients.filter((c) => c.stage === 'Delivered / Live')
-                  .length
-              }
-            </span>
-          </div>
-        </div>
-
-        {/* Search, Niche, Location & Stage Group Filter Bar */}
-        <div className="mt-4 sm:mt-5 pt-4 sm:pt-5 border-t border-[#EAECEF] space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3">
-            <div className="relative sm:col-span-2 lg:col-span-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search business name, owner, scope, or phone..."
-                aria-label="Search client pipeline"
-                className="w-full pl-10 pr-4 py-2 bg-[#F8F9FA] border border-[#EAECEF] rounded-full text-xs text-[#0B0F19] focus:outline-none focus:border-[#2563EB]"
-              />
+            <div className="text-xl font-extrabold font-mono text-amber-700 mt-0.5">
+              {formatINR(canonicalFinances.pendingReceivables)}
             </div>
-
-            <select
-              aria-label="Filter by Business Niche"
-              value={nicheFilter}
-              onChange={(e) => setNicheFilter(e.target.value)}
-              className="w-full px-4 py-2 bg-[#F8F9FA] border border-[#EAECEF] rounded-full text-xs font-medium text-[#0B0F19] focus:outline-none focus:border-[#2563EB]"
-            >
-              <option value="ALL">
-                All Niches (Hospital, Lawns, Stay, Retail...)
-              </option>
-              {CLIENT_NICHES.map((n) => (
-                <option key={n} value={n}>
-                  Niche: {n}
-                </option>
-              ))}
-            </select>
-
-            <select
-              aria-label="Filter by Location"
-              value={locationFilter}
-              onChange={(e) => setLocationFilter(e.target.value)}
-              className="w-full px-4 py-2 bg-[#F8F9FA] border border-[#EAECEF] rounded-full text-xs font-medium text-[#0B0F19] focus:outline-none focus:border-[#2563EB]"
-            >
-              <option value="ALL">
-                All Locations (Pune, Risod, Washim...)
-              </option>
-              {CLIENT_LOCATIONS.map((loc) => (
-                <option key={loc} value={loc}>
-                  Location: {loc}
-                </option>
-              ))}
-            </select>
+            <div className="text-[11px] text-amber-800 mt-0.5">
+              {canonicalFinances.livePaymentPendingCount} live sites awaiting final balance
+            </div>
           </div>
 
-          {viewMode === 'kanban' && (
-            <div className="space-y-2 pt-1">
-              {/* Desktop/Tablet Group Filter */}
-              <div className="hidden md:flex items-center justify-between flex-wrap gap-2">
-                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-                  {[
-                    { id: 'ALL', label: 'All 7 Pipeline Stages' },
-                    {
-                      id: 'EXECUTION_AND_DUE',
-                      label: `In Building & Payment Due (${
-                        inBuildingClients.length + livePaymentPendingClients.length
-                      })`,
-                    },
-                    {
-                      id: 'ACTIVE_SALES',
-                      label: 'Active Sales & Follow-ups (3 Stages)',
-                    },
-                    {
-                      id: 'CLOSED',
-                      label: 'Delivered & Rejected (2 Stages)',
-                    },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setStageGroup(tab.id as StageGroupFilter)}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
-                        stageGroup === tab.id
-                          ? 'bg-[#0B0F19] text-white'
-                          : 'bg-[#F8F9FA] border border-[#EAECEF] text-slate-600 hover:text-[#0B0F19]'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-                <span className="text-[11px] text-slate-400 hidden xl:inline">
-                  Scroll horizontally to view all 7 swimlanes side-by-side &rarr;
-                </span>
-              </div>
-
-              {/* Mobile Single-Stage Quick Selector (Allows 1-Tap Stage Focus or Smooth Swipe on Phones) */}
-              <div className="md:hidden space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] text-slate-500 px-0.5">
-                  <span className="font-semibold text-[#0B0F19]">
-                    Mobile Stage Switcher:
-                  </span>
-                  <span>
-                    {mobileFocusedStage === 'SWIPE_ALL'
-                      ? 'Swipe columns or tap a stage'
-                      : 'Showing full-width stage'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setMobileFocusedStage('SWIPE_ALL')}
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer ${
-                      mobileFocusedStage === 'SWIPE_ALL'
-                        ? 'bg-[#0B0F19] text-white'
-                        : 'bg-[#F8F9FA] border border-[#EAECEF] text-slate-600'
-                    }`}
-                  >
-                    Swipe All ({filteredClients.length})
-                  </button>
-                  {PIPELINE_STAGES.map((st) => {
-                    const count = filteredClients.filter((c) => c.stage === st).length;
-                    const isActive = mobileFocusedStage === st;
-                    return (
-                      <button
-                        key={st}
-                        type="button"
-                        onClick={() => setMobileFocusedStage(st)}
-                        className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer ${
-                          isActive
-                            ? 'bg-[#2563EB] text-white'
-                            : 'bg-[#F8F9FA] border border-[#EAECEF] text-slate-600'
-                        }`}
-                      >
-                        {shortStageName(st)} ({count})
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+          <div className="p-3.5 rounded-2xl bg-[#EFF6FF]/60 border border-[#BFDBFE]">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB]">
+              Projects In Building / Live
             </div>
-          )}
+            <div className="text-xl font-extrabold font-mono text-[#1E40AF] mt-0.5">
+              {canonicalFinances.activeProjectsCount} Active · {canonicalFinances.activeClientsCount} Total
+            </div>
+            <div className="text-[11px] text-[#2563EB] mt-0.5">
+              6-stage delivery milestone tracking
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* View Mode 1: Aligned Horizontal Swimlane Kanban Board */}
-      {viewMode === 'kanban' ? (
-        <div
-          className={
-            mobileFocusedStage !== 'SWIPE_ALL'
-              ? 'grid grid-cols-1 gap-4 md:flex md:gap-4 md:overflow-x-auto md:pb-4 md:items-stretch'
-              : stageGroup === 'ALL'
-              ? 'flex gap-3.5 sm:gap-4 overflow-x-auto no-scrollbar pb-4 items-stretch snap-x snap-mandatory'
-              : visibleStages.length === 2
-              ? 'grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5 items-stretch'
-              : 'grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-5 items-stretch'
-          }
+      {/* Collapsible New Client Form */}
+      {showAddForm && (
+        <form
+          onSubmit={handleCreateLead}
+          className="bg-white rounded-3xl p-6 border-2 border-[#2563EB]/20 shadow-lg space-y-4"
         >
-          {visibleStages.map((stage) => {
-            const isHiddenOnMobile =
-              mobileFocusedStage !== 'SWIPE_ALL' && mobileFocusedStage !== stage;
+          <div className="flex items-center justify-between border-b border-[#EAECEF] pb-3">
+            <h3 className="text-sm font-bold text-[#0B0F19] uppercase tracking-wider text-[#2563EB]">
+              + Add New Client Account or Prospect
+            </h3>
+            <button
+              type="button"
+              onClick={() => setShowAddForm(false)}
+              className="text-xs font-semibold text-[#64748B] hover:text-[#0B0F19]"
+            >
+              Cancel
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Business Name *
+              </label>
+              <input
+                type="text"
+                required
+                value={businessName}
+                onChange={(e) => setBusinessName(e.target.value)}
+                placeholder="e.g., Shagun Lawns & Banquet"
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Decision Maker
+              </label>
+              <input
+                type="text"
+                value={contactPerson}
+                onChange={(e) => setContactPerson(e.target.value)}
+                placeholder="Owner / Manager Name"
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                WhatsApp Number
+              </label>
+              <input
+                type="text"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                City / Area
+              </label>
+              <input
+                type="text"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Niche
+              </label>
+              <select
+                value={niche}
+                onChange={(e) => setNiche(e.target.value as ClientLead['niche'])}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm bg-white"
+              >
+                <option value="Banquet/Lawns">Banquet/Lawns</option>
+                <option value="Clinic/Hospital">Clinic/Hospital</option>
+                <option value="Cafe/Restaurant">Cafe/Restaurant</option>
+                <option value="Retail/Electronics">Retail/Electronics</option>
+                <option value="Real Estate/Interior">Real Estate/Interior</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Custom Scope / Deliverables
+              </label>
+              <input
+                type="text"
+                value={packageTier}
+                onChange={(e) => setPackageTier(e.target.value)}
+                placeholder="e.g., Custom Website + Booking Flow"
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Final Agreed Price (₹)
+              </label>
+              <input
+                type="number"
+                value={finalAgreedPrice}
+                onChange={(e) => setFinalAgreedPrice(Number(e.target.value))}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Advance Paid (₹)
+              </label>
+              <input
+                type="number"
+                value={advancePaid}
+                onChange={(e) => setAdvancePaid(Number(e.target.value))}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Pipeline Stage
+              </label>
+              <select
+                value={stage}
+                onChange={(e) => setStage(e.target.value as LeadStage)}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm bg-white"
+              >
+                {STAGES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Lead Owner
+              </label>
+              <select
+                value={assignedTo}
+                onChange={(e) => setAssignedTo(e.target.value as FounderName)}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm bg-white"
+              >
+                <option value="Vansh">Vansh</option>
+                <option value="Krishna">Krishna</option>
+                <option value="Both">Both</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Sample Prototype Link
+              </label>
+              <input
+                type="text"
+                value={sampleLinkSent}
+                onChange={(e) => setSampleLinkSent(e.target.value)}
+                placeholder="https://..."
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Notes
+              </label>
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Deal context..."
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              className="px-6 py-2.5 rounded-full bg-[#0B0F19] text-white text-xs font-bold hover:bg-[#1E293B] cursor-pointer"
+            >
+              Create Client Record
+            </button>
+          </div>
+        </form>
+      )}
 
-            const stageClients = filteredClients.filter(
-              (c) => c.stage === stage
-            );
-            const stageSum = stageClients.reduce(
-              (s, c) => s + c.finalAgreedPrice,
-              0
-            );
-            const stageRemainingSum = stageClients.reduce(
-              (s, c) =>
-                s + calculatePendingBalance(c.finalAgreedPrice, c.advancePaid),
-              0
-            );
-            const isLivePaymentPendingStage =
-              stage === 'Live / Payment Pending';
+      {/* Search & Stage Filters Bar */}
+      <div className="bg-white rounded-2xl p-3.5 border border-[#EAECEF] flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Filter by client name, contact person, city, or scope..."
+            className="w-full pl-9 pr-4 py-2 rounded-xl bg-[#F8F9FA] border border-[#EAECEF] text-xs focus:outline-none focus:border-[#2563EB]"
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Stage Group Segmented Filter */}
+          <div className="flex items-center bg-[#F8F9FA] p-1 rounded-xl border border-[#EAECEF]">
+            {[
+              { id: 'all', label: `All (${clients.length})` },
+              {
+                id: 'sales',
+                label: `Sales Leads (${
+                  clients.filter((c) =>
+                    ['Cold Lead', 'Sample Sent / WhatsApp', 'In Talks / Demo Shown'].includes(c.stage)
+                  ).length
+                })`,
+              },
+              {
+                id: 'execution',
+                label: `Building & Due (${
+                  clients.filter((c) =>
+                    ['In Building', 'Live / Payment Pending'].includes(c.stage)
+                  ).length
+                })`,
+              },
+              {
+                id: 'closed',
+                label: `Delivered (${
+                  clients.filter((c) =>
+                    ['Delivered / Live', 'Rejected / Dropped'].includes(c.stage)
+                  ).length
+                })`,
+              },
+            ].map((grp) => (
+              <button
+                key={grp.id}
+                onClick={() => setStageGroup(grp.id as StageGroupFilter)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                  stageGroup === grp.id
+                    ? 'bg-white text-[#2563EB] shadow-2xs'
+                    : 'text-[#64748B] hover:text-[#0B0F19]'
+                }`}
+              >
+                {grp.label}
+              </button>
+            ))}
+          </div>
+
+          <select
+            value={founderFilter}
+            onChange={(e) => setFounderFilter(e.target.value as 'All' | FounderName)}
+            aria-label="Filter by founder"
+            className="px-3 py-1.5 rounded-xl bg-[#F8F9FA] border border-[#EAECEF] text-xs font-semibold text-[#475569]"
+          >
+            <option value="All">All Founders</option>
+            <option value="Krishna">Krishna</option>
+            <option value="Vansh">Vansh</option>
+            <option value="Both">Shared (Both)</option>
+          </select>
+
+          <select
+            value={nicheFilter}
+            onChange={(e) => setNicheFilter(e.target.value)}
+            aria-label="Filter by industry niche"
+            className="px-3 py-1.5 rounded-xl bg-[#F8F9FA] border border-[#EAECEF] text-xs font-semibold text-[#475569]"
+          >
+            <option value="All">All Niches</option>
+            <option value="Banquet/Lawns">Banquet/Lawns</option>
+            <option value="Clinic/Hospital">Clinic/Hospital</option>
+            <option value="Cafe/Restaurant">Cafe/Restaurant</option>
+            <option value="Retail/Electronics">Retail/Electronics</option>
+            <option value="Real Estate/Interior">Real Estate/Interior</option>
+          </select>
+        </div>
+      </div>
+
+      {/* PRIMARY VIEW: HIGH-DENSITY CRM TABLE (PART 3 DEFAULT) */}
+      {viewMode === 'table' ? (
+        <div className="bg-white rounded-3xl border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[780px]">
+              <thead>
+                <tr className="bg-[#F8F9FA] border-b border-[#EAECEF] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                  <th className="py-3 px-4">Client</th>
+                  <th className="py-3 px-3">Project / Scope</th>
+                  <th className="py-3 px-3 text-right">Value</th>
+                  <th className="py-3 px-3">Stage</th>
+                  <th className="py-3 px-3 text-right">Paid</th>
+                  <th className="py-3 px-3 text-right">Pending</th>
+                  <th className="py-3 px-2.5">Owner</th>
+                  <th className="py-3 px-4 text-right">Next Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#F1F5F9] text-xs">
+                {filteredClients.map((client) => {
+                  const pending = calculatePendingBalance(
+                    client.finalAgreedPrice,
+                    client.advancePaid
+                  );
+                  const prog = calculateClientProjectProgress(
+                    client,
+                    dbState.tickets,
+                    dbState.websites
+                  );
+                  const isLeadStage = [
+                    'Cold Lead',
+                    'Sample Sent / WhatsApp',
+                    'In Talks / Demo Shown',
+                  ].includes(client.stage);
+
+                  return (
+                    <tr
+                      key={client.id}
+                      onClick={() => openClient360(client, 'overview')}
+                      className="hover:bg-[#F8F9FA] transition-colors cursor-pointer group"
+                    >
+                      {/* Client */}
+                      <td className="py-3 px-4 max-w-[180px]">
+                        <div className="font-extrabold text-[#0B0F19] group-hover:text-[#2563EB] flex items-center gap-1 truncate">
+                          <span className="truncate">{client.businessName}</span>
+                          <ArrowUpRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 text-[#2563EB] transition-opacity shrink-0" />
+                        </div>
+                        <div className="text-[11px] text-[#64748B] mt-0.5 truncate">
+                          {client.contactPerson} · {client.city} · {client.niche}
+                        </div>
+                      </td>
+
+                      {/* Project & Milestone Progress */}
+                      <td className="py-3 px-3 max-w-[190px]">
+                        <div className="font-semibold text-[#0B0F19] truncate">
+                          {client.packageTier}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className="w-16 h-1.5 bg-[#E2E8F0] rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-[#2563EB] rounded-full"
+                              style={{ width: `${prog.percent}%` }}
+                            />
+                          </div>
+                          <span className="text-[10px] font-mono text-[#64748B]">
+                            {prog.percent}% ({prog.completedMilestones}/6)
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* Value */}
+                      <td className="py-3 px-3 text-right font-mono font-bold text-[#0B0F19] whitespace-nowrap">
+                        {formatINR(client.finalAgreedPrice)}
+                      </td>
+
+                      {/* Stage Dropdown */}
+                      <td
+                        className="py-3 px-3 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <select
+                          value={client.stage}
+                          onChange={(e) =>
+                            onUpdateClient({
+                              ...client,
+                              stage: e.target.value as LeadStage,
+                            })
+                          }
+                          aria-label={`Stage for ${client.businessName}`}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-bold border border-transparent focus:border-[#2563EB] cursor-pointer ${getStageStyle(
+                            client.stage
+                          )}`}
+                        >
+                          {STAGES.map((s) => (
+                            <option key={s} value={s} className="bg-white text-[#0B0F19]">
+                              {s}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+
+                      {/* Paid */}
+                      <td className="py-3 px-3 text-right font-mono font-bold text-[#059669] whitespace-nowrap">
+                        {formatINR(client.advancePaid)}
+                      </td>
+
+                      {/* Pending */}
+                      <td className="py-3 px-3 text-right font-mono font-bold whitespace-nowrap">
+                        {pending > 0 ? (
+                          <span className="text-amber-700">{formatINR(pending)}</span>
+                        ) : (
+                          <span className="text-[#059669]">₹0 Settled</span>
+                        )}
+                      </td>
+
+                      {/* Owner */}
+                      <td className="py-3 px-2.5 whitespace-nowrap font-semibold text-[#475569]">
+                        {client.assignedTo}
+                      </td>
+
+                      {/* Next Action */}
+                      <td
+                        className="py-3 px-4 text-right whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="inline-flex items-center justify-end gap-1">
+                          {isLeadStage && (
+                            <button
+                              onClick={() =>
+                                onConvertLeadToProject(
+                                  client.id,
+                                  Math.round(client.finalAgreedPrice * 0.5)
+                                )
+                              }
+                              title="Convert lead to Active Project (In Building) + initialize 6 milestones"
+                              className="px-2 py-1 rounded-lg bg-[#EFF6FF] hover:bg-[#2563EB] text-[#2563EB] hover:text-white font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1"
+                            >
+                              <Rocket className="w-3 h-3" /> Convert
+                            </button>
+                          )}
+
+                          {pending > 0 && !isLeadStage && (
+                            <button
+                              onClick={() => openClient360(client, 'payments')}
+                              className="px-2 py-1 rounded-lg bg-[#ECFDF5] hover:bg-[#059669] text-[#059669] hover:text-white font-bold text-[11px] transition-colors cursor-pointer"
+                            >
+                              + Pay
+                            </button>
+                          )}
+
+                          <a
+                            href={generateWhatsAppPitch(client)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-2 py-1 rounded-lg bg-[#F8F9FA] hover:bg-[#D1FAE5] text-[#059669] border border-[#EAECEF] font-bold text-[11px] transition-colors"
+                          >
+                            WA
+                          </a>
+
+                          <button
+                            onClick={() => openClient360(client, 'overview')}
+                            className="px-2.5 py-1 rounded-lg bg-[#0B0F19] hover:bg-[#2563EB] text-white font-bold text-[11px] transition-colors cursor-pointer"
+                          >
+                            360° Profile
+                          </button>
+
+                          {confirmDeleteId === client.id ? (
+                            <div className="inline-flex items-center gap-1 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-200">
+                              <button
+                                onClick={() => {
+                                  onDeleteClient(client.id);
+                                  setConfirmDeleteId(null);
+                                }}
+                                className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
+                              >
+                                Confirm
+                              </button>
+                              <button
+                                onClick={() => setConfirmDeleteId(null)}
+                                className="text-[10px] text-[#64748B] cursor-pointer"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmDeleteId(client.id)}
+                              aria-label={`Delete ${client.businessName}`}
+                              className="p-1.5 rounded-lg text-[#94A3B8] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        /* SECONDARY VIEW: KANBAN BOARD */
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {visibleKanbanStages.map((stageName) => {
+            const stageClients = filteredClients.filter((c) => c.stage === stageName);
+            const stageValue = stageClients.reduce((s, c) => s + c.finalAgreedPrice, 0);
 
             return (
               <div
-                key={stage}
-                className={`${isHiddenOnMobile ? 'hidden md:flex' : 'flex'} ${
-                  mobileFocusedStage === stage
-                    ? 'w-full md:w-[335px] md:shrink-0'
-                    : stageGroup === 'ALL'
-                    ? 'w-[85vw] max-w-[330px] sm:w-[335px] shrink-0 snap-center sm:snap-start'
-                    : 'w-full'
-                } rounded-3xl p-3.5 sm:p-4 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.03)] flex-col justify-between ${getStageAccentClasses(
-                  stage
-                )}`}
+                key={stageName}
+                className="bg-white rounded-3xl p-4 border border-[#EAECEF] flex flex-col justify-between space-y-3"
               >
-                <div className="space-y-3">
-                  {/* Column Header */}
-                  <div className="flex items-center justify-between border-b border-slate-200/80 pb-3 px-1">
+                <div>
+                  <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-[#F1F5F9]">
                     <div>
-                      <h2 className="text-xs font-bold uppercase tracking-wider text-[#0B0F19]">
-                        {stage}
-                      </h2>
-                      <span className="font-mono text-[11px] text-slate-500 block mt-0.5">
-                        {isLivePaymentPendingStage
-                          ? `Remaining Due: ${formatINR(stageRemainingSum)}`
-                          : `Stage Volume: ${formatINR(stageSum)}`}
-                      </span>
+                      <h3 className="text-xs font-extrabold text-[#0B0F19]">{stageName}</h3>
+                      <div className="text-[10px] font-mono text-[#64748B]">
+                        Vol: {formatINR(stageValue)}
+                      </div>
                     </div>
-                    <span className="w-6 h-6 rounded-full bg-white border border-[#EAECEF] font-mono text-xs font-bold text-[#2563EB] flex items-center justify-center shadow-2xs">
+                    <span className="text-xs font-mono font-bold text-[#2563EB]">
                       {stageClients.length}
                     </span>
                   </div>
 
-                  {/* Cards List */}
-                  <div className="space-y-3 min-h-[200px] sm:min-h-[260px]">
-                    {stageClients.length === 0 ? (
-                      <div className="h-[180px] sm:h-[220px] rounded-2xl border border-dashed border-slate-200 flex items-center justify-center text-xs text-slate-400">
-                        No accounts in {stage}
-                      </div>
-                    ) : (
-                      stageClients.map((client) => {
+                  {stageClients.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-[#94A3B8]">
+                      No accounts in this stage
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {stageClients.map((client) => {
                         const pending = calculatePendingBalance(
                           client.finalAgreedPrice,
                           client.advancePaid
                         );
-                        const waUrl = buildWhatsAppUrl(
-                          client.phone,
-                          client.stage === 'Live / Payment Pending'
-                            ? `Namaskar ${client.contactPerson}, this is Aethel Studios. Your website for ${client.businessName} is live! Sharing a gentle reminder for the remaining balance of ${formatINR(pending)}.`
-                            : `Hi ${client.contactPerson}, this is Aethel Studios regarding ${client.businessName}.`
-                        );
-
                         return (
                           <div
                             key={client.id}
-                            className="p-3.5 sm:p-4 rounded-2xl bg-white border border-[#EAECEF] hover:border-[#2563EB]/60 shadow-[0_4px_16px_-6px_rgba(11,15,25,0.05)] transition-all space-y-3"
+                            onClick={() => openClient360(client, 'overview')}
+                            className="p-3.5 rounded-2xl bg-[#F8F9FA] hover:bg-white border border-[#EAECEF] hover:border-[#2563EB] transition-all cursor-pointer space-y-2.5 shadow-2xs"
                           >
-                            {/* Top Row: Business Title + Delete Button */}
                             <div className="flex items-start justify-between gap-2">
-                              <div className="min-w-0">
-                                <button
-                                  type="button"
-                                  onClick={() => onSelectClient(client)}
-                                  className="text-sm font-bold text-[#0B0F19] hover:text-[#2563EB] text-left block leading-snug cursor-pointer"
-                                >
+                              <div>
+                                <div className="text-xs font-extrabold text-[#0B0F19]">
                                   {client.businessName}
-                                </button>
-                                <div className="text-[11px] text-slate-500 mt-0.5">
-                                  <span>{client.niche}</span>
-                                  <span aria-hidden="true"> · </span>
-                                  <span>{client.location}</span>
-                                  <span aria-hidden="true"> · </span>
-                                  <span className="font-semibold text-slate-700">
-                                    {client.assignedLead}
-                                  </span>
+                                </div>
+                                <div className="text-[11px] text-[#64748B]">
+                                  {client.city} · {client.assignedTo}
                                 </div>
                               </div>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (selectedClient?.id === client.id) {
-                                    onSelectClient(null);
-                                  }
-                                  onDeleteClient(client.id);
-                                }}
-                                aria-label={`Delete client ${client.businessName}`}
-                                title={`Delete ${client.businessName}`}
-                                className="p-1.5 rounded-full text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer shrink-0"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
                             </div>
 
-                            {/* Custom Scope Box */}
-                            <div className="p-2.5 rounded-xl bg-[#F8F9FA] border border-[#EAECEF]">
-                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                                Custom Scope / Requirement
+                            <div className="text-[11px] font-medium text-[#475569] line-clamp-1">
+                              {client.packageTier}
+                            </div>
+
+                            <div className="pt-2 border-t border-[#EAECEF] flex items-center justify-between text-[11px] font-mono">
+                              <span className="text-[#059669] font-bold">
+                                Paid: {formatINR(client.advancePaid)}
                               </span>
-                              <span className="font-semibold text-xs text-[#0B0F19] block mt-0.5 leading-snug">
-                                {client.planSelected}
-                              </span>
-                            </div>
-
-                            {/* Crisp 3-Column Financial Metric Strip */}
-                            <div className="grid grid-cols-3 gap-1.5 p-2.5 rounded-xl bg-[#F8F9FA] border border-[#EAECEF] text-center">
-                              <div>
-                                <span className="text-[10px] text-slate-400 uppercase font-semibold block">
-                                  Agreed
-                                </span>
-                                <span className="font-mono text-xs font-bold text-[#0B0F19]">
-                                  {formatINR(client.finalAgreedPrice)}
-                                </span>
-                              </div>
-                              <div className="border-x border-[#EAECEF]">
-                                <span className="text-[10px] text-slate-400 uppercase font-semibold block">
-                                  Paid
-                                </span>
-                                <span className="font-mono text-xs font-bold text-[#059669]">
-                                  {formatINR(client.advancePaid)}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-[10px] text-slate-400 uppercase font-semibold block">
-                                  Remaining
-                                </span>
-                                <span
-                                  className={`font-mono text-xs font-bold ${
-                                    pending > 0
-                                      ? 'text-amber-700'
-                                      : 'text-[#059669]'
-                                  }`}
-                                >
-                                  {pending > 0 ? formatINR(pending) : 'Settled'}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Contextual Status Banner */}
-                            {client.stage === 'Live / Payment Pending' &&
-                              pending > 0 && (
-                                <div className="bg-amber-50 border border-amber-200/90 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
-                                  <span className="text-[11px] font-mono text-amber-900 font-bold">
-                                    Due: {formatINR(pending)}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleSettleBalanceQuick(client)
-                                    }
-                                    className="px-2.5 py-1 rounded-full bg-[#059669] hover:bg-emerald-600 text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                                    title="Mark full balance collected & sync to Studio Finance"
-                                  >
-                                    <CheckCircle2 className="w-3 h-3" />
-                                    <span>Mark Paid</span>
-                                  </button>
-                                </div>
-                              )}
-
-                            {client.stage === 'Follow-up Scheduled' && (
-                              <div className="text-[11px] font-mono text-[#2563EB] font-semibold flex items-center gap-1.5 px-1">
-                                <Calendar className="w-3.5 h-3.5" />
-                                <span>Follow-up: {client.nextFollowUpDate}</span>
-                              </div>
-                            )}
-
-                            {client.stage === 'Rejected / Dropped' && (
-                              <div className="text-[11px] text-rose-700 font-semibold px-1">
-                                Reason: {client.rejectionReason || 'Budget Issue'}
-                              </div>
-                            )}
-
-                            {/* Card Footer Controls */}
-                            <div className="pt-2 border-t border-[#EAECEF] space-y-2">
-                              <select
-                                aria-label={`Change stage for ${client.businessName}`}
-                                value={client.stage}
-                                onChange={(e) =>
-                                  handleStageChange(
-                                    client,
-                                    e.target.value as PipelineStage
-                                  )
+                              <span
+                                className={
+                                  pending > 0 ? 'text-amber-700 font-bold' : 'text-[#64748B]'
                                 }
-                                className="w-full bg-[#F8F9FA] border border-[#EAECEF] rounded-full px-3 py-1.5 text-[11px] font-semibold text-[#0B0F19] focus:outline-none focus:border-[#2563EB] truncate"
                               >
-                                {PIPELINE_STAGES.map((st) => (
-                                  <option key={st} value={st}>
-                                    {st}
-                                  </option>
-                                ))}
-                              </select>
+                                Due: {formatINR(pending)}
+                              </span>
+                            </div>
 
-                              <div className="flex items-center justify-between gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => onSelectClient(client)}
-                                  className="flex-1 py-1.5 px-3 rounded-full bg-white border border-[#EAECEF] hover:border-[#0B0F19] text-[11px] font-semibold text-[#0B0F19] cursor-pointer text-center whitespace-nowrap"
-                                >
-                                  Edit / Dossier
-                                </button>
-                                <a
-                                  href={waUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  title="Continue on WhatsApp"
-                                  className="px-3 py-1.5 rounded-full bg-[#D1FAE5] text-[#0D281D] hover:bg-[#059669] hover:text-white text-[11px] font-semibold flex items-center gap-1 transition-colors shrink-0 whitespace-nowrap"
-                                >
-                                  <MessageCircle className="w-3 h-3" />
-                                  <span>
-                                    {client.stage === 'Live / Payment Pending'
-                                      ? 'Collect WA'
-                                      : 'WhatsApp'}
-                                  </span>
-                                </a>
-                              </div>
+                            <div
+                              className="flex items-center justify-between gap-1.5 pt-1"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                onClick={() => openClient360(client, 'overview')}
+                                className="flex-1 py-1.5 rounded-xl bg-white border border-[#EAECEF] hover:border-[#0B0F19] text-[11px] font-bold text-[#0B0F19] cursor-pointer"
+                              >
+                                Open 360° Dossier
+                              </button>
+                              <a
+                                href={generateWhatsAppPitch(client)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-2.5 py-1.5 rounded-xl bg-[#D1FAE5] text-[#059669] text-[11px] font-bold"
+                              >
+                                WA
+                              </a>
                             </div>
                           </div>
                         );
-                      })
-                    )}
-                  </div>
+                      })}
+                    </div>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
-      ) : (
-        /* View Mode 2: Editorial Table View (Mobile Card Stack + Desktop Table) */
-        <div className="space-y-4">
-          {/* Mobile Card List (md:hidden) */}
-          <div className="md:hidden space-y-3">
-            {filteredClients.map((client) => {
-              const pending = calculatePendingBalance(
-                client.finalAgreedPrice,
-                client.advancePaid
-              );
-              return (
-                <div
-                  key={client.id}
-                  className="bg-white border border-[#EAECEF] rounded-2xl p-4 shadow-2xs space-y-3"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() => onSelectClient(client)}
-                        className="text-sm font-bold text-[#0B0F19] hover:text-[#2563EB] text-left block"
-                      >
-                        {client.businessName}
-                      </button>
-                      <span className="text-xs text-slate-500 block">
-                        {client.contactPerson} · <span className="font-mono">{client.phone}</span>
-                      </span>
-                      <span className="text-[11px] text-slate-500 block mt-0.5">
-                        {client.niche} · {client.location} · Lead: {client.assignedLead}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (selectedClient?.id === client.id) {
-                          onSelectClient(null);
-                        }
-                        onDeleteClient(client.id);
-                      }}
-                      aria-label={`Delete row ${client.businessName}`}
-                      className="p-1.5 rounded-full border border-[#EAECEF] text-slate-400 hover:text-rose-600"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="text-xs font-medium text-[#0B0F19] bg-[#F8F9FA] p-2.5 rounded-xl border border-[#EAECEF]">
-                    {client.planSelected}
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-1.5 p-2.5 rounded-xl bg-[#F8F9FA] border border-[#EAECEF] text-center text-xs">
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase block">Agreed</span>
-                      <span className="font-mono font-bold text-[#0B0F19]">
-                        {formatINR(client.finalAgreedPrice)}
-                      </span>
-                    </div>
-                    <div className="border-x border-[#EAECEF]">
-                      <span className="text-[10px] text-slate-400 uppercase block">Paid</span>
-                      <span className="font-mono font-bold text-[#059669]">
-                        {formatINR(client.advancePaid)}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase block">Due</span>
-                      <span className="font-mono font-bold text-amber-800">
-                        {formatINR(pending)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <select
-                      aria-label={`Pipeline stage for ${client.businessName}`}
-                      value={client.stage}
-                      onChange={(e) =>
-                        handleStageChange(
-                          client,
-                          e.target.value as PipelineStage
-                        )
-                      }
-                      className="w-full bg-[#F8F9FA] border border-[#EAECEF] rounded-full px-3 py-1.5 text-xs font-semibold text-[#0B0F19]"
-                    >
-                      {PIPELINE_STAGES.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-
-                    <div className="flex items-center gap-2">
-                      {pending > 0 && client.stage === 'Live / Payment Pending' && (
-                        <button
-                          type="button"
-                          onClick={() => handleSettleBalanceQuick(client)}
-                          className="px-3 py-1.5 rounded-full bg-[#059669] text-white text-xs font-semibold"
-                        >
-                          Mark Paid
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => onSelectClient(client)}
-                        className="flex-1 py-1.5 px-3 rounded-full border border-[#EAECEF] text-xs font-semibold text-[#0B0F19]"
-                      >
-                        Edit Dossier
-                      </button>
-                      <a
-                        href={buildWhatsAppUrl(
-                          client.phone,
-                          `Hi ${client.contactPerson}, reaching out from Aethel Studios regarding ${client.businessName}.`
-                        )}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-3.5 py-1.5 rounded-full bg-[#D1FAE5] text-[#0D281D] text-xs font-semibold"
-                      >
-                        WhatsApp
-                      </a>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Desktop Editorial Table (hidden md:block) */}
-          <div className="hidden md:block bg-white border border-[#EAECEF] rounded-3xl overflow-hidden shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="border-b border-[#EAECEF] bg-[#F8F9FA] text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                    <th className="py-3.5 px-4">Business &amp; Contact</th>
-                    <th className="py-3.5 px-4">Niche &amp; Location</th>
-                    <th className="py-3.5 px-4">Pipeline Stage</th>
-                    <th className="py-3.5 px-4">Custom Requirement &amp; Scope</th>
-                    <th className="py-3.5 px-4 text-right">Agreed (₹)</th>
-                    <th className="py-3.5 px-4 text-right">Advance Paid (₹)</th>
-                    <th className="py-3.5 px-4 text-right">Pending (₹)</th>
-                    <th className="py-3.5 px-4">Next Follow-up</th>
-                    <th className="py-3.5 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#EAECEF] text-xs">
-                  {filteredClients.map((client) => {
-                    const pending = calculatePendingBalance(
-                      client.finalAgreedPrice,
-                      client.advancePaid
-                    );
-                    return (
-                      <tr
-                        key={client.id}
-                        className="hover:bg-slate-50/80 transition-colors"
-                      >
-                        <td className="py-3.5 px-4">
-                          <button
-                            type="button"
-                            onClick={() => onSelectClient(client)}
-                            className="font-bold text-[#0B0F19] hover:text-[#2563EB] text-left block cursor-pointer"
-                          >
-                            {client.businessName}
-                          </button>
-                          <span className="text-slate-500">
-                            {client.contactPerson} ·{' '}
-                            <span className="font-mono">{client.phone}</span>
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-slate-600">
-                          {client.niche} · {client.location}
-                        </td>
-                        <td className="py-3.5 px-4">
-                          <select
-                            aria-label={`Pipeline stage for ${client.businessName}`}
-                            value={client.stage}
-                            onChange={(e) =>
-                              handleStageChange(
-                                client,
-                                e.target.value as PipelineStage
-                              )
-                            }
-                            className="bg-[#F8F9FA] border border-[#EAECEF] rounded-full px-3 py-1 text-xs font-semibold text-[#0B0F19]"
-                          >
-                            {PIPELINE_STAGES.map((s) => (
-                              <option key={s} value={s}>
-                                {s}
-                              </option>
-                            ))}
-                          </select>
-                          {client.stage === 'Rejected / Dropped' && (
-                            <span className="block text-[11px] text-rose-600 mt-0.5">
-                              Reason: {client.rejectionReason || 'Budget Issue'}
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-4 font-medium text-[#0B0F19]">
-                          {client.planSelected}
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0B0F19]">
-                          {formatINR(client.finalAgreedPrice)}
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-mono font-semibold text-[#059669]">
-                          {formatINR(client.advancePaid)}
-                        </td>
-                        <td className="py-3.5 px-4 text-right font-mono font-semibold text-amber-800">
-                          {formatINR(pending)}
-                        </td>
-                        <td className="py-3.5 px-4 font-mono text-slate-600">
-                          {client.nextFollowUpDate} ({client.assignedLead})
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <div className="inline-flex items-center gap-1.5">
-                            {pending > 0 &&
-                              client.stage === 'Live / Payment Pending' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleSettleBalanceQuick(client)}
-                                  className="px-2.5 py-1 rounded-full bg-[#059669] hover:bg-emerald-600 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
-                                >
-                                  Mark Paid
-                                </button>
-                              )}
-                            <button
-                              type="button"
-                              onClick={() => onSelectClient(client)}
-                              className="px-3 py-1 rounded-full border border-[#EAECEF] hover:border-[#0B0F19] text-xs font-semibold text-[#0B0F19] cursor-pointer"
-                            >
-                              Edit
-                            </button>
-                            <a
-                              href={buildWhatsAppUrl(
-                                client.phone,
-                                `Hi ${client.contactPerson}, reaching out from Aethel Studios regarding ${client.businessName}.`
-                              )}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="px-3 py-1 rounded-full bg-[#D1FAE5] text-[#0D281D] hover:bg-[#059669] hover:text-white font-semibold transition-colors"
-                            >
-                              WhatsApp
-                            </a>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (selectedClient?.id === client.id) {
-                                  onSelectClient(null);
-                                }
-                                onDeleteClient(client.id);
-                              }}
-                              aria-label={`Delete row ${client.businessName}`}
-                              title={`Delete ${client.businessName}`}
-                              className="p-1.5 rounded-full border border-[#EAECEF] text-slate-400 hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 transition-colors cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
       )}
 
-      {/* Client Detail & Buffered Sync Drawer */}
-      {draftClient && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={`Client details for ${draftClient.businessName}`}
-          className="fixed inset-0 z-50 bg-black/45 backdrop-blur-xs flex justify-end"
-        >
-          <div className="w-full max-w-xl bg-white h-full overflow-y-auto shadow-2xl flex flex-col justify-between">
-            {/* Sticky Top Header */}
-            <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-md px-4 sm:px-8 py-4 border-b border-[#EAECEF] flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#2563EB] block">
-                  CLIENT DOSSIER · RELATIONAL SYNC ENGINE
-                </span>
-                <h2 className="text-lg sm:text-2xl font-bold text-[#0B0F19] truncate">
-                  {draftClient.businessName}
-                </h2>
-                <p className="text-xs text-slate-500 truncate">
-                  {draftClient.contactPerson} · {draftClient.phone} ·{' '}
-                  {draftClient.location}
-                </p>
+      {/* ============================================================================
+          PART 4 — UNIFIED 7-TAB CLIENT 360° PROFILE MODAL / DRAWER
+          "One Client. One Central Source of Truth."
+         ============================================================================ */}
+      {activeClient360 && (() => {
+        const client = activeClient360;
+        const pending = calculatePendingBalance(client.finalAgreedPrice, client.advancePaid);
+        const prog = calculateClientProjectProgress(client, dbState.tickets, dbState.websites);
+
+        const clientPayments = dbState.payments.filter(
+          (p) =>
+            p.clientId === client.id ||
+            p.clientName.toLowerCase().trim() === client.businessName.toLowerCase().trim()
+        );
+        const clientCampaigns = dbState.metaCampaigns.filter(
+          (m) =>
+            m.clientId === client.id ||
+            m.clientName.toLowerCase().trim() === client.businessName.toLowerCase().trim()
+        );
+        const clientDomains = dbState.websites.filter(
+          (w) =>
+            w.clientId === client.id ||
+            w.clientName.toLowerCase().trim() === client.businessName.toLowerCase().trim()
+        );
+        const clientTickets = dbState.tickets.filter(
+          (t) =>
+            t.clientId === client.id ||
+            t.clientName.toLowerCase().trim() === client.businessName.toLowerCase().trim()
+        );
+        const clientTasks = (dbState.tasks || []).filter(
+          (tsk) =>
+            tsk.clientId === client.id ||
+            tsk.clientName.toLowerCase().trim() === client.businessName.toLowerCase().trim()
+        );
+        const clientVaultItems = dbState.vaultItems.filter(
+          (v) =>
+            v.clientAssociated.toLowerCase().includes(client.businessName.toLowerCase()) ||
+            v.clientAssociated === 'All Hosted Clients'
+        );
+
+        return (
+          <div className="fixed inset-0 z-50 bg-[#0B0F19]/60 backdrop-blur-xs flex justify-end">
+            <div className="bg-white w-full max-w-4xl h-full flex flex-col justify-between shadow-2xl overflow-hidden animate-in slide-in-from-right duration-200">
+              {/* Top Profile Header */}
+              <div className="bg-[#0B0F19] text-white p-5 sm:px-7">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-[#60A5FA]">
+                      <span>CLIENT 360° CENTRAL DOSSIER</span>
+                      <span>·</span>
+                      <span>{client.niche}</span>
+                      <span>·</span>
+                      <span>{client.city}</span>
+                    </div>
+                    <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight mt-1">
+                      {client.businessName}
+                    </h2>
+                    <div className="text-xs text-slate-300 mt-0.5 flex flex-wrap items-center gap-2">
+                      <span>Contact: <strong>{client.contactPerson}</strong></span>
+                      <span>·</span>
+                      <span className="font-mono">{client.phone}</span>
+                      <span>·</span>
+                      <span>Owner: <strong>{client.assignedTo}</strong></span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <a
+                      href={generateWhatsAppPitch(client)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="px-3 py-1.5 rounded-xl bg-[#059669] hover:bg-[#047857] text-white text-xs font-bold flex items-center gap-1.5"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" /> WhatsApp
+                    </a>
+                    <button
+                      onClick={() => onSelectClient360(null)}
+                      aria-label="Close Client 360 Profile"
+                      className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick Financial & Progress Summary Strip inside Header */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-4 border-t border-white/10 text-xs">
+                  <div>
+                    <div className="text-[10px] uppercase text-[#94A3B8]">Agreed Value</div>
+                    <div className="text-base font-extrabold font-mono text-white">
+                      {formatINR(client.finalAgreedPrice)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase text-[#94A3B8]">Paid to Date</div>
+                    <div className="text-base font-extrabold font-mono text-[#34D399]">
+                      {formatINR(client.advancePaid)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase text-[#94A3B8]">Pending Balance</div>
+                    <div className="text-base font-extrabold font-mono text-amber-400">
+                      {formatINR(pending)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] uppercase text-[#94A3B8]">Delivery Progress</div>
+                    <div className="text-base font-extrabold font-mono text-[#60A5FA]">
+                      {prog.percent}% ({prog.completedMilestones}/6)
+                    </div>
+                  </div>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => onSelectClient(null)}
-                aria-label="Close Client Drawer"
-                className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer shrink-0"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <div className="p-4 sm:p-8 space-y-6 flex-1">
-              <form
-                id="client-dossier-form"
-                onSubmit={handleSaveDraftToDatabase}
-                className="space-y-6"
-              >
-                {/* 1-Click Continue on WhatsApp + Quick Balance Settlement */}
-                <div className="bg-[#0B0F19] text-white p-4 rounded-2xl space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <span className="text-xs text-[#94A3B8] block">
-                        Direct Client Channel
-                      </span>
-                      <span className="font-mono text-sm font-bold">
-                        {draftClient.phone}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <a
-                        href={`tel:${draftClient.phone.replace(/\s+/g, '')}`}
-                        className="px-3.5 py-2 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                      >
-                        <Phone className="w-3.5 h-3.5" />
-                        <span>Call</span>
-                      </a>
-                      <a
-                        href={buildWhatsAppUrl(
-                          draftClient.phone,
-                          `Namaskar ${draftClient.contactPerson}, this is ${
-                            draftClient.assignedLead === 'Both'
-                              ? 'Vansh & Krishna'
-                              : draftClient.assignedLead
-                          } from Aethel Studios regarding ${
-                            draftClient.businessName
-                          } (${draftClient.planSelected}).`
-                        )}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-4 py-2 rounded-full bg-[#059669] hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                      >
-                        <MessageCircle className="w-3.5 h-3.5" />
-                        <span>Continue on WhatsApp</span>
-                      </a>
-                    </div>
-                  </div>
+              {/* 7-TAB NAVIGATION BAR (Part 4) */}
+              <div className="px-5 bg-[#F8F9FA] border-b border-[#EAECEF] flex items-center gap-1 overflow-x-auto no-scrollbar shrink-0">
+                {[
+                  { id: 'overview', label: '1. Overview', icon: Users },
+                  {
+                    id: 'projects',
+                    label: `2. Projects (${prog.completedMilestones}/6)`,
+                    icon: Layers,
+                  },
+                  {
+                    id: 'payments',
+                    label: `3. Payments (${clientPayments.length})`,
+                    icon: CreditCard,
+                  },
+                  {
+                    id: 'meta-ads',
+                    label: `4. Meta Ads (${clientCampaigns.length})`,
+                    icon: Megaphone,
+                  },
+                  {
+                    id: 'domains',
+                    label: `5. Domains (${clientDomains.length})`,
+                    icon: Globe,
+                  },
+                  {
+                    id: 'tasks',
+                    label: `6. Tasks & Notes (${clientTasks.length})`,
+                    icon: CheckSquare,
+                  },
+                  {
+                    id: 'files',
+                    label: `7. Files & Vault (${clientVaultItems.length})`,
+                    icon: ShieldCheck,
+                  },
+                ].map((tab) => {
+                  const Icon = tab.icon;
+                  const active = active360Tab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActive360Tab(tab.id as Client360Tab)}
+                      className={`flex items-center gap-1.5 px-3.5 py-3 border-b-2 text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                        active
+                          ? 'border-[#2563EB] text-[#2563EB] bg-white'
+                          : 'border-transparent text-[#64748B] hover:text-[#0B0F19]'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
 
-                  {calculatePendingBalance(
-                    draftClient.finalAgreedPrice,
-                    draftClient.advancePaid
-                  ) > 0 &&
-                    draftClient.stage !== 'Rejected / Dropped' && (
-                      <div className="pt-3 border-t border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                        <span className="text-xs text-amber-300 font-mono">
-                          Remaining Due:{' '}
-                          {formatINR(
-                            calculatePendingBalance(
-                              draftClient.finalAgreedPrice,
-                              draftClient.advancePaid
-                            )
-                          )}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => handleSettleBalanceQuick(draftClient)}
-                          className="px-3.5 py-1.5 rounded-full bg-amber-400 hover:bg-amber-300 text-[#0B0F19] text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>
-                            Collect Full Balance &amp; Sync to Studio Finance
-                          </span>
-                        </button>
-                      </div>
-                    )}
-                </div>
-
-                {/* Section 1: Core Identity & Contact Fields */}
-                <div className="space-y-3">
-                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-[#2563EB]">
-                    1. Business Identity &amp; Contact Details
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Business / Account Name
-                      </label>
-                      <input
-                        type="text"
-                        aria-label="Business Name"
-                        value={draftClient.businessName}
-                        onChange={(e) =>
-                          handlePatchDraft({ businessName: e.target.value })
-                        }
-                        className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-bold text-[#0B0F19]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Contact Person / Owner
-                      </label>
-                      <input
-                        type="text"
-                        aria-label="Contact Person"
-                        value={draftClient.contactPerson}
-                        onChange={(e) =>
-                          handlePatchDraft({ contactPerson: e.target.value })
-                        }
-                        className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        WhatsApp Phone (+91)
-                      </label>
-                      <input
-                        type="text"
-                        aria-label="WhatsApp Phone"
-                        value={draftClient.phone}
-                        onChange={(e) =>
-                          handlePatchDraft({ phone: e.target.value })
-                        }
-                        className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono text-xs font-semibold text-[#0B0F19]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Business Niche
-                      </label>
-                      <select
-                        aria-label="Business Niche"
-                        value={draftClient.niche}
-                        onChange={(e) =>
-                          handlePatchDraft({
-                            niche: e.target.value as ClientNiche,
-                          })
-                        }
-                        className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
-                      >
-                        {CLIENT_NICHES.map((n) => (
-                          <option key={n} value={n}>
-                            {n}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        City / Location
-                      </label>
-                      <select
-                        aria-label="Client Location"
-                        value={draftClient.location}
-                        onChange={(e) =>
-                          handlePatchDraft({
-                            location: e.target.value as ClientLocation,
-                          })
-                        }
-                        className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
-                      >
-                        {CLIENT_LOCATIONS.map((loc) => (
-                          <option key={loc} value={loc}>
-                            {loc}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Section 2: Stage, Custom Scope & Commercial Financials */}
-                <div className="space-y-3 pt-4 border-t border-[#EAECEF]">
-                  <h3 className="text-[11px] font-bold uppercase tracking-wider text-[#2563EB]">
-                    2. Pipeline Stage, Custom Scope &amp; Financial Sync
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Pipeline Stage
-                      </label>
-                      <select
-                        aria-label="Drawer Pipeline Stage"
-                        value={draftClient.stage}
-                        onChange={(e) => {
-                          const nextStage = e.target.value as PipelineStage;
-                          handlePatchDraft({
-                            stage: nextStage,
-                            rejectionReason:
-                              nextStage === 'Rejected / Dropped'
-                                ? draftClient.rejectionReason || 'Budget Issue'
-                                : undefined,
-                          });
-                        }}
-                        className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
-                      >
-                        {PIPELINE_STAGES.map((st) => (
-                          <option key={st} value={st}>
-                            {st}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {draftClient.stage === 'Rejected / Dropped' ? (
+              {/* TAB CONTENT AREA */}
+              <div className="flex-1 overflow-y-auto p-5 sm:p-7 space-y-6">
+                {/* TAB 1: OVERVIEW */}
+                {active360Tab === 'overview' && (
+                  <div className="space-y-5">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-semibold text-rose-600 mb-1">
-                          Mandatory Rejection Reason
+                        <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
+                          Business Name
+                        </label>
+                        <input
+                          type="text"
+                          value={client.businessName}
+                          onChange={(e) =>
+                            onUpdateClient({ ...client, businessName: e.target.value })
+                          }
+                          className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
+                          Pipeline Stage
                         </label>
                         <select
-                          value={draftClient.rejectionReason || 'Budget Issue'}
+                          value={client.stage}
                           onChange={(e) =>
-                            handlePatchDraft({
-                              rejectionReason: e.target.value as RejectionReason,
-                            })
+                            onUpdateClient({ ...client, stage: e.target.value as LeadStage })
                           }
-                          className="w-full px-3.5 py-2 rounded-xl border border-rose-200 bg-rose-50 text-xs font-semibold text-rose-900"
+                          className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-bold bg-white"
                         >
-                          {REJECTION_REASONS.map((r) => (
-                            <option key={r} value={r}>
-                              {r}
+                          {STAGES.map((s) => (
+                            <option key={s} value={s}>
+                              {s}
                             </option>
                           ))}
                         </select>
                       </div>
-                    ) : (
                       <div>
-                        <label className="block text-xs font-semibold text-slate-600 mb-1">
-                          Custom Requirement &amp; Scope
+                        <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
+                          Contact Person
                         </label>
                         <input
                           type="text"
-                          list="aethel-scope-suggestions"
-                          aria-label="Custom Requirement and Scope"
-                          value={draftClient.planSelected}
+                          value={client.contactPerson}
                           onChange={(e) =>
-                            handlePatchDraft({ planSelected: e.target.value })
+                            onUpdateClient({ ...client, contactPerson: e.target.value })
                           }
-                          placeholder="Describe client-specific scope & deliverables..."
-                          className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
+                          className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
                         />
-                        <datalist id="aethel-scope-suggestions">
-                          {REQUIREMENT_SCOPE_SUGGESTIONS.map((s) => (
-                            <option key={s} value={s} />
-                          ))}
-                        </datalist>
                       </div>
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
+                          WhatsApp Phone
+                        </label>
+                        <input
+                          type="text"
+                          value={client.phone}
+                          onChange={(e) =>
+                            onUpdateClient({ ...client, phone: e.target.value })
+                          }
+                          className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
+                          Custom Service Scope / Package
+                        </label>
+                        <input
+                          type="text"
+                          value={client.packageTier}
+                          onChange={(e) =>
+                            onUpdateClient({ ...client, packageTier: e.target.value })
+                          }
+                          className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
+                          Final Agreed Price (₹)
+                        </label>
+                        <input
+                          type="number"
+                          value={client.finalAgreedPrice}
+                          onChange={(e) =>
+                            onUpdateClient({
+                              ...client,
+                              finalAgreedPrice: Number(e.target.value),
+                            })
+                          }
+                          className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
+                          Assigned Co-Founder
+                        </label>
+                        <select
+                          value={client.assignedTo}
+                          onChange={(e) =>
+                            onUpdateClient({
+                              ...client,
+                              assignedTo: e.target.value as FounderName,
+                            })
+                          }
+                          className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm bg-white"
+                        >
+                          <option value="Krishna">Krishna Khakole</option>
+                          <option value="Vansh">Vansh Khakole</option>
+                          <option value="Both">Both Founders</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
+                        Client Executive Summary & Scope Notes
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={client.notes}
+                        onChange={(e) =>
+                          onUpdateClient({ ...client, notes: e.target.value })
+                        }
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 2: PROJECTS & 6-STAGE MILESTONES */}
+                {active360Tab === 'projects' && (
+                  <div className="space-y-6">
+                    <div className="p-5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB]">
+                            6-STAGE DELIVERY PIPELINE
+                          </div>
+                          <h3 className="text-base font-extrabold text-[#0B0F19]">
+                            {client.packageTier}
+                          </h3>
+                        </div>
+                        <span className="text-sm font-mono font-extrabold text-[#2563EB]">
+                          {prog.percent}% Complete
+                        </span>
+                      </div>
+
+                      <div className="w-full h-2.5 bg-[#E2E8F0] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[#2563EB] transition-all duration-300"
+                          style={{ width: `${prog.percent}%` }}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                        {(client.milestones || []).map((m, idx) => (
+                          <button
+                            key={m.stage}
+                            onClick={() => onToggleMilestone(client.id, m.stage)}
+                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                              m.completed
+                                ? 'bg-[#ECFDF5] border-[#A7F3D0] text-[#059669]'
+                                : 'bg-white border-[#EAECEF] text-[#475569] hover:border-[#2563EB]'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between text-[10px] font-mono">
+                              <span>STAGE 0{idx + 1}</span>
+                              <span>{m.completed ? '✓ DONE' : 'PENDING'}</span>
+                            </div>
+                            <div className="text-xs font-extrabold text-[#0B0F19] mt-1">
+                              {m.stage}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Linked Revision / Delivery Tickets */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-[#475569]">
+                          Revision & Bug Tickets ({clientTickets.length})
+                        </h4>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={quickTicketTitle}
+                          onChange={(e) => setQuickTicketTitle(e.target.value)}
+                          placeholder="Add a revision or delivery ticket for this client..."
+                          className="flex-1 px-3.5 py-2 rounded-xl border border-[#EAECEF] text-xs"
+                        />
+                        <button
+                          onClick={() => {
+                            if (!quickTicketTitle.trim()) return;
+                            onAddTicket({
+                              id: `tkt-${Date.now()}`,
+                              clientId: client.id,
+                              clientName: client.businessName,
+                              domainName: clientDomains[0]?.domainName || 'staging.vercel.app',
+                              title: quickTicketTitle.trim(),
+                              category: 'Copy/Image Update',
+                              priority: 'High',
+                              status: 'Open',
+                              assignedTo: client.assignedTo,
+                              dueDate: new Date(Date.now() + 2 * 86400000)
+                                .toISOString()
+                                .slice(0, 10),
+                              description: 'Created from Client 360° Projects tab.',
+                              createdAt: new Date().toISOString().slice(0, 10),
+                            });
+                            setQuickTicketTitle('');
+                          }}
+                          className="px-4 py-2 rounded-xl bg-[#0B0F19] text-white text-xs font-bold cursor-pointer"
+                        >
+                          + Add Ticket
+                        </button>
+                      </div>
+
+                      {clientTickets.map((tkt) => (
+                        <div
+                          key={tkt.id}
+                          className="p-3.5 rounded-2xl border border-[#EAECEF] flex items-center justify-between text-xs"
+                        >
+                          <div>
+                            <div className="font-bold text-[#0B0F19]">{tkt.title}</div>
+                            <div className="text-[11px] text-[#64748B]">
+                              {tkt.category} · Priority: {tkt.priority} · Due: {tkt.dueDate}
+                            </div>
+                          </div>
+                          <span className="font-mono font-bold text-[#2563EB]">{tkt.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 3: PAYMENTS & INVOICES */}
+                {active360Tab === 'payments' && (
+                  <div className="space-y-6">
+                    <div className="p-5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-3">
+                      <div className="text-xs font-bold text-[#0B0F19]">
+                        Record New Payment for {client.businessName}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5">
+                        <input
+                          type="number"
+                          value={quickPayAmount}
+                          onChange={(e) => setQuickPayAmount(Number(e.target.value))}
+                          placeholder="Amount (₹)"
+                          className="px-3 py-2 rounded-xl border border-[#EAECEF] bg-white text-xs font-mono font-bold"
+                        />
+                        <select
+                          value={quickPayMode}
+                          onChange={(e) =>
+                            setQuickPayMode(e.target.value as ClientPayment['paymentMode'])
+                          }
+                          className="px-3 py-2 rounded-xl border border-[#EAECEF] bg-white text-xs"
+                        >
+                          <option value="UPI">UPI</option>
+                          <option value="Bank NEFT/IMPS">Bank NEFT/IMPS</option>
+                          <option value="Cash">Cash</option>
+                        </select>
+                        <select
+                          value={quickPayAccount}
+                          onChange={(e) =>
+                            setQuickPayAccount(e.target.value as ExpensePaidBy)
+                          }
+                          className="px-3 py-2 rounded-xl border border-[#EAECEF] bg-white text-xs"
+                        >
+                          <option value="Studio Account">Studio Account</option>
+                          <option value="Krishna">Krishna Account</option>
+                          <option value="Vansh">Vansh Account</option>
+                        </select>
+                        <button
+                          onClick={() => {
+                            if (quickPayAmount <= 0) return;
+                            onAddPayment({
+                              id: `pay-${Date.now()}`,
+                              clientId: client.id,
+                              clientName: client.businessName,
+                              projectTitle: `${client.packageTier} — Milestone Payment`,
+                              totalProjectValue: client.finalAgreedPrice,
+                              amountReceived: Number(quickPayAmount),
+                              paymentDate: new Date().toISOString().slice(0, 10),
+                              paymentMode: quickPayMode,
+                              receivedInAccount: quickPayAccount,
+                              milestone:
+                                client.advancePaid + quickPayAmount >= client.finalAgreedPrice
+                                  ? 'Final Delivery (50%)'
+                                  : 'Advance (50%)',
+                            });
+                          }}
+                          className="px-4 py-2 rounded-xl bg-[#059669] hover:bg-[#047857] text-white text-xs font-bold cursor-pointer"
+                        >
+                          + Record Inflow
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-[#475569]">
+                        Verified Payment Ledger ({clientPayments.length})
+                      </h4>
+                      {clientPayments.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-[#64748B] border border-[#EAECEF] rounded-2xl">
+                          No payments recorded yet for this client.
+                        </div>
+                      ) : (
+                        clientPayments.map((pay) => (
+                          <div
+                            key={pay.id}
+                            className="p-3.5 rounded-2xl border border-[#EAECEF] flex items-center justify-between text-xs"
+                          >
+                            <div>
+                              <div className="font-bold text-[#0B0F19]">{pay.projectTitle}</div>
+                              <div className="text-[11px] text-[#64748B]">
+                                {pay.paymentDate} · {pay.paymentMode} · Received by:{' '}
+                                <strong>{pay.receivedInAccount}</strong>
+                              </div>
+                            </div>
+                            <span className="font-mono font-extrabold text-[#059669] text-sm">
+                              +{formatINR(pay.amountReceived)}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 4: META ADS */}
+                {active360Tab === 'meta-ads' && (
+                  <div className="space-y-5">
+                    <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-3">
+                      <div className="text-xs font-bold text-[#0B0F19]">
+                        Launch Meta Ad Campaign for {client.businessName}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                        <input
+                          type="text"
+                          value={quickCampaignName}
+                          onChange={(e) => setQuickCampaignName(e.target.value)}
+                          placeholder="Campaign title..."
+                          className="sm:col-span-2 px-3 py-2 rounded-xl border border-[#EAECEF] bg-white text-xs"
+                        />
+                        <input
+                          type="number"
+                          value={quickCampaignBudget}
+                          onChange={(e) => setQuickCampaignBudget(Number(e.target.value))}
+                          placeholder="Ad Budget (₹)"
+                          className="px-3 py-2 rounded-xl border border-[#EAECEF] bg-white text-xs font-mono"
+                        />
+                        <button
+                          onClick={() => {
+                            if (!quickCampaignName.trim()) return;
+                            onAddCampaign({
+                              id: `meta-${Date.now()}`,
+                              clientId: client.id,
+                              clientName: client.businessName,
+                              campaignName: quickCampaignName.trim(),
+                              objective: 'WhatsApp Messages',
+                              status: 'Active',
+                              totalBudget: quickCampaignBudget,
+                              amountSpent: 0,
+                              agencyFee: quickCampaignFee,
+                              leadsGenerated: 0,
+                              startDate: new Date().toISOString().slice(0, 10),
+                              endDate: new Date(Date.now() + 30 * 86400000)
+                                .toISOString()
+                                .slice(0, 10),
+                              notes: 'Launched from Client 360° profile.',
+                            });
+                            setQuickCampaignName('');
+                          }}
+                          className="px-4 py-2 rounded-xl bg-[#2563EB] text-white text-xs font-bold cursor-pointer"
+                        >
+                          + Launch Ad
+                        </button>
+                      </div>
+                    </div>
+
+                    {clientCampaigns.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-[#64748B] border border-[#EAECEF] rounded-2xl">
+                        No Meta Ad campaigns linked to {client.businessName}.
+                      </div>
+                    ) : (
+                      clientCampaigns.map((camp) => (
+                        <div
+                          key={camp.id}
+                          className="p-4 rounded-2xl border border-[#EAECEF] space-y-2 text-xs"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="font-bold text-[#0B0F19]">{camp.campaignName}</div>
+                            <span className="font-mono font-bold text-[#059669]">
+                              {camp.status}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-4 gap-2 pt-2 border-t border-[#F1F5F9] font-mono">
+                            <div>
+                              <span className="text-[10px] text-[#64748B] block">Ad Budget</span>
+                              {formatINR(camp.totalBudget)}
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-[#64748B] block">Spent</span>
+                              {formatINR(camp.amountSpent)}
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-[#64748B] block">Leads / CPL</span>
+                              {camp.leadsGenerated} ({formatINR(calculateCPL(camp.amountSpent, camp.leadsGenerated))})
+                            </div>
+                            <div>
+                              <span className="text-[10px] text-[#64748B] block">Agency Fee</span>
+                              {formatINR(camp.agencyFee)}
+                            </div>
+                          </div>
+                        </div>
+                      ))
                     )}
+                  </div>
+                )}
 
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Quoted Price (₹)
-                      </label>
+                {/* TAB 5: DOMAINS & HOSTING */}
+                {active360Tab === 'domains' && (
+                  <div className="space-y-5">
+                    <div className="flex gap-2">
                       <input
-                        type="number"
-                        aria-label="Quoted Price"
-                        value={draftClient.quotedPrice}
-                        onChange={(e) =>
-                          handlePatchDraft({
-                            quotedPrice: Number(e.target.value) || 0,
-                          })
-                        }
-                        className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono text-xs text-[#0B0F19]"
+                        type="text"
+                        value={quickDomainName}
+                        onChange={(e) => setQuickDomainName(e.target.value)}
+                        placeholder="e.g., clientbusiness.in"
+                        className="flex-1 px-3.5 py-2 rounded-xl border border-[#EAECEF] text-xs font-mono"
                       />
+                      <button
+                        onClick={() => {
+                          if (!quickDomainName.trim()) return;
+                          const clean = quickDomainName.trim().replace(/^https?:\/\//, '');
+                          onAddWebsite({
+                            id: `web-${Date.now()}`,
+                            clientId: client.id,
+                            clientName: client.businessName,
+                            domainName: clean,
+                            liveUrl: `https://${clean}`,
+                            registrar: 'Hostinger',
+                            hostingPlatform: 'Vercel',
+                            purchaseDate: new Date().toISOString().slice(0, 10),
+                            expiryDate: new Date(Date.now() + 365 * 86400000)
+                              .toISOString()
+                              .slice(0, 10),
+                            renewalCostINR: 1499,
+                            sslStatus: 'Active',
+                            siteStatus: 'Online',
+                            githubRepo: `aethel-studios/${clean.split('.')[0]}`,
+                            notes: 'Linked via Client 360° profile.',
+                          });
+                          setQuickDomainName('');
+                        }}
+                        className="px-4 py-2 rounded-xl bg-[#0B0F19] text-white text-xs font-bold cursor-pointer"
+                      >
+                        + Link Domain
+                      </button>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Final Agreed Price (₹)
-                      </label>
+                    {clientDomains.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-[#64748B] border border-[#EAECEF] rounded-2xl">
+                        No custom domains linked yet. Staging preview: {client.sampleLinkSent || 'None'}
+                      </div>
+                    ) : (
+                      clientDomains.map((dom) => (
+                        <div
+                          key={dom.id}
+                          className="p-4 rounded-2xl border border-[#EAECEF] flex items-center justify-between text-xs"
+                        >
+                          <div>
+                            <div className="font-mono font-bold text-[#0B0F19] text-sm">
+                              {dom.domainName}
+                            </div>
+                            <div className="text-[11px] text-[#64748B]">
+                              {dom.registrar} · {dom.hostingPlatform} · SSL: {dom.sslStatus} · Expires in{' '}
+                              {calculateDaysUntilExpiry(dom.expiryDate)} days
+                            </div>
+                          </div>
+                          <a
+                            href={dom.liveUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 rounded-xl bg-[#EFF6FF] text-[#2563EB] font-bold flex items-center gap-1"
+                          >
+                            Visit <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* TAB 6: TASKS & COMMUNICATION */}
+                {active360Tab === 'tasks' && (
+                  <div className="space-y-5">
+                    <div className="flex flex-col sm:flex-row gap-2">
                       <input
-                        type="number"
-                        aria-label="Final Agreed Price"
-                        value={draftClient.finalAgreedPrice}
-                        onChange={(e) =>
-                          handlePatchDraft({
-                            finalAgreedPrice: Number(e.target.value) || 0,
-                          })
-                        }
-                        className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono text-xs font-bold text-[#0B0F19]"
+                        type="text"
+                        value={quickTaskTitle}
+                        onChange={(e) => setQuickTaskTitle(e.target.value)}
+                        placeholder="Schedule a follow-up call, invoice reminder, or milestone check..."
+                        className="flex-1 px-3.5 py-2 rounded-xl border border-[#EAECEF] text-xs"
                       />
+                      <input
+                        type="date"
+                        value={quickTaskDue}
+                        onChange={(e) => setQuickTaskDue(e.target.value)}
+                        className="px-3 py-2 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                      />
+                      <button
+                        onClick={() => {
+                          if (!quickTaskTitle.trim()) return;
+                          onAddTask({
+                            id: `tsk-${Date.now()}`,
+                            clientId: client.id,
+                            clientName: client.businessName,
+                            title: quickTaskTitle.trim(),
+                            type: 'Follow-up',
+                            priority: 'High',
+                            status: 'Pending',
+                            assignedTo: client.assignedTo,
+                            dueDate: quickTaskDue,
+                            notes: '',
+                            createdAt: new Date().toISOString().slice(0, 10),
+                          });
+                          setQuickTaskTitle('');
+                        }}
+                        className="px-4 py-2 rounded-xl bg-[#2563EB] text-white text-xs font-bold cursor-pointer"
+                      >
+                        + Add Task
+                      </button>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Advance / Total Paid (₹) · Syncs to Finance
-                      </label>
-                      <input
-                        type="number"
-                        aria-label="Advance Paid"
-                        value={draftClient.advancePaid}
-                        onChange={(e) =>
-                          handlePatchDraft({
-                            advancePaid: Number(e.target.value) || 0,
-                          })
-                        }
-                        className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono text-xs font-bold text-[#059669]"
-                      />
+                    <div className="space-y-2">
+                      {clientTasks.map((tsk) => (
+                        <div
+                          key={tsk.id}
+                          className="p-3.5 rounded-2xl border border-[#EAECEF] flex items-center justify-between text-xs"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <input
+                              type="checkbox"
+                              checked={tsk.status === 'Completed'}
+                              onChange={() => onToggleTaskStatus(tsk.id)}
+                              className="w-4 h-4 accent-[#2563EB] cursor-pointer"
+                            />
+                            <div>
+                              <div
+                                className={`font-bold ${
+                                  tsk.status === 'Completed'
+                                    ? 'line-through text-[#94A3B8]'
+                                    : 'text-[#0B0F19]'
+                                }`}
+                              >
+                                {tsk.title}
+                              </div>
+                              <div className="text-[11px] text-[#64748B]">
+                                {tsk.type} · Assigned: {tsk.assignedTo} · Due: {tsk.dueDate}
+                              </div>
+                            </div>
+                          </div>
+                          <span className="font-mono text-[11px] font-bold text-[#475569]">
+                            {tsk.status}
+                          </span>
+                        </div>
+                      ))}
                     </div>
+                  </div>
+                )}
 
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Pending Balance (Auto)
-                      </label>
-                      <div className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-slate-100 font-mono text-xs font-bold text-amber-800">
-                        {formatINR(
-                          calculatePendingBalance(
-                            draftClient.finalAgreedPrice,
-                            draftClient.advancePaid
-                          )
+                {/* TAB 7: FILES, PROPOSALS & VAULT CREDENTIALS */}
+                {active360Tab === 'files' && (
+                  <div className="space-y-5">
+                    <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-2">
+                      <div className="text-xs font-bold text-[#0B0F19] flex items-center gap-1.5">
+                        <FileText className="w-4 h-4 text-[#2563EB]" /> Staging & Prototype Links
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={client.sampleLinkSent}
+                          onChange={(e) =>
+                            onUpdateClient({ ...client, sampleLinkSent: e.target.value })
+                          }
+                          placeholder="https://client-preview.vercel.app"
+                          className="flex-1 px-3 py-2 rounded-xl border border-[#EAECEF] bg-white text-xs font-mono"
+                        />
+                        {client.sampleLinkSent && (
+                          <a
+                            href={client.sampleLinkSent}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-2 rounded-xl bg-[#2563EB] text-white text-xs font-bold flex items-center gap-1"
+                          >
+                            Open <ExternalLink className="w-3 h-3" />
+                          </a>
                         )}
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Assigned Lead
-                      </label>
-                      <select
-                        aria-label="Assigned Lead"
-                        value={draftClient.assignedLead}
-                        onChange={(e) =>
-                          handlePatchDraft({
-                            assignedLead: e.target.value as AssignedPerson,
-                          })
-                        }
-                        className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
-                      >
-                        <option value="Krishna">Krishna</option>
-                        <option value="Vansh">Vansh</option>
-                        <option value="Both">Both</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">
-                        Next Follow-up Date
-                      </label>
-                      <input
-                        type="date"
-                        aria-label="Next Follow-up Date"
-                        value={draftClient.nextFollowUpDate}
-                        onChange={(e) =>
-                          handlePatchDraft({ nextFollowUpDate: e.target.value })
-                        }
-                        className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono text-xs text-[#0B0F19]"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Explicit Save & Sync Bar */}
-                  <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                    <span className="text-[11px] text-slate-500">
-                      {hasUnsavedChanges
-                        ? 'Unsaved edits ready — click Save & Sync to update Pipeline & Studio Finance.'
-                        : 'All fields synced with Studio Finance & Supabase.'}
-                    </span>
-                    <button
-                      type="submit"
-                      className={`px-4 py-2 rounded-full text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
-                        hasUnsavedChanges
-                          ? 'bg-[#2563EB] hover:bg-blue-700 text-white shadow-sm'
-                          : 'bg-[#0B0F19] hover:bg-slate-800 text-white'
-                      }`}
-                    >
-                      <Save className="w-3.5 h-3.5" />
-                      <span>Save &amp; Sync Changes</span>
-                    </button>
-                  </div>
-                </div>
-              </form>
-
-              {/* Timestamped Call / Meeting Notes Log */}
-              <div className="pt-4 border-t border-[#EAECEF] space-y-4">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-[#0B0F19]">
-                  Timestamped Call &amp; Meeting Notes Log
-                </h3>
-
-                <form onSubmit={handleAddNote} className="space-y-2">
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <select
-                      aria-label="Note Author"
-                      value={noteAuthor}
-                      onChange={(e) =>
-                        setNoteAuthor(e.target.value as 'Krishna' | 'Vansh')
-                      }
-                      className="px-3 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs font-semibold text-[#0B0F19]"
-                    >
-                      <option value="Krishna">Krishna</option>
-                      <option value="Vansh">Vansh</option>
-                    </select>
-                    <div className="flex gap-2 flex-1">
-                      <input
-                        type="text"
-                        value={newNoteText}
-                        onChange={(e) => setNewNoteText(e.target.value)}
-                        placeholder="Log call summary, client requirement, or price negotiation..."
-                        className="flex-1 px-3.5 py-2 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] text-xs text-[#0B0F19] focus:outline-none focus:border-[#2563EB]"
-                      />
-                      <button
-                        type="submit"
-                        className="px-4 py-2 rounded-xl bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>Log</span>
-                      </button>
-                    </div>
-                  </div>
-                </form>
-
-                <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
-                  {draftClient.notesLog.map((note) => (
-                    <div
-                      key={note.id}
-                      className="p-3 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] text-xs space-y-1"
-                    >
-                      <div className="flex items-center justify-between text-[11px] text-slate-500">
-                        <span className="font-bold text-[#0B0F19]">
-                          {note.author}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono">{note.timestamp}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteNote(note.id)}
-                            aria-label="Delete note"
-                            className="text-slate-400 hover:text-rose-600 cursor-pointer"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
+                    <div className="space-y-2.5">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-[#475569]">
+                        Associated Encrypted Vault Credentials ({clientVaultItems.length})
+                      </h4>
+                      {clientVaultItems.map((v) => (
+                        <div
+                          key={v.id}
+                          className="p-3.5 rounded-2xl border border-[#EAECEF] flex items-center justify-between text-xs"
+                        >
+                          <div>
+                            <div className="font-bold text-[#0B0F19]">{v.title}</div>
+                            <div className="text-[11px] text-[#64748B] font-mono">
+                              {v.accountIdentifier} · {v.category}
+                            </div>
+                          </div>
+                          <span className="font-mono text-[10px] text-[#059669] bg-[#ECFDF5] px-2.5 py-1 rounded-lg font-bold">
+                            AES-256 Protected
+                          </span>
                         </div>
-                      </div>
-                      <p className="text-slate-700 leading-relaxed">
-                        {note.text}
-                      </p>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Drawer Footer */}
+              <div className="p-4 px-6 bg-[#F8F9FA] border-t border-[#EAECEF] flex items-center justify-between">
+                <span className="text-[11px] text-[#64748B]">
+                  All changes auto-sync with Finance, Projects & Cloud Database.
+                </span>
+                <button
+                  onClick={() => onSelectClient360(null)}
+                  className="px-5 py-2 rounded-xl bg-[#0B0F19] text-white text-xs font-bold cursor-pointer"
+                >
+                  Done
+                </button>
               </div>
             </div>
-
-            {/* Sticky Bottom Action Bar */}
-            <div className="sticky bottom-0 z-10 bg-white/95 backdrop-blur-md px-4 sm:px-8 py-3.5 border-t border-[#EAECEF] flex items-center justify-between gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  onDeleteClient(draftClient.id);
-                  onSelectClient(null);
-                }}
-                className="px-3.5 py-2 rounded-full text-rose-600 hover:bg-rose-50 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Delete Client</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (hasUnsavedChanges) {
-                    onUpdateClient(draftClient);
-                  }
-                  onSelectClient(null);
-                }}
-                className="px-5 py-2 rounded-full bg-[#0B0F19] text-white text-xs font-semibold cursor-pointer"
-              >
-                {hasUnsavedChanges ? 'Save & Close' : 'Close Drawer'}
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };

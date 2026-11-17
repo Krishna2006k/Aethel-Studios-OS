@@ -1,13 +1,10 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import type { AethelDatabaseState, VaultCredential } from '../types';
-import { SEED_DATA, SEED_RAW_VAULT_ITEMS } from '../data/seedData';
-import { encryptSecret } from '../utils/cryptoService';
+import { AethelDatabaseState } from '../types';
+import { SEED_DATA } from '../data/seedData';
 import { reconcileDatabaseIntegrity } from '../utils/syncEngine';
 
-const STORAGE_KEY_DATA = 'aethel_os_db_v3';
-const STORAGE_KEY_SUPABASE_CFG = 'aethel_os_supabase_config_v1';
-
-export const DEMO_MASTER_PASSPHRASE = 'aethel2026';
+const LOCAL_STORAGE_DB_KEY = 'aethel_os_db_v3';
+const LOCAL_STORAGE_SUPA_CONFIG_KEY = 'aethel_os_supabase_config_v1';
 
 export interface SupabaseConfig {
   url: string;
@@ -16,414 +13,404 @@ export interface SupabaseConfig {
 
 let supabaseInstance: SupabaseClient | null = null;
 
-export function getSavedSupabaseConfig(): SupabaseConfig | null {
+export function getSavedSupabaseConfig(): SupabaseConfig {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_SUPABASE_CFG);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as SupabaseConfig;
-    if (parsed.url && parsed.anonKey) {
-      return parsed;
+    const raw = localStorage.getItem(LOCAL_STORAGE_SUPA_CONFIG_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.url && parsed.anonKey) return parsed;
     }
-    return null;
   } catch {
-    return null;
+    // ignore
   }
+  return {
+    url: (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPABASE_URL || '',
+    anonKey: (import.meta as unknown as { env: Record<string, string> }).env?.VITE_SUPABASE_ANON_KEY || '',
+  };
 }
 
-export function saveSupabaseConfig(config: SupabaseConfig | null): boolean {
-  try {
-    if (!config || !config.url.trim() || !config.anonKey.trim()) {
-      localStorage.removeItem(STORAGE_KEY_SUPABASE_CFG);
-      supabaseInstance = null;
-      return false;
-    }
-    const cleanConfig = {
-      url: config.url.trim(),
-      anonKey: config.anonKey.trim(),
-    };
-    supabaseInstance = createClient(cleanConfig.url, cleanConfig.anonKey);
-    localStorage.setItem(STORAGE_KEY_SUPABASE_CFG, JSON.stringify(cleanConfig));
-    return true;
-  } catch {
-    supabaseInstance = null;
-    return false;
-  }
+export function saveSupabaseConfig(config: SupabaseConfig): void {
+  localStorage.setItem(LOCAL_STORAGE_SUPA_CONFIG_KEY, JSON.stringify(config));
+  supabaseInstance = null;
+}
+
+export function clearSupabaseConfig(): void {
+  localStorage.removeItem(LOCAL_STORAGE_SUPA_CONFIG_KEY);
+  supabaseInstance = null;
 }
 
 export function getSupabaseClient(): SupabaseClient | null {
   if (supabaseInstance) return supabaseInstance;
-  const saved = getSavedSupabaseConfig();
-  if (saved) {
-    try {
-      supabaseInstance = createClient(saved.url, saved.anonKey);
-      return supabaseInstance;
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-/**
- * Generates real AES-GCM encrypted seed vault records using DEMO_MASTER_PASSPHRASE ('aethel2026')
- */
-export async function buildEncryptedSeedVault(): Promise<VaultCredential[]> {
-  const credentials: VaultCredential[] = [];
-  for (const item of SEED_RAW_VAULT_ITEMS) {
-    const encrypted = await encryptSecret(item.plainSecret, DEMO_MASTER_PASSPHRASE);
-    credentials.push({
-      id: item.id,
-      servicePlatform: item.servicePlatform,
-      ownerClientTag: item.ownerClientTag,
-      usernameEmail: item.usernameEmail,
-      ciphertext: encrypted.ciphertext,
-      iv: encrypted.iv,
-      salt: encrypted.salt,
-      url: item.url,
-      notes: item.notes,
-      createdAt: item.createdAt,
-    });
-  }
-  return credentials;
-}
-
-async function fetchServerDatabase(): Promise<AethelDatabaseState | null> {
+  const { url, anonKey } = getSavedSupabaseConfig();
+  if (!url || !anonKey || !url.startsWith('http')) return null;
   try {
-    const res = await fetch('/api/db', {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    if (data && data.state && Array.isArray(data.state.clients)) {
-      return data.state as AethelDatabaseState;
-    }
-    return null;
+    supabaseInstance = createClient(url, anonKey);
+    return supabaseInstance;
   } catch {
     return null;
   }
 }
 
-async function pushStateToServer(state: AethelDatabaseState): Promise<boolean> {
-  try {
-    const res = await fetch('/api/db', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ state }),
-    });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-export async function loadInitialDatabase(): Promise<{
+export async function loadDatabaseState(): Promise<{
   state: AethelDatabaseState;
-  mode: 'cloud' | 'local';
-  syncNote?: string;
+  mode: 'supabase' | 'local';
+  error?: string;
 }> {
-  // 1. Try loading from our persistent Express Backend (/api/db) first
-  let activeState = await fetchServerDatabase();
-
-  // 2. Fallback to browser localStorage if server is unreachable
-  if (!activeState) {
+  const client = getSupabaseClient();
+  if (client) {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY_DATA);
-      if (raw) {
-        activeState = JSON.parse(raw) as AethelDatabaseState;
+      const { data, error } = await client
+        .from('aethel_os_state')
+        .select('payload, updated_at')
+        .eq('id', 'studio-primary')
+        .maybeSingle();
+
+      if (error) {
+        return {
+          state: loadFromLocalStorage(),
+          mode: 'local',
+          error: error.message,
+        };
       }
-    } catch {
-      activeState = null;
-    }
-  }
 
-  // 3. Ensure valid seed state with AES-GCM encrypted vault records
-  if (!activeState || !activeState.clients) {
-    const vaultCredentials = await buildEncryptedSeedVault();
-    activeState = {
-      ...SEED_DATA,
-      vaultCredentials,
-    };
-  } else if (!activeState.vaultCredentials || activeState.vaultCredentials.length === 0) {
-    activeState.vaultCredentials = await buildEncryptedSeedVault();
-  }
-
-  activeState = reconcileDatabaseIntegrity(activeState);
-
-  try {
-    localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(activeState));
-  } catch {
-    // Ignore quota errors
-  }
-
-  // 4. If Supabase is configured, sync from Supabase tables and reconcile integrity
-  const sb = getSupabaseClient();
-  if (!sb) {
-    return { state: activeState, mode: 'local' };
-  }
-
-  try {
-    const [
-      clientsRes,
-      campaignsRes,
-      websitesRes,
-      ticketsRes,
-      prototypesRes,
-      expensesRes,
-      paymentsRes,
-      vaultRes,
-    ] = await Promise.all([
-      sb.from('clients').select('id, payload'),
-      sb.from('meta_campaigns').select('id, payload'),
-      sb.from('websites').select('id, payload'),
-      sb.from('tickets').select('id, payload'),
-      sb.from('prototypes').select('id, payload'),
-      sb.from('expenses').select('id, payload'),
-      sb.from('client_payments').select('id, payload'),
-      sb.from('vault_credentials').select('id, payload'),
-    ]);
-
-    if (clientsRes.error) {
+      if (data && data.payload) {
+        const merged = reconcileDatabaseIntegrity({
+          ...SEED_DATA,
+          ...(data.payload as AethelDatabaseState),
+        });
+        saveToLocalStorage(merged);
+        return { state: merged, mode: 'supabase' };
+      } else {
+        const initial = reconcileDatabaseIntegrity(loadFromLocalStorage());
+        await client.from('aethel_os_state').upsert({
+          id: 'studio-primary',
+          studio_email: 'aethelstudios.in@gmail.com',
+          payload: initial,
+          updated_at: new Date().toISOString(),
+        });
+        return { state: initial, mode: 'supabase' };
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Unknown connection error';
       return {
-        state: activeState,
+        state: loadFromLocalStorage(),
         mode: 'local',
-        syncNote: `Supabase connected, awaiting schema setup (${clientsRes.error.message})`,
+        error: message,
       };
     }
-
-    const hasCloudData =
-      (clientsRes.data && clientsRes.data.length > 0) ||
-      (campaignsRes.data && campaignsRes.data.length > 0);
-
-    if (!hasCloudData) {
-      await pushFullStateToSupabase(activeState);
-      return { state: activeState, mode: 'cloud', syncNote: 'Synced studio data to Supabase' };
-    }
-
-    const rawCloudState: AethelDatabaseState = {
-      clients: (clientsRes.data || []).map((r: { payload: any }) => r.payload),
-      metaCampaigns: (campaignsRes.data || []).map((r: { payload: any }) => r.payload),
-      websites: (websitesRes.data || []).map((r: { payload: any }) => r.payload),
-      tickets: (ticketsRes.data || []).map((r: { payload: any }) => r.payload),
-      prototypes: (prototypesRes.data || []).map((r: { payload: any }) => r.payload),
-      expenses: (expensesRes.data || []).map((r: { payload: any }) => r.payload),
-      payments: (paymentsRes.data || []).map((r: { payload: any }) => r.payload),
-      vaultCredentials: (vaultRes.data || []).map((r: { payload: any }) => r.payload),
-    };
-
-    // Reconcile cloud data integrity (consolidates fragmented keystroke payments & syncs advancePaid <-> payments)
-    const reconciledCloudState = reconcileDatabaseIntegrity(rawCloudState);
-
-    localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(reconciledCloudState));
-    await pushStateToServer(reconciledCloudState);
-    await pushFullStateToSupabase(reconciledCloudState);
-    return { state: reconciledCloudState, mode: 'cloud' };
-  } catch (err: any) {
-    return {
-      state: activeState,
-      mode: 'local',
-      syncNote: err?.message || 'Fallback to Server + Local Mode',
-    };
   }
-}
 
-export async function persistDatabaseState(state: AethelDatabaseState): Promise<void> {
-  const reconciled = reconcileDatabaseIntegrity(state);
   try {
-    localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(reconciled));
-  } catch {
-    // Ignore storage error
-  }
-
-  // Persist to Express Backend disk storage (/api/db)
-  await pushStateToServer(reconciled);
-
-  // Also sync to Supabase Cloud if configured
-  const sb = getSupabaseClient();
-  if (sb) {
-    try {
-      await pushFullStateToSupabase(reconciled);
-    } catch {
-      // Silent fallback to server + localStorage
-    }
-  }
-}
-
-export async function pushFullStateToSupabase(state: AethelDatabaseState): Promise<void> {
-  const sb = getSupabaseClient();
-  if (!sb) return;
-
-  const syncTable = async (tableName: string, items: { id: string }[]) => {
-    const currentIdSet = new Set(items.map((item) => item.id));
-
-    // 1. Upsert all current items
-    const rows = items.map((item) => ({
-      id: item.id,
-      payload: item,
-      updated_at: new Date().toISOString(),
-    }));
-    if (rows.length > 0) {
-      await sb.from(tableName).upsert(rows, { onConflict: 'id' });
-    }
-
-    // 2. Delete any stale/consolidated/removed rows in Supabase that are no longer in `items`
-    const existingRes = await sb.from(tableName).select('id');
-    if (existingRes.data && existingRes.data.length > 0) {
-      const staleIds = existingRes.data
-        .map((r: { id: string }) => r.id)
-        .filter((id) => !currentIdSet.has(id));
-      if (staleIds.length > 0) {
-        await sb.from(tableName).delete().in('id', staleIds);
-      }
-    }
-  };
-
-  await Promise.all([
-    syncTable('clients', state.clients),
-    syncTable('meta_campaigns', state.metaCampaigns),
-    syncTable('websites', state.websites),
-    syncTable('tickets', state.tickets),
-    syncTable('prototypes', state.prototypes),
-    syncTable('expenses', state.expenses),
-    syncTable('client_payments', state.payments),
-    syncTable('vault_credentials', state.vaultCredentials),
-  ]);
-}
-
-export async function deleteRecordFromSupabase(
-  tableName:
-    | 'clients'
-    | 'meta_campaigns'
-    | 'websites'
-    | 'tickets'
-    | 'prototypes'
-    | 'expenses'
-    | 'client_payments'
-    | 'vault_credentials',
-  id: string
-): Promise<void> {
-  const sb = getSupabaseClient();
-  if (!sb) return;
-  try {
-    await sb.from(tableName).delete().eq('id', id);
-  } catch {
-    // Ignore offline error
-  }
-}
-
-export async function resetToFactorySeed(): Promise<AethelDatabaseState> {
-  try {
-    const res = await fetch('/api/db/reset', { method: 'POST' });
+    const res = await fetch('/api/db');
     if (res.ok) {
-      const data = await res.json();
-      if (data && data.state) {
-        localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(data.state));
-        return data.state as AethelDatabaseState;
+      const json = await res.json();
+      if (json && json.state && Array.isArray(json.state.clients)) {
+        const reconciled = reconcileDatabaseIntegrity(json.state as AethelDatabaseState);
+        saveToLocalStorage(reconciled);
+        return { state: reconciled, mode: 'local' };
       }
     }
   } catch {
-    // Fallback if server endpoint is unavailable
+    // Fallback to browser localStorage if API is unreachable
   }
 
-  const vaultCredentials = await buildEncryptedSeedVault();
-  const fresh: AethelDatabaseState = {
-    ...SEED_DATA,
-    vaultCredentials,
-  };
-  localStorage.setItem(STORAGE_KEY_DATA, JSON.stringify(fresh));
-  await pushStateToServer(fresh);
-  return fresh;
+  return { state: loadFromLocalStorage(), mode: 'local' };
+}
+
+export async function saveDatabaseState(
+  newState: AethelDatabaseState
+): Promise<{ synced: boolean; error?: string }> {
+  const reconciledState = reconcileDatabaseIntegrity({
+    ...newState,
+    lastUpdated: new Date().toISOString(),
+  });
+  saveToLocalStorage(reconciledState);
+
+  try {
+    await fetch('/api/db', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reconciledState),
+    });
+  } catch {
+    // Continue even if offline
+  }
+
+  const client = getSupabaseClient();
+  if (!client) {
+    return { synced: false };
+  }
+
+  try {
+    const { error } = await client.from('aethel_os_state').upsert({
+      id: 'studio-primary',
+      studio_email: 'aethelstudios.in@gmail.com',
+      payload: reconciledState,
+      updated_at: reconciledState.lastUpdated,
+    });
+
+    if (error) {
+      return { synced: false, error: error.message };
+    }
+    return { synced: true };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Sync failed';
+    return { synced: false, error: message };
+  }
+}
+
+export function loadFromLocalStorage(): AethelDatabaseState {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_DB_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return reconcileDatabaseIntegrity({ ...SEED_DATA, ...parsed });
+    }
+  } catch {
+    // ignore
+  }
+  const initial = reconcileDatabaseIntegrity(SEED_DATA);
+  saveToLocalStorage(initial);
+  return initial;
+}
+
+export function saveToLocalStorage(state: AethelDatabaseState): void {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_DB_KEY, JSON.stringify(state));
+  } catch {
+    // ignore
+  }
 }
 
 export const SUPABASE_COMPLETE_SQL_SCHEMA = `-- ============================================================================
--- AETHEL OS — INTERNAL AGENCY & GROWTH OPERATING SYSTEM
--- Complete PostgreSQL Schema for Supabase (Run in Supabase SQL Editor)
+-- AETHEL OS — ENTERPRISE RELATIONAL & HYBRID PostgreSQL SCHEMA (SUPABASE)
 -- Founders: Vansh Khakole & Krishna Khakole (aethelstudios.in@gmail.com)
+-- Architecture: Multi-tenant Organizations + Relational Core + Real-time Sync
 -- ============================================================================
 
+-- 0. Enable UUID extension
 create extension if not exists "pgcrypto";
 
--- 1. Clients & Sales Pipeline
+-- 1. Primary Real-Time Sync State Table (Used for instant atomic OS state snapshots)
+create table if not exists public.aethel_os_state (
+  id text primary key default 'studio-primary',
+  studio_email text not null default 'aethelstudios.in@gmail.com',
+  payload jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
+-- 2. Organizations & Founder Profiles (Multi-Tenant Auth Ready)
+create table if not exists public.organizations (
+  id uuid primary key default gen_random_uuid(),
+  name text not null default 'Aethel Studios',
+  studio_email text not null default 'aethelstudios.in@gmail.com',
+  created_at timestamptz default now()
+);
+
+create table if not exists public.profiles (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid references public.organizations(id) on delete cascade,
+  full_name text not null,
+  role text not null default 'Founder',
+  phone text,
+  created_at timestamptz default now()
+);
+
+-- 3. Central CRM Clients Table (Single Source of Truth for Client 360)
 create table if not exists public.clients (
   id text primary key,
-  payload jsonb not null,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  organization_id uuid references public.organizations(id) on delete set null,
+  business_name text not null,
+  contact_person text not null,
+  phone text not null,
+  city text not null,
+  niche text not null,
+  package_tier text not null,
+  quoted_price numeric not null default 0,
+  final_agreed_price numeric not null default 0,
+  advance_paid numeric not null default 0,
+  stage text not null,
+  assigned_to text not null,
+  sample_link_sent text,
+  follow_up_date date,
+  notes text,
+  milestones jsonb default '[]'::jsonb,
+  created_at timestamptz default now()
 );
 
--- 2. Meta Ads & Local Growth Campaigns
-create table if not exists public.meta_campaigns (
+-- 4. Projects & 6-Stage Delivery Milestones Table
+create table if not exists public.projects (
+  id uuid primary key default gen_random_uuid(),
+  client_id text references public.clients(id) on delete cascade,
+  service_scope text not null,
+  status text not null default 'In Building',
+  progress_percent integer not null default 0,
+  assigned_founder text not null,
+  start_date date default current_date,
+  target_delivery_date date,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.project_milestones (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid references public.projects(id) on delete cascade,
+  client_id text references public.clients(id) on delete cascade,
+  stage text not null, -- Requirements | Design | Development | Testing | Deployment | Handover
+  completed boolean not null default false,
+  completed_date date,
+  owner text not null
+);
+
+-- 5. Tasks, Follow-ups & Revision Tickets
+create table if not exists public.tasks (
   id text primary key,
-  payload jsonb not null,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  client_id text references public.clients(id) on delete cascade,
+  client_name text not null,
+  title text not null,
+  task_type text not null,
+  priority text not null default 'Normal',
+  status text not null default 'Pending',
+  assigned_to text not null,
+  due_date date,
+  notes text,
+  created_at timestamptz default now()
 );
 
--- 3. Tech Assets, Domains & Hosting Vault
-create table if not exists public.websites (
-  id text primary key,
-  payload jsonb not null,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
--- 4. Deliveries, Bugs & Client Change Requests
 create table if not exists public.tickets (
   id text primary key,
-  payload jsonb not null,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  client_id text references public.clients(id) on delete cascade,
+  client_name text not null,
+  domain_name text,
+  title text not null,
+  category text not null,
+  priority text not null,
+  status text not null,
+  assigned_to text not null,
+  due_date date,
+  description text,
+  created_at timestamptz default now()
 );
 
--- 5. R&D Lab & Vibe Coding Prototypes
-create table if not exists public.prototypes (
-  id text primary key,
-  payload jsonb not null,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
+-- 6. Financial Ledger: Invoices, Verified Client Payments & Operational Expenses
+create table if not exists public.invoices (
+  id uuid primary key default gen_random_uuid(),
+  client_id text references public.clients(id) on delete cascade,
+  invoice_number text not null,
+  total_amount numeric not null default 0,
+  amount_paid numeric not null default 0,
+  balance_due numeric generated always as (greatest(0, total_amount - amount_paid)) stored,
+  status text not null default 'Partial',
+  due_date date,
+  created_at timestamptz default now()
 );
 
--- 6. Studio Expenses Ledger
-create table if not exists public.expenses (
-  id text primary key,
-  payload jsonb not null,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
--- 7. Client Payments & Inflow Log
 create table if not exists public.client_payments (
   id text primary key,
-  payload jsonb not null,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  client_id text references public.clients(id) on delete set null,
+  client_name text not null,
+  project_title text not null,
+  total_project_value numeric not null default 0,
+  amount_received numeric not null default 0,
+  payment_date date,
+  payment_mode text not null,
+  received_in_account text not null,
+  milestone text not null,
+  created_at timestamptz default now()
 );
 
--- 8. Zero-Knowledge AES-GCM Encrypted Vault Credentials
+create table if not exists public.expenses (
+  id text primary key,
+  title text not null,
+  category text not null,
+  amount numeric not null default 0,
+  paid_by text not null,
+  expense_date date,
+  client_related text,
+  reimbursed boolean default false,
+  notes text,
+  created_at timestamptz default now()
+);
+
+-- 7. Growth & Infrastructure: Meta Ad Campaigns & Hosted Domains
+create table if not exists public.meta_campaigns (
+  id text primary key,
+  client_id text references public.clients(id) on delete set null,
+  client_name text not null,
+  campaign_name text not null,
+  objective text not null,
+  status text not null,
+  total_budget numeric not null default 0,
+  amount_spent numeric not null default 0,
+  agency_fee numeric not null default 0,
+  leads_generated integer not null default 0,
+  start_date date,
+  end_date date,
+  notes text,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.websites (
+  id text primary key,
+  client_id text references public.clients(id) on delete set null,
+  client_name text not null,
+  domain_name text not null,
+  live_url text not null,
+  registrar text not null,
+  hosting_platform text not null,
+  purchase_date date,
+  expiry_date date,
+  renewal_cost_inr numeric not null default 0,
+  ssl_status text not null,
+  site_status text not null,
+  github_repo text,
+  notes text,
+  created_at timestamptz default now()
+);
+
+-- 8. Workshop: R&D Lab Prototypes, AES-256 Encrypted Vault & Audit Activity Logs
+create table if not exists public.rnd_projects (
+  id text primary key,
+  title text not null,
+  category text not null,
+  target_niche text not null,
+  status text not null,
+  lead_founder text not null,
+  preview_url text,
+  tech_stack text[],
+  impact_notes text,
+  updated_at date,
+  created_at timestamptz default now()
+);
+
 create table if not exists public.vault_credentials (
   id text primary key,
-  payload jsonb not null,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
+  title text not null,
+  category text not null,
+  account_identifier text not null,
+  login_url text,
+  client_associated text,
+  cipher_text text not null,
+  iv text not null,
+  salt text not null,
+  updated_at date,
+  created_at timestamptz default now()
 );
 
--- Enable Row Level Security (RLS) across all 8 tables
-alter table public.clients enable row level security;
-alter table public.meta_campaigns enable row level security;
-alter table public.websites enable row level security;
-alter table public.tickets enable row level security;
-alter table public.prototypes enable row level security;
-alter table public.expenses enable row level security;
-alter table public.client_payments enable row level security;
-alter table public.vault_credentials enable row level security;
+create table if not exists public.activity_logs (
+  id text primary key,
+  actor text not null,
+  action text not null,
+  target_name text not null,
+  category text not null,
+  timestamp timestamptz not null default now()
+);
 
--- Studio Workspace Policies (Allow authenticated / anon key access for internal OS)
-create policy "Allow studio access on clients" on public.clients for all using (true) with check (true);
-create policy "Allow studio access on meta_campaigns" on public.meta_campaigns for all using (true) with check (true);
-create policy "Allow studio access on websites" on public.websites for all using (true) with check (true);
-create policy "Allow studio access on tickets" on public.tickets for all using (true) with check (true);
-create policy "Allow studio access on prototypes" on public.prototypes for all using (true) with check (true);
-create policy "Allow studio access on expenses" on public.expenses for all using (true) with check (true);
-create policy "Allow studio access on client_payments" on public.client_payments for all using (true) with check (true);
-create policy "Allow studio access on vault_credentials" on public.vault_credentials for all using (true) with check (true);
+-- Enable Row Level Security (RLS) & Studio Access Policies
+alter table public.aethel_os_state enable row level security;
+drop policy if exists "Allow studio full access" on public.aethel_os_state;
+create policy "Allow studio full access"
+  on public.aethel_os_state
+  for all
+  using (true)
+  with check (true);
 `;

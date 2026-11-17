@@ -1,33 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
-import type {
-  AethelDatabaseState,
-  ModuleId,
-  FounderFilter,
-  ClientLead,
-  MetaCampaign,
-  TechAsset,
-  DeliveryTicket,
-  PrototypeItem,
-  ExpenseItem,
-  ClientPayment,
-  VaultCredential,
-} from './types';
-import { SEED_DATA } from './data/seedData';
-import {
-  loadInitialDatabase,
-  persistDatabaseState,
-  deleteRecordFromSupabase,
-  resetToFactorySeed,
-  DEMO_MASTER_PASSPHRASE,
-} from './services/dbService';
-import {
-  reconcileClientAddition,
-  reconcileClientUpdate,
-  reconcileClientDeletion,
-  reconcilePaymentAddition,
-  reconcilePaymentDeletion,
-  reconcileWebsiteHealthWithTickets,
-} from './utils/syncEngine';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
 import { CommandCenterView } from './components/CommandCenterView';
 import { ClientPipelineView } from './components/ClientPipelineView';
@@ -37,325 +8,436 @@ import { TicketsView } from './components/TicketsView';
 import { RnDLabView } from './components/RnDLabView';
 import { StudioFinanceView } from './components/StudioFinanceView';
 import { EncryptedVaultView } from './components/EncryptedVaultView';
-import { QuickActionModal, QuickActionTab } from './components/QuickActionModal';
 import { SupabaseModal } from './components/SupabaseModal';
+import { QuickActionModal } from './components/QuickActionModal';
+import {
+  AethelDatabaseState,
+  ModuleId,
+  ClientLead,
+  MetaAdCampaign,
+  HostedWebsite,
+  ClientTicket,
+  RnDProject,
+  StudioExpense,
+  ClientPayment,
+  EncryptedVaultItem,
+  FounderName,
+  ProjectMilestoneStage,
+  StudioTask,
+  ExpensePaidBy,
+} from './types';
+import { SEED_DATA } from './data/seedData';
+import {
+  loadDatabaseState,
+  saveDatabaseState,
+  saveToLocalStorage,
+} from './services/dbService';
+import { calculateDaysUntilExpiry } from './utils/calculations';
+import {
+  appendActivityLog,
+  cascadeClientDelete,
+  cascadeClientUpdate,
+  convertLeadToActiveProject,
+  deletePaymentAndSyncClient,
+  reconcileDatabaseIntegrity,
+  recordPaymentAndSyncClient,
+  toggleClientMilestone,
+} from './utils/syncEngine';
 
 export default function App() {
   const [activeModule, setActiveModule] = useState<ModuleId>('command-center');
-  const [founderFilter, setFounderFilter] = useState<FounderFilter>('All Studio');
-  const [dbState, setDbState] = useState<AethelDatabaseState>(SEED_DATA);
-  const [syncMode, setSyncMode] = useState<'cloud' | 'local'>('local');
-  const [selectedClientForDrawer, setSelectedClientForDrawer] = useState<ClientLead | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeFounderFilter, setActiveFounderFilter] = useState<'All' | FounderName>('All');
+  const [selectedClient360Id, setSelectedClient360Id] = useState<string | null>(null);
 
-  // Active session Master Passphrase for Module 08 (RAM-only, pre-loaded with demo key aethel2026)
-  const [masterPassphrase, setMasterPassphrase] = useState<string>(DEMO_MASTER_PASSPHRASE);
+  const [dbState, setDbState] = useState<AethelDatabaseState>(() =>
+    reconcileDatabaseIntegrity(SEED_DATA)
+  );
+  const [syncMode, setSyncMode] = useState<'supabase' | 'local'>('local');
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [supabaseModalOpen, setSupabaseModalOpen] = useState(false);
+  const [quickActionOpen, setQuickActionOpen] = useState(false);
 
-  // Modals
-  const [isQuickActionOpen, setIsQuickActionOpen] = useState(false);
-  const [quickActionTab, setQuickActionTab] = useState<QuickActionTab>('client');
-  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
-
-  // Toast Notification
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-
-  const notify = useCallback((msg: string) => {
-    setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage((prev) => (prev === msg ? null : prev));
-    }, 3500);
+  const refreshFromSource = useCallback(async () => {
+    setIsSyncing(true);
+    const result = await loadDatabaseState();
+    setDbState(result.state);
+    setSyncMode(result.mode);
+    setIsSyncing(false);
   }, []);
 
-  const refreshDatabase = useCallback(async () => {
-    const res = await loadInitialDatabase();
-    setDbState(res.state);
-    setSyncMode(res.mode);
-    if (res.syncNote) {
-      notify(res.syncNote);
-    }
-  }, [notify]);
-
   useEffect(() => {
-    refreshDatabase();
-  }, [refreshDatabase]);
+    refreshFromSource();
+  }, [refreshFromSource]);
 
-  // Global Ctrl+K / Cmd+K Command Bar Shortcut
+  // Global Ctrl+K / Cmd+K shortcut for Command Palette
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setIsQuickActionOpen((prev) => !prev);
+        setQuickActionOpen((prev) => !prev);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const updateAndPersist = useCallback(
-    (updater: (prev: AethelDatabaseState) => AethelDatabaseState) => {
-      setDbState((prev) => {
-        const next = updater(prev);
-        persistDatabaseState(next);
-        return next;
+  const persistUpdate = async (updater: (prev: AethelDatabaseState) => AethelDatabaseState) => {
+    setDbState((prev) => {
+      const updated = reconcileDatabaseIntegrity(updater(prev));
+      saveToLocalStorage(updated);
+      setIsSyncing(true);
+      saveDatabaseState(updated).then((res) => {
+        if (res.synced) setSyncMode('supabase');
+        setIsSyncing(false);
       });
-    },
-    []
-  );
-
-  // CRUD Handlers for Module 02: Clients (Relational Sync Enabled)
-  const handleAddClient = (client: ClientLead) => {
-    updateAndPersist((prev) => reconcileClientAddition(prev, client));
-    notify(
-      client.advancePaid > 0
-        ? `Added ${client.businessName} & synced advance inflow to Studio Finance`
-        : `Added client lead: ${client.businessName}`
-    );
+      return updated;
+    });
   };
 
-  const handleUpdateClient = (updated: ClientLead) => {
-    updateAndPersist((prev) => reconcileClientUpdate(prev, updated));
-    notify(`Synced ${updated.businessName} across pipeline & finance`);
-  };
-
-  const handleDeleteClient = (id: string) => {
-    const target = dbState.clients.find((c) => c.id === id);
-    updateAndPersist((prev) => reconcileClientDeletion(prev, id));
-    if (selectedClientForDrawer?.id === id) {
-      setSelectedClientForDrawer(null);
+  // Jump to any Client's 360° Profile Drawer from anywhere in Aethel OS
+  const handleOpenClient360 = (clientId: string) => {
+    setSelectedClient360Id(clientId);
+    if (activeModule !== 'pipeline') {
+      setActiveModule('pipeline');
     }
-    deleteRecordFromSupabase('clients', id);
-    notify(
-      target
-        ? `Deleted ${target.businessName} & synced Studio Finance.`
-        : 'Removed client from pipeline.'
-    );
   };
 
-  // CRUD Handlers for Module 03: Meta Ads
-  const handleAddCampaign = (campaign: MetaCampaign) => {
-    updateAndPersist((prev) => ({
-      ...prev,
-      metaCampaigns: [campaign, ...prev.metaCampaigns],
-    }));
-    notify(`Launched Meta Ads campaign for ${campaign.clientName}`);
+  // Module State Updaters with Bidirectional Relational Sync
+  const handleUpdateClient = (updated: ClientLead) => {
+    persistUpdate((prev) => cascadeClientUpdate(prev, updated));
   };
 
-  const handleUpdateCampaign = (updated: MetaCampaign) => {
-    updateAndPersist((prev) => ({
-      ...prev,
-      metaCampaigns: prev.metaCampaigns.map((c) =>
-        c.id === updated.id ? updated : c
-      ),
-    }));
-  };
-
-  const handleDeleteCampaign = (id: string) => {
-    updateAndPersist((prev) => ({
-      ...prev,
-      metaCampaigns: prev.metaCampaigns.filter((c) => c.id !== id),
-    }));
-    deleteRecordFromSupabase('meta_campaigns', id);
-    notify('Deleted Meta Ads campaign.');
-  };
-
-  // CRUD Handlers for Module 04: Websites & Domains
-  const handleAddWebsite = (website: TechAsset) => {
-    updateAndPersist((prev) =>
-      reconcileWebsiteHealthWithTickets({
+  const handleAddClient = (newLead: ClientLead) => {
+    persistUpdate((prev) =>
+      reconcileDatabaseIntegrity({
         ...prev,
-        websites: [website, ...prev.websites],
+        clients: [newLead, ...prev.clients],
+        activityLogs: appendActivityLog(prev, {
+          actor: newLead.assignedTo === 'Both' ? 'Krishna' : newLead.assignedTo,
+          action: `Added new client lead (${newLead.stage})`,
+          targetName: newLead.businessName,
+          category: 'CRM',
+        }),
       })
     );
-    notify(`Registered domain asset: ${website.projectName}`);
   };
 
-  const handleUpdateWebsite = (updated: TechAsset) => {
-    updateAndPersist((prev) => ({
+  const handleDeleteClient = (clientId: string) => {
+    if (selectedClient360Id === clientId) setSelectedClient360Id(null);
+    persistUpdate((prev) => cascadeClientDelete(prev, clientId, true));
+  };
+
+  const handleConvertLeadToProject = (
+    clientId: string,
+    advanceNow?: number,
+    receivedBy: ExpensePaidBy = 'Studio Account'
+  ) => {
+    persistUpdate((prev) => convertLeadToActiveProject(prev, clientId, advanceNow, receivedBy));
+  };
+
+  const handleToggleMilestone = (clientId: string, stage: ProjectMilestoneStage) => {
+    persistUpdate((prev) =>
+      toggleClientMilestone(
+        prev,
+        clientId,
+        stage,
+        activeFounderFilter === 'All' ? 'Krishna' : activeFounderFilter
+      )
+    );
+  };
+
+  const handleUpdateCampaign = (updated: MetaAdCampaign) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      metaCampaigns: prev.metaCampaigns.map((c) => (c.id === updated.id ? updated : c)),
+    }));
+  };
+
+  const handleAddCampaign = (newCampaign: MetaAdCampaign) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      metaCampaigns: [newCampaign, ...prev.metaCampaigns],
+      activityLogs: appendActivityLog(prev, {
+        actor: 'Krishna',
+        action: `Launched Meta Ad campaign (${newCampaign.objective})`,
+        targetName: newCampaign.clientName,
+        category: 'Growth',
+      }),
+    }));
+  };
+
+  const handleUpdateWebsite = (updated: HostedWebsite) => {
+    persistUpdate((prev) => ({
       ...prev,
       websites: prev.websites.map((w) => (w.id === updated.id ? updated : w)),
     }));
-    notify(`Updated status for ${updated.projectName}`);
   };
 
-  const handleDeleteWebsite = (id: string) => {
-    updateAndPersist((prev) => ({
+  const handleAddWebsite = (newSite: HostedWebsite) => {
+    persistUpdate((prev) => ({
       ...prev,
-      websites: prev.websites.filter((w) => w.id !== id),
+      websites: [newSite, ...prev.websites],
+      activityLogs: appendActivityLog(prev, {
+        actor: 'Vansh',
+        action: `Registered domain ${newSite.domainName}`,
+        targetName: newSite.clientName,
+        category: 'Domain',
+      }),
     }));
-    deleteRecordFromSupabase('websites', id);
-    notify('Removed website asset.');
   };
 
-  // CRUD Handlers for Module 05: Tickets (Relational Sync with Website Health)
-  const handleAddTicket = (ticket: DeliveryTicket) => {
-    updateAndPersist((prev) =>
-      reconcileWebsiteHealthWithTickets({
+  const handleUpdateTicket = (updated: ClientTicket) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      tickets: prev.tickets.map((t) => (t.id === updated.id ? updated : t)),
+      activityLogs: appendActivityLog(prev, {
+        actor: updated.assignedTo === 'Both' ? 'Vansh' : updated.assignedTo,
+        action: `Updated ticket status to ${updated.status}`,
+        targetName: updated.clientName,
+        category: 'Project',
+      }),
+    }));
+  };
+
+  const handleAddTicket = (newTicket: ClientTicket) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      tickets: [newTicket, ...prev.tickets],
+      activityLogs: appendActivityLog(prev, {
+        actor: newTicket.assignedTo === 'Both' ? 'Vansh' : newTicket.assignedTo,
+        action: `Created delivery ticket: ${newTicket.title}`,
+        targetName: newTicket.clientName,
+        category: 'Project',
+      }),
+    }));
+  };
+
+  const handleAddTask = (newTask: StudioTask) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      tasks: [newTask, ...(prev.tasks || [])],
+      activityLogs: appendActivityLog(prev, {
+        actor: newTask.assignedTo === 'Both' ? 'Krishna' : newTask.assignedTo,
+        action: `Scheduled ${newTask.type}: ${newTask.title}`,
+        targetName: newTask.clientName,
+        category: 'CRM',
+      }),
+    }));
+  };
+
+  const handleToggleTaskStatus = (taskId: string) => {
+    persistUpdate((prev) => {
+      const target = (prev.tasks || []).find((t) => t.id === taskId);
+      const nextStatus = target?.status === 'Completed' ? 'Pending' : 'Completed';
+      return {
         ...prev,
-        tickets: [ticket, ...prev.tickets],
-      })
-    );
-    notify(`Logged ticket: ${ticket.title}`);
+        tasks: (prev.tasks || []).map((t) =>
+          t.id === taskId ? { ...t, status: nextStatus } : t
+        ),
+        activityLogs: target
+          ? appendActivityLog(prev, {
+              actor: target.assignedTo === 'Both' ? 'Krishna' : target.assignedTo,
+              action: `${nextStatus === 'Completed' ? 'Completed' : 'Reopened'} task: ${target.title}`,
+              targetName: target.clientName,
+              category: 'CRM',
+            })
+          : prev.activityLogs,
+      };
+    });
   };
 
-  const handleUpdateTicket = (updated: DeliveryTicket) => {
-    updateAndPersist((prev) =>
-      reconcileWebsiteHealthWithTickets({
-        ...prev,
-        tickets: prev.tickets.map((t) => (t.id === updated.id ? updated : t)),
-      })
-    );
-    notify(`Ticket moved to ${updated.state}`);
-  };
-
-  const handleDeleteTicket = (id: string) => {
-    updateAndPersist((prev) =>
-      reconcileWebsiteHealthWithTickets({
-        ...prev,
-        tickets: prev.tickets.filter((t) => t.id !== id),
-      })
-    );
-    deleteRecordFromSupabase('tickets', id);
-    notify('Deleted ticket & reconciled website health.');
-  };
-
-  // CRUD Handlers for Module 06: R&D Lab Prototypes
-  const handleAddPrototype = (proto: PrototypeItem) => {
-    updateAndPersist((prev) => ({
+  const handleDeleteTask = (taskId: string) => {
+    persistUpdate((prev) => ({
       ...prev,
-      prototypes: [proto, ...prev.prototypes],
-    }));
-    notify(`Added R&D prototype: ${proto.projectName}`);
-  };
-
-  const handleUpdatePrototype = (updated: PrototypeItem) => {
-    updateAndPersist((prev) => ({
-      ...prev,
-      prototypes: prev.prototypes.map((p) =>
-        p.id === updated.id ? updated : p
-      ),
+      tasks: (prev.tasks || []).filter((t) => t.id !== taskId),
     }));
   };
 
-  const handleDeletePrototype = (id: string) => {
-    updateAndPersist((prev) => ({
+  const handleUpdateRnD = (updated: RnDProject) => {
+    persistUpdate((prev) => ({
       ...prev,
-      prototypes: prev.prototypes.filter((p) => p.id !== id),
+      rndProjects: prev.rndProjects.map((r) => (r.id === updated.id ? updated : r)),
     }));
-    deleteRecordFromSupabase('prototypes', id);
-    notify('Removed R&D prototype.');
   };
 
-  // CRUD Handlers for Module 07: Studio Finance (Relational Sync with Client Pipeline)
-  const handleAddExpense = (expense: ExpenseItem) => {
-    updateAndPersist((prev) => ({
+  const handleAddRnD = (newProject: RnDProject) => {
+    persistUpdate((prev) => ({
       ...prev,
-      expenses: [expense, ...prev.expenses],
+      rndProjects: [newProject, ...prev.rndProjects],
     }));
-    notify(`Logged expense: ${expense.title} (Paid by ${expense.paidBy})`);
   };
 
-  const handleUpdateExpense = (updated: ExpenseItem) => {
-    updateAndPersist((prev) => ({
+  const handleUpdateExpense = (updated: StudioExpense) => {
+    persistUpdate((prev) => ({
       ...prev,
       expenses: prev.expenses.map((e) => (e.id === updated.id ? updated : e)),
     }));
-    notify(`Updated reimbursement status for ${updated.title}`);
   };
 
-  const handleDeleteExpense = (id: string) => {
-    updateAndPersist((prev) => ({
+  const handleAddExpense = (newExp: StudioExpense) => {
+    persistUpdate((prev) => ({
       ...prev,
-      expenses: prev.expenses.filter((e) => e.id !== id),
+      expenses: [newExp, ...prev.expenses],
+      activityLogs: appendActivityLog(prev, {
+        actor: newExp.paidBy === 'Studio Account' ? 'Krishna' : newExp.paidBy,
+        action: `Logged ₹${newExp.amount.toLocaleString('en-IN')} expense (${newExp.category})`,
+        targetName: newExp.title,
+        category: 'Finance',
+      }),
     }));
-    deleteRecordFromSupabase('expenses', id);
-    notify('Deleted expense entry.');
   };
 
-  const handleAddPayment = (payment: ClientPayment) => {
-    updateAndPersist((prev) => reconcilePaymentAddition(prev, payment));
-    notify(`Recorded inflow from ${payment.clientName} & synced client balance`);
-  };
-
-  const handleDeletePayment = (id: string) => {
-    updateAndPersist((prev) => reconcilePaymentDeletion(prev, id));
-    deleteRecordFromSupabase('client_payments', id);
-    notify('Removed payment record & reconciled client balance.');
-  };
-
-  // CRUD Handlers for Module 08: Encrypted Vault
-  const handleAddVaultCredential = (cred: VaultCredential) => {
-    updateAndPersist((prev) => ({
+  const handleDeleteExpense = (expenseId: string) => {
+    persistUpdate((prev) => ({
       ...prev,
-      vaultCredentials: [cred, ...prev.vaultCredentials],
+      expenses: prev.expenses.filter((e) => e.id !== expenseId),
     }));
-    notify(`Encrypted & stored ${cred.servicePlatform} in Zero-Knowledge Vault`);
   };
 
-  const handleDeleteVaultCredential = (id: string) => {
-    updateAndPersist((prev) => ({
+  const handleAddPayment = (newPay: ClientPayment) => {
+    persistUpdate((prev) => recordPaymentAndSyncClient(prev, newPay));
+  };
+
+  const handleDeletePayment = (paymentId: string) => {
+    persistUpdate((prev) => deletePaymentAndSyncClient(prev, paymentId));
+  };
+
+  const handleAddVaultItem = (item: EncryptedVaultItem) => {
+    persistUpdate((prev) => ({
       ...prev,
-      vaultCredentials: prev.vaultCredentials.filter((v) => v.id !== id),
+      vaultItems: [item, ...prev.vaultItems],
+      activityLogs: appendActivityLog(prev, {
+        actor: 'Krishna',
+        action: `Encrypted credential in Vault: ${item.title}`,
+        targetName: item.clientAssociated,
+        category: 'Vault',
+      }),
     }));
-    deleteRecordFromSupabase('vault_credentials', id);
-    notify('Deleted encrypted credential.');
   };
 
-  const openQuickActionWithTab = (tab: QuickActionTab) => {
-    setQuickActionTab(tab);
-    setIsQuickActionOpen(true);
+  const handleDeleteVaultItem = (id: string) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      vaultItems: prev.vaultItems.filter((v) => v.id !== id),
+    }));
   };
+
+  const handleResetDemoData = async () => {
+    try {
+      await fetch('/api/db/reset', { method: 'POST' });
+    } catch {
+      // ignore if offline
+    }
+    const reconciledSeed = reconcileDatabaseIntegrity(SEED_DATA);
+    setDbState(reconciledSeed);
+    saveToLocalStorage(reconciledSeed);
+    await saveDatabaseState(reconciledSeed);
+  };
+
+  // Urgent Badges for Sidebar Navigation
+  const urgentCounts = {
+    followUps: dbState.clients.filter(
+      (c) =>
+        c.stage === 'Sample Sent / WhatsApp' ||
+        c.stage === 'In Talks / Demo Shown' ||
+        c.stage === 'In Building' ||
+        c.stage === 'Live / Payment Pending'
+    ).length,
+    openTickets: dbState.tickets.filter((t) => t.status !== 'Resolved').length,
+    expiringDomains: dbState.websites.filter(
+      (w) => calculateDaysUntilExpiry(w.expiryDate) <= 45
+    ).length,
+    pendingTasks: (dbState.tasks || []).filter((t) => t.status !== 'Completed').length,
+  };
+
+  const activeClientContext = selectedClient360Id
+    ? dbState.clients.find((c) => c.id === selectedClient360Id) || null
+    : null;
 
   return (
-    <div className="min-h-screen flex flex-col justify-between bg-[#F8F9FA] text-[#0B0F19]">
-      <div>
-        <Navbar
-          activeModule={activeModule}
-          onSelectModule={setActiveModule}
-          onOpenQuickAction={() => openQuickActionWithTab('client')}
-          onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
-          syncMode={syncMode}
-          urgentCount={
-            dbState.tickets.filter((t) => t.state !== 'Deployed & Resolved').length
-          }
-        />
+    <div className="min-h-screen bg-[#F8F9FA] text-[#0B0F19] flex flex-col justify-between selection:bg-[#2563EB] selection:text-white">
+      {/* Collapsible Sidebar + Sticky Top Context Bar */}
+      <Navbar
+        activeModule={activeModule}
+        onSelectModule={setActiveModule}
+        syncMode={syncMode}
+        isSyncing={isSyncing}
+        onOpenSupabaseModal={() => setSupabaseModalOpen(true)}
+        onOpenQuickAction={() => setQuickActionOpen(true)}
+        urgentCounts={urgentCounts}
+        sidebarCollapsed={sidebarCollapsed}
+        onToggleSidebar={() => setSidebarCollapsed((prev) => !prev)}
+        activeFounderFilter={activeFounderFilter}
+        onChangeFounderFilter={setActiveFounderFilter}
+        clients={dbState.clients}
+        onOpenClient360={handleOpenClient360}
+      />
 
-        <main className="mx-auto max-w-[1440px] px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-14 sm:pb-16">
+      {/* Main Workspace Container */}
+      <div
+        className={`flex-1 flex flex-col justify-between transition-all duration-200 ${
+          sidebarCollapsed ? 'lg:pl-[68px]' : 'lg:pl-[240px]'
+        }`}
+      >
+        <main className="max-w-[1440px] w-full mx-auto px-3 sm:px-6 lg:px-8 pt-5 pb-12">
           {activeModule === 'command-center' && (
             <CommandCenterView
-              db={dbState}
-              founderFilter={founderFilter}
-              onChangeFounderFilter={setFounderFilter}
-              onNavigateModule={setActiveModule}
-              onSelectClientForDrawer={(c) => {
-                setSelectedClientForDrawer(c);
-                setActiveModule('pipeline');
-              }}
-              onResolveTicketQuick={(ticketId) => {
-                const found = dbState.tickets.find((t) => t.id === ticketId);
-                if (found) {
-                  handleUpdateTicket({ ...found, state: 'Deployed & Resolved' });
-                }
-              }}
-              onOpenQuickActionWithTab={openQuickActionWithTab}
+              dbState={dbState}
+              onNavigate={setActiveModule}
+              onOpenQuickAction={() => setQuickActionOpen(true)}
+              activeFounderFilter={activeFounderFilter}
+              onChangeFounderFilter={setActiveFounderFilter}
+              onOpenClient360={handleOpenClient360}
+              onToggleMilestone={handleToggleMilestone}
+              onToggleTaskStatus={handleToggleTaskStatus}
             />
           )}
 
           {activeModule === 'pipeline' && (
             <ClientPipelineView
               clients={dbState.clients}
-              selectedClient={selectedClientForDrawer}
-              onSelectClient={setSelectedClientForDrawer}
+              dbState={dbState}
               onUpdateClient={handleUpdateClient}
+              onAddClient={handleAddClient}
               onDeleteClient={handleDeleteClient}
-              onOpenAddClient={() => openQuickActionWithTab('client')}
+              onConvertLeadToProject={handleConvertLeadToProject}
+              onToggleMilestone={handleToggleMilestone}
+              onAddPayment={handleAddPayment}
+              onAddTicket={handleAddTicket}
+              onAddCampaign={handleAddCampaign}
+              onAddWebsite={handleAddWebsite}
+              onAddTask={handleAddTask}
+              onToggleTaskStatus={handleToggleTaskStatus}
+              selectedClient360Id={selectedClient360Id}
+              onSelectClient360={setSelectedClient360Id}
+            />
+          )}
+
+          {(activeModule === 'tickets' || activeModule === 'tasks') && (
+            <TicketsView
+              tickets={dbState.tickets}
+              clients={dbState.clients}
+              websites={dbState.websites}
+              tasks={dbState.tasks || []}
+              initialSubView={activeModule === 'tasks' ? 'tasks' : 'projects'}
+              onUpdateTicket={handleUpdateTicket}
+              onAddTicket={handleAddTicket}
+              onToggleMilestone={handleToggleMilestone}
+              onAddTask={handleAddTask}
+              onToggleTaskStatus={handleToggleTaskStatus}
+              onDeleteTask={handleDeleteTask}
+              onOpenClient360={handleOpenClient360}
             />
           )}
 
           {activeModule === 'meta-ads' && (
             <MetaAdsView
               campaigns={dbState.metaCampaigns}
+              clients={dbState.clients}
               onUpdateCampaign={handleUpdateCampaign}
-              onDeleteCampaign={handleDeleteCampaign}
-              onOpenAddCampaign={() => openQuickActionWithTab('campaign')}
+              onAddCampaign={handleAddCampaign}
+              onOpenClient360={handleOpenClient360}
             />
           )}
 
@@ -363,117 +445,91 @@ export default function App() {
             <DomainsVaultView
               websites={dbState.websites}
               onUpdateWebsite={handleUpdateWebsite}
-              onDeleteWebsite={handleDeleteWebsite}
-              onOpenAddWebsite={() => openQuickActionWithTab('website')}
+              onAddWebsite={handleAddWebsite}
+              onOpenClient360={handleOpenClient360}
             />
           )}
 
-          {activeModule === 'tickets' && (
-            <TicketsView
-              tickets={dbState.tickets}
-              onUpdateTicket={handleUpdateTicket}
-              onDeleteTicket={handleDeleteTicket}
-              onOpenAddTicket={() => openQuickActionWithTab('ticket')}
+          {(activeModule === 'finance' || activeModule === 'analytics') && (
+            <StudioFinanceView
+              expenses={dbState.expenses}
+              payments={dbState.payments}
+              clients={dbState.clients}
+              metaCampaigns={dbState.metaCampaigns}
+              initialSubView={activeModule === 'analytics' ? 'analytics' : 'ledger'}
+              onUpdateExpense={handleUpdateExpense}
+              onAddExpense={handleAddExpense}
+              onDeleteExpense={handleDeleteExpense}
+              onAddPayment={handleAddPayment}
+              onDeletePayment={handleDeletePayment}
+              onOpenClient360={handleOpenClient360}
             />
           )}
 
           {activeModule === 'rnd-lab' && (
             <RnDLabView
-              prototypes={dbState.prototypes}
-              onUpdatePrototype={handleUpdatePrototype}
-              onDeletePrototype={handleDeletePrototype}
-              onOpenAddPrototype={() => openQuickActionWithTab('prototype')}
-              onNotify={notify}
-            />
-          )}
-
-          {activeModule === 'finance' && (
-            <StudioFinanceView
-              expenses={dbState.expenses}
-              payments={dbState.payments}
+              projects={dbState.rndProjects}
               clients={dbState.clients}
-              onAddExpenseModal={() => openQuickActionWithTab('expense')}
-              onUpdateExpense={handleUpdateExpense}
-              onDeleteExpense={handleDeleteExpense}
-              onAddPayment={handleAddPayment}
-              onDeletePayment={handleDeletePayment}
+              onUpdateProject={handleUpdateRnD}
+              onAddProject={handleAddRnD}
+              onOpenClient360={handleOpenClient360}
             />
           )}
 
           {activeModule === 'vault' && (
             <EncryptedVaultView
-              credentials={dbState.vaultCredentials}
-              masterPassphrase={masterPassphrase}
-              onChangeMasterPassphrase={setMasterPassphrase}
-              onAddCredential={handleAddVaultCredential}
-              onDeleteCredential={handleDeleteVaultCredential}
-              onNotify={notify}
+              vaultItems={dbState.vaultItems}
+              onAddVaultItem={handleAddVaultItem}
+              onDeleteVaultItem={handleDeleteVaultItem}
             />
           )}
         </main>
+
+        {/* Editorial Studio Footer */}
+        <footer className="border-t border-[#EAECEF] bg-white py-4 px-4 sm:px-8">
+          <div className="max-w-[1440px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#64748B]">
+            <div className="flex items-center gap-2.5">
+              <div className="w-6 h-6 rounded-lg bg-[#0B0F19] text-white flex items-center justify-center font-bold text-[11px]">
+                A
+              </div>
+              <span>
+                <strong className="text-[#0B0F19]">Aethel Studios</strong> — Unified Agency & Growth Operating System · Founded by{' '}
+                <strong className="text-[#0B0F19]">Vansh Khakole</strong> &{' '}
+                <strong className="text-[#0B0F19]">Krishna Khakole</strong>
+              </span>
+            </div>
+            <div className="flex items-center gap-4 font-mono text-[11px]">
+              <span>aethelstudios.in@gmail.com</span>
+              <span>·</span>
+              <span>Pune & Maharashtra, India</span>
+            </div>
+          </div>
+        </footer>
       </div>
 
-      {/* Editorial Footer */}
-      <footer className="border-t border-[#EAECEF] bg-white py-5 sm:py-6 px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-[1440px] flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left text-xs text-slate-500">
-          <div className="leading-relaxed">
-            <strong className="text-[#0B0F19]">Aethel Studios</strong> — Internal Agency &amp; Growth Operating System · Founded by{' '}
-            <strong className="text-[#0B0F19]">Vansh Khakole</strong> (<span className="font-mono">+91 97632 74410</span>) &amp;{' '}
-            <strong className="text-[#0B0F19]">Krishna Khakole</strong> (<span className="font-mono">+91 93099 70761</span>)
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4">
-            <span className="font-mono">aethelstudios.in@gmail.com</span>
-            <span aria-hidden="true">·</span>
-            <span>Pune &amp; Maharashtra, India</span>
-          </div>
-        </div>
-      </footer>
+      {/* Modals */}
+      <SupabaseModal
+        isOpen={supabaseModalOpen}
+        onClose={() => setSupabaseModalOpen(false)}
+        syncMode={syncMode}
+        onConnectionChanged={refreshFromSource}
+        onResetDemoData={handleResetDemoData}
+      />
 
-      {/* Universal Quick Action Modal (Ctrl+K) */}
       <QuickActionModal
-        isOpen={isQuickActionOpen}
-        initialTab={quickActionTab}
-        onClose={() => setIsQuickActionOpen(false)}
-        masterPassphrase={masterPassphrase}
-        onAddClient={handleAddClient}
+        isOpen={quickActionOpen}
+        onClose={() => setQuickActionOpen(false)}
+        dbState={dbState}
+        activeClientContext={activeClientContext}
+        onAddLead={handleAddClient}
         onAddExpense={handleAddExpense}
+        onAddPayment={handleAddPayment}
         onAddTicket={handleAddTicket}
         onAddCampaign={handleAddCampaign}
-        onAddPrototype={handleAddPrototype}
         onAddWebsite={handleAddWebsite}
-        onAddVaultCredential={handleAddVaultCredential}
-        onNotify={notify}
+        onAddTask={handleAddTask}
+        onOpenClient360={handleOpenClient360}
       />
-
-      {/* Hybrid Supabase Setup & Backup Modal */}
-      <SupabaseModal
-        isOpen={isSupabaseModalOpen}
-        onClose={() => setIsSupabaseModalOpen(false)}
-        dbState={dbState}
-        syncMode={syncMode}
-        onConnectSupabase={refreshDatabase}
-        onImportBackupJson={(imported) => {
-          setDbState(imported);
-          persistDatabaseState(imported);
-        }}
-        onResetFactorySeed={async () => {
-          const fresh = await resetToFactorySeed();
-          setDbState(fresh);
-          notify('Reset Aethel OS to factory studio seed data.');
-        }}
-        onNotify={notify}
-      />
-
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-5 sm:bottom-5 z-50 px-4 py-3 rounded-2xl sm:rounded-full bg-[#0B0F19] text-white text-xs font-semibold shadow-xl border border-white/10 text-center sm:text-left"
-        >
-          {toastMessage}
-        </div>
-      )}
     </div>
   );
 }

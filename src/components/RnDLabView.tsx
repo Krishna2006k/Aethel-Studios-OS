@@ -1,264 +1,292 @@
 import React, { useState } from 'react';
 import {
+  FlaskConical,
   Plus,
+  ExternalLink,
   Copy,
   Check,
-  ExternalLink,
-  Trash2,
   Sparkles,
-  FileCode2,
+  Layers,
+  Users,
 } from 'lucide-react';
-import type { PrototypeItem, PrototypeStage } from '../types';
+import { ClientLead, FounderName, RnDProject } from '../types';
 
 interface RnDLabViewProps {
-  prototypes: PrototypeItem[];
-  onUpdatePrototype: (p: PrototypeItem) => void;
-  onDeletePrototype: (id: string) => void;
-  onOpenAddPrototype: () => void;
-  onNotify: (msg: string) => void;
+  projects: RnDProject[];
+  clients?: ClientLead[];
+  onUpdateProject: (updated: RnDProject) => void;
+  onAddProject: (newProject: RnDProject) => void;
+  onOpenClient360?: (clientId: string) => void;
 }
 
-const PROTOTYPE_STAGES: PrototypeStage[] = [
-  'Raw Idea',
-  'Working On / In Development',
-  'Interactive Prototype',
-  'Finished Product / Reusable System',
-];
-
 export const RnDLabView: React.FC<RnDLabViewProps> = ({
-  prototypes,
-  onUpdatePrototype,
-  onDeletePrototype,
-  onOpenAddPrototype,
-  onNotify,
+  projects,
+  clients = [],
+  onUpdateProject,
+  onAddProject,
+  onOpenClient360,
 }) => {
-  const [stageFilter, setStageFilter] = useState<'ALL' | PrototypeStage>('ALL');
+  const [showAdd, setShowAdd] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
 
-  const filtered = prototypes.filter(
-    (p) => stageFilter === 'ALL' || p.stage === stageFilter
-  );
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState<RnDProject['category']>('Sample Template');
+  const [targetNiche, setTargetNiche] = useState('Banquet Hall & Wedding Lawns');
+  const [leadFounder, setLeadFounder] = useState<FounderName>('Vansh');
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [techStackStr, setTechStackStr] = useState('React 19, Tailwind v4, WhatsApp API');
+  const [impactNotes, setImpactNotes] = useState('');
 
-  const handleCopyPitchLink = async (proto: PrototypeItem) => {
-    const pitchText = `Check out our interactive ${proto.projectName} demo built by Aethel Studios: ${proto.livePrototypeUrl}`;
+  const handleCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+    onAddProject({
+      id: `rnd-${Date.now()}`,
+      title: title.trim(),
+      category,
+      targetNiche: targetNiche.trim(),
+      status: 'Ready to Pitch',
+      leadFounder,
+      previewUrl: previewUrl.trim() || 'https://aethel-demo.vercel.app',
+      techStack: techStackStr
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+      impactNotes: impactNotes.trim(),
+      updatedAt: new Date().toISOString().slice(0, 10),
+    });
+    setTitle('');
+    setPreviewUrl('');
+    setImpactNotes('');
+    setShowAdd(false);
+  };
+
+  const handleCopyPitch = async (proj: RnDProject) => {
+    const text = `Hi! Here is our interactive ${proj.title} prototype built by Aethel Studios: ${proj.previewUrl}`;
     try {
-      await navigator.clipboard.writeText(pitchText);
-      setCopiedId(proto.id);
-      onNotify(`Copied WhatsApp pitch link for ${proto.projectName}`);
+      await navigator.clipboard.writeText(text);
+      setCopiedId(proj.id);
       setTimeout(() => setCopiedId(null), 2000);
     } catch {
-      onNotify(`Pitch URL: ${proto.livePrototypeUrl}`);
+      // ignore
     }
   };
 
   return (
-    <div className="space-y-5 sm:space-y-6">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 lg:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-4 sm:space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <span className="text-xs font-bold tracking-wider uppercase text-[#2563EB] block">
-              06 / R&amp;D LAB &amp; PROTOTYPES
-            </span>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
-              Proprietary IP, Vibe-Coding Lab &amp; Pitch Demos
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-600 mt-1">
-              Reusable industry systems built with Google AI Studio, ChatGPT Codex, Cursor, v0, Bolt &amp; Supabase.
-            </p>
+      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] mb-1">
+            WORKSHOP · R&amp;D LAB &amp; PITCH PROTOTYPES
           </div>
-
-          <button
-            type="button"
-            onClick={onOpenAddPrototype}
-            className="px-4 py-2.5 rounded-full bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors self-start lg:self-auto cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add R&amp;D Prototype / Idea</span>
-          </button>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
+            Proprietary Templates &amp; Niche Accelerators
+          </h1>
+          <p className="text-xs sm:text-sm text-[#64748B] mt-0.5">
+            Reusable 3D virtual tours, clinic booking micro-engines, and pitch demos connected directly to your CRM opportunities.
+          </p>
         </div>
 
-        {/* 4 Stage Filter Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-2 border-t border-[#EAECEF]">
-          <button
-            type="button"
-            onClick={() => setStageFilter('ALL')}
-            className={`px-3.5 sm:px-4 py-2 rounded-full text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
-              stageFilter === 'ALL'
-                ? 'bg-[#0B0F19] text-white'
-                : 'bg-[#F8F9FA] text-slate-600 hover:text-[#0B0F19]'
-            }`}
-          >
-            All Stages ({prototypes.length})
-          </button>
-          {PROTOTYPE_STAGES.map((stage) => {
-            const count = prototypes.filter((p) => p.stage === stage).length;
-            return (
-              <button
-                key={stage}
-                type="button"
-                onClick={() => setStageFilter(stage)}
-                className={`px-3.5 sm:px-4 py-2 rounded-full text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
-                  stageFilter === stage
-                    ? 'bg-[#0B0F19] text-white'
-                    : 'bg-[#F8F9FA] text-slate-600 hover:text-[#0B0F19]'
-                }`}
-              >
-                {stage} ({count})
-              </button>
-            );
-          })}
-        </div>
+        <button
+          onClick={() => setShowAdd(!showAdd)}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-[#1E293B] text-white text-xs font-bold shadow-xs cursor-pointer"
+        >
+          <Plus className="w-4 h-4 text-[#60A5FA]" />
+          New R&amp;D Prototype
+        </button>
       </div>
 
-      {/* Prototypes Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-        {filtered.map((proto) => {
-          const isEditingPrompt = editingPromptId === proto.id;
+      {showAdd && (
+        <form
+          onSubmit={handleCreate}
+          className="bg-white rounded-3xl p-6 border-2 border-[#2563EB]/20 shadow-lg space-y-4"
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Prototype / Accelerator Title *
+              </label>
+              <input
+                type="text"
+                required
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g., Interactive Wedding Lawn Date & Decor Configurator"
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Category
+              </label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value as RnDProject['category'])}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm bg-white"
+              >
+                <option value="Sample Template">Sample Template</option>
+                <option value="3D / WebGL Experience">3D / WebGL Experience</option>
+                <option value="Internal Tool">Internal Tool</option>
+                <option value="Ad Creative Concept">Ad Creative Concept</option>
+                <option value="Automation Script">Automation Script</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Target Industry Niche
+              </label>
+              <input
+                type="text"
+                value={targetNiche}
+                onChange={(e) => setTargetNiche(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Live Demo URL
+              </label>
+              <input
+                type="text"
+                value={previewUrl}
+                onChange={(e) => setPreviewUrl(e.target.value)}
+                placeholder="https://..."
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Lead Founder
+              </label>
+              <select
+                value={leadFounder}
+                onChange={(e) => setLeadFounder(e.target.value as FounderName)}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm bg-white"
+              >
+                <option value="Vansh">Vansh</option>
+                <option value="Krishna">Krishna</option>
+                <option value="Both">Both</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+              Commercial Impact &amp; Pitch Notes
+            </label>
+            <input
+              type="text"
+              value={impactNotes}
+              onChange={(e) => setImpactNotes(e.target.value)}
+              placeholder="How this prototype helps close higher-ticket deals..."
+              className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
+            />
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              className="px-6 py-2.5 rounded-full bg-[#2563EB] text-white text-xs font-bold cursor-pointer"
+            >
+              Save Prototype
+            </button>
+          </div>
+        </form>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {projects.map((proj) => {
+          const linkedClients = clients.filter((c) =>
+            (proj.linkedClientIds || []).includes(c.id)
+          );
+
           return (
             <div
-              key={proto.id}
-              className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between space-y-5"
+              key={proj.id}
+              className="bg-white rounded-3xl p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between space-y-4"
             >
-              <div className="space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <span className="text-xs font-bold text-[#2563EB] flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>{proto.targetIndustry}</span>
-                    </span>
-                    <h2 className="text-xl font-bold text-[#0B0F19] mt-1">
-                      {proto.projectName}
-                    </h2>
-                  </div>
-
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-[#2563EB]">
+                    {proj.category}
+                  </span>
                   <select
-                    aria-label={`Stage for ${proto.projectName}`}
-                    value={proto.stage}
+                    value={proj.status}
                     onChange={(e) =>
-                      onUpdatePrototype({
-                        ...proto,
-                        stage: e.target.value as PrototypeStage,
+                      onUpdateProject({
+                        ...proj,
+                        status: e.target.value as RnDProject['status'],
                       })
                     }
-                    className="px-3 py-1.5 rounded-full bg-[#F8F9FA] border border-[#EAECEF] text-xs font-semibold text-[#0B0F19]"
+                    aria-label={`Status for ${proj.title}`}
+                    className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-[#F8F9FA] border border-[#EAECEF]"
                   >
-                    {PROTOTYPE_STAGES.map((st) => (
-                      <option key={st} value={st}>
-                        {st}
-                      </option>
-                    ))}
+                    <option value="Ideation">Ideation</option>
+                    <option value="Building">Building</option>
+                    <option value="Ready to Pitch">Ready to Pitch</option>
+                    <option value="Shipped">Shipped</option>
                   </select>
                 </div>
 
-                {/* Core UX Hook */}
-                <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-1">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
-                    Core UX &amp; Conversion Hook
-                  </span>
-                  <p className="text-xs sm:text-sm text-[#0B0F19] font-medium leading-relaxed">
-                    {proto.coreUxHook}
-                  </p>
-                </div>
-
-                {/* AI / Dev Stack */}
-                <div className="text-xs text-slate-600">
-                  <span className="font-semibold text-slate-400 uppercase text-[11px] tracking-wider block mb-1">
-                    AI &amp; Engineering Stack
-                  </span>
-                  <p className="font-medium text-[#0B0F19]">
-                    {proto.devStack.join(' · ')}
-                  </p>
-                </div>
-
-                {/* Live Prototype URL + 1-Click Copy Link for WhatsApp Pitches */}
-                <div className="p-3.5 rounded-2xl bg-[#0B0F19] text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <span className="text-[11px] text-[#94A3B8] block">
-                      Live Pitch Prototype URL
-                    </span>
-                    <a
-                      href={proto.livePrototypeUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-xs text-emerald-400 hover:underline flex items-center gap-1 truncate mt-0.5"
-                    >
-                      <span className="truncate">{proto.livePrototypeUrl}</span>
-                      <ExternalLink className="w-3 h-3 shrink-0" />
-                    </a>
+                <div>
+                  <h3 className="text-base font-extrabold text-[#0B0F19] leading-snug">
+                    {proj.title}
+                  </h3>
+                  <div className="text-xs text-[#64748B] mt-0.5">
+                    Target: <strong className="text-[#0B0F19]">{proj.targetNiche}</strong> · Lead:{' '}
+                    {proj.leadFounder}
                   </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleCopyPitchLink(proto)}
-                    className="px-3.5 py-2 rounded-full bg-[#2563EB] hover:bg-blue-500 text-white text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
-                  >
-                    {copiedId === proto.id ? (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        <span>Copied Pitch!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy Pitch Link</span>
-                      </>
-                    )}
-                  </button>
                 </div>
 
-                {/* Saved Master Prompt / Architecture Notes */}
-                <div className="space-y-2 pt-2 border-t border-[#EAECEF]">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                      <FileCode2 className="w-3.5 h-3.5 text-[#2563EB]" />
-                      <span>Master Prompt &amp; System Architecture Notes</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditingPromptId(isEditingPrompt ? null : proto.id)
-                      }
-                      className="text-xs font-semibold text-[#2563EB] hover:underline cursor-pointer"
-                    >
-                      {isEditingPrompt ? 'Done Editing' : 'Edit Prompt'}
-                    </button>
+                <p className="text-xs text-[#475569] leading-relaxed">{proj.impactNotes}</p>
+
+                <div className="text-[11px] font-mono text-[#64748B]">
+                  Stack: {proj.techStack.join(' · ')}
+                </div>
+
+                {/* Linked Client Opportunities (Part 5) */}
+                {linkedClients.length > 0 && (
+                  <div className="pt-2 border-t border-[#F1F5F9]">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1.5">
+                      Pitched / Deployed To CRM Accounts:
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {linkedClients.map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => onOpenClient360 && onOpenClient360(c.id)}
+                          className="text-[11px] font-bold text-[#2563EB] hover:underline bg-[#EFF6FF] px-2.5 py-1 rounded-lg cursor-pointer"
+                        >
+                          {c.businessName} →
+                        </button>
+                      ))}
+                    </div>
                   </div>
-
-                  {isEditingPrompt ? (
-                    <textarea
-                      rows={3}
-                      aria-label={`Master prompt notes for ${proto.projectName}`}
-                      value={proto.masterPromptNotes}
-                      onChange={(e) =>
-                        onUpdatePrototype({
-                          ...proto,
-                          masterPromptNotes: e.target.value,
-                        })
-                      }
-                      className="w-full p-3 rounded-xl border border-[#2563EB] bg-[#F8F9FA] font-mono text-xs text-[#0B0F19]"
-                    />
-                  ) : (
-                    <p className="text-xs font-mono text-slate-600 bg-[#F8F9FA] p-3 rounded-xl border border-[#EAECEF] leading-relaxed">
-                      {proto.masterPromptNotes}
-                    </p>
-                  )}
-                </div>
+                )}
               </div>
 
-              <div className="pt-3 border-t border-[#EAECEF] flex items-center justify-between text-xs text-slate-500">
-                <span>
-                  Lead Builder: <strong className="text-[#0B0F19]">{proto.leadBuilder}</strong> · Updated {proto.updatedAt}
-                </span>
+              <div className="pt-3 border-t border-[#F1F5F9] flex items-center justify-between gap-2">
                 <button
-                  type="button"
-                  onClick={() => onDeletePrototype(proto.id)}
-                  aria-label={`Delete prototype ${proto.projectName}`}
-                  className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                  onClick={() => handleCopyPitch(proj)}
+                  className="flex-1 py-2 px-3 rounded-xl bg-[#F8F9FA] hover:bg-[#EFF6FF] text-xs font-bold text-[#0B0F19] hover:text-[#2563EB] border border-[#EAECEF] flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  {copiedId === proj.id ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-[#059669]" /> Copied Pitch Link
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" /> Copy WA Pitch
+                    </>
+                  )}
                 </button>
+                <a
+                  href={proj.previewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="py-2 px-3.5 rounded-xl bg-[#0B0F19] text-white text-xs font-bold flex items-center gap-1"
+                >
+                  Preview <ExternalLink className="w-3 h-3" />
+                </a>
               </div>
             </div>
           );

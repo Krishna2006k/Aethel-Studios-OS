@@ -1,55 +1,41 @@
 export type ModuleId =
   | 'command-center'
   | 'pipeline'
+  | 'tickets'
+  | 'tasks'
   | 'meta-ads'
   | 'domains'
-  | 'tickets'
-  | 'rnd-lab'
   | 'finance'
+  | 'analytics'
+  | 'rnd-lab'
   | 'vault';
 
-export type FounderFilter = 'All Studio' | 'Krishna' | 'Vansh';
+export type FounderName = 'Vansh' | 'Krishna' | 'Both';
+export type ExpensePaidBy = 'Vansh' | 'Krishna' | 'Studio Account';
 
-export type ClientNiche =
-  | 'Hospital/Clinic'
-  | 'Banquet/Lawns'
-  | 'Stay Hotel'
-  | 'Retail/Electronics'
-  | 'Restaurant/Cafe'
-  | 'Coaching/Institute';
-
-export type ClientLocation =
-  | 'Pune'
-  | 'Risod'
-  | 'Washim'
-  | 'Maharashtra / Remote';
-
-export type PipelineStage =
-  | 'Query / Lead'
+export type LeadStage =
+  | 'Cold Lead'
+  | 'Sample Sent / WhatsApp'
   | 'In Talks / Demo Shown'
-  | 'Follow-up Scheduled'
   | 'In Building'
   | 'Live / Payment Pending'
-  | 'Finalized / In Progress'
   | 'Delivered / Live'
   | 'Rejected / Dropped';
 
-export type RejectionReason =
-  | 'Budget Issue'
-  | 'Ghosted'
-  | 'Delayed'
-  | 'Competitor'
-  | '';
+export type ProjectMilestoneStage =
+  | 'Requirements'
+  | 'Design'
+  | 'Development'
+  | 'Testing'
+  | 'Deployment'
+  | 'Handover';
 
-export type PlanTier = string;
-
-export type AssignedPerson = 'Krishna' | 'Vansh' | 'Both';
-
-export interface ClientNote {
-  id: string;
-  timestamp: string;
-  author: 'Krishna' | 'Vansh';
-  text: string;
+export interface ClientMilestone {
+  stage: ProjectMilestoneStage;
+  completed: boolean;
+  completedDate?: string;
+  owner: FounderName;
+  notes?: string;
 }
 
 export interface ClientLead {
@@ -57,204 +43,156 @@ export interface ClientLead {
   businessName: string;
   contactPerson: string;
   phone: string;
-  location: ClientLocation;
-  niche: ClientNiche;
-  stage: PipelineStage;
-  rejectionReason?: RejectionReason;
-  planSelected: PlanTier;
+  city: string;
+  niche: 'Banquet/Lawns' | 'Clinic/Hospital' | 'Cafe/Restaurant' | 'Retail/Electronics' | 'Real Estate/Interior' | 'Other';
+  packageTier: string;
   quotedPrice: number;
   finalAgreedPrice: number;
   advancePaid: number;
-  assignedLead: AssignedPerson;
-  nextFollowUpDate: string; // YYYY-MM-DD
-  notesLog: ClientNote[];
+  stage: LeadStage;
+  assignedTo: FounderName;
+  sampleLinkSent: string;
+  followUpDate: string;
+  notes: string;
   createdAt: string;
+  milestones?: ClientMilestone[];
+  proposalUrl?: string;
+  contractUrl?: string;
 }
 
-export type CampaignObjective =
-  | 'WhatsApp Inquiries'
-  | 'Lead Generation Form'
-  | 'Local Store Visits / Reach'
-  | 'Instagram Profile Visits';
-
-export type PackageDuration =
-  | '7 Days'
-  | '15 Days'
-  | '30 Days'
-  | 'Monthly Retainer';
-
-export type CampaignStatus =
-  | 'Active & Scaling'
-  | 'Learning Phase'
-  | 'Creative Testing'
-  | 'Paused'
-  | 'Completed';
-
-export interface MetaCampaign {
+export interface MetaAdCampaign {
   id: string;
   clientId?: string;
   clientName: string;
-  niche: ClientNiche;
-  objective: CampaignObjective;
-  packageDuration: PackageDuration;
-  startDate: string; // YYYY-MM-DD
-  endDate: string; // YYYY-MM-DD
-  status: CampaignStatus;
-  totalAdBudget: number;
-  adSpendUsed: number;
+  campaignName: string;
+  objective: 'WhatsApp Messages' | 'Lead Generation Form' | 'Website Traffic' | 'Instagram Reach';
+  status: 'Active' | 'Learning' | 'Paused' | 'Completed';
+  totalBudget: number;
+  amountSpent: number;
   agencyFee: number;
   leadsGenerated: number;
-  metaPixelInstalled: boolean;
-  whatsappFlowConnected: boolean;
-  gbpSynced: boolean;
-  audienceNotes: string;
-  assignedLead: AssignedPerson;
+  startDate: string;
+  endDate: string;
+  notes: string;
 }
 
-export type HostingPlatform =
-  | 'Cloudflare Pages/Workers'
-  | 'Vercel'
-  | 'Netlify'
-  | 'Firebase'
-  | 'Hostinger'
-  | 'Supabase';
-
-export type DomainRegistrar =
-  | 'GoDaddy'
-  | 'Hostinger'
-  | 'Cloudflare'
-  | 'Namecheap';
-
-export type DomainOwner = 'Aethel Managed' | 'Client Owned';
-
-export type HealthStatus = 'Live & Healthy' | 'Maintenance' | 'Issue Reported';
-
-export interface TechAsset {
+export interface HostedWebsite {
   id: string;
-  projectName: string;
+  clientId?: string;
   clientName: string;
-  liveDomainUrl: string;
-  stagingUrl: string;
-  hostingPlatform: HostingPlatform;
-  deployingEmail: string;
-  domainRegistrar: DomainRegistrar;
-  domainOwner: DomainOwner;
-  renewalDate: string; // YYYY-MM-DD
-  annualRenewalCost: number;
-  githubRepoUrl: string;
-  techStack: string;
-  healthStatus: HealthStatus;
-  assignedLead: AssignedPerson;
+  domainName: string;
+  liveUrl: string;
+  registrar: 'Hostinger' | 'GoDaddy' | 'Namecheap' | 'Cloudflare' | 'Client Owned';
+  hostingPlatform: 'Vercel' | 'Hostinger VPS' | 'Netlify' | 'Render' | 'Cloudflare Pages';
+  purchaseDate: string;
+  expiryDate: string;
+  renewalCostINR: number;
+  sslStatus: 'Active' | 'Expiring Soon' | 'Pending';
+  siteStatus: 'Online' | 'Maintenance' | 'Development';
+  githubRepo: string;
+  notes: string;
 }
 
-export type TicketCategory =
-  | 'Website Bugs / Issues'
-  | 'Client Change Requests'
-  | 'Core Delivery Milestones';
-
-export type TicketWorkflowState =
-  | 'Reported / To-Do'
-  | 'Working On'
-  | 'Testing'
-  | 'Deployed & Resolved';
-
-export type TicketPriority =
-  | 'Critical - Site Down'
-  | 'High'
-  | 'Medium'
-  | 'Low';
-
-export type ScopeBillingTag =
-  | 'Included in Plan'
-  | 'Free Goodwill'
-  | 'Billable Extra ₹';
-
-export interface DeliveryTicket {
+export interface ClientTicket {
   id: string;
+  clientId?: string;
+  clientName: string;
+  domainName: string;
   title: string;
+  category: 'Bug Fix' | 'Copy/Image Update' | 'New Feature' | 'Meta Pixel/SEO' | 'Domain/SSL';
+  priority: 'Urgent' | 'High' | 'Normal' | 'Low';
+  status: 'Open' | 'In Progress' | 'QA Review' | 'Resolved';
+  assignedTo: FounderName;
+  dueDate: string;
+  description: string;
+  createdAt: string;
+}
+
+export interface StudioTask {
+  id: string;
+  clientId?: string;
   clientName: string;
-  websiteUrl: string;
-  category: TicketCategory;
-  state: TicketWorkflowState;
-  priority: TicketPriority;
-  billingTag: ScopeBillingTag;
-  extraAmount?: number;
-  assignedTo: 'Krishna' | 'Vansh';
+  title: string;
+  type: 'Follow-up' | 'Call' | 'Proposal' | 'Delivery' | 'Payment Collection' | 'Internal';
+  priority: 'Urgent' | 'High' | 'Normal';
+  status: 'Pending' | 'Completed';
+  assignedTo: FounderName;
+  dueDate: string;
   notes: string;
   createdAt: string;
 }
 
-export type PrototypeStage =
-  | 'Raw Idea'
-  | 'Working On / In Development'
-  | 'Interactive Prototype'
-  | 'Finished Product / Reusable System';
-
-export interface PrototypeItem {
+export interface ActivityLogEntry {
   id: string;
-  projectName: string;
-  stage: PrototypeStage;
-  targetIndustry: string;
-  coreUxHook: string;
-  devStack: string[];
-  livePrototypeUrl: string;
-  masterPromptNotes: string;
-  leadBuilder: AssignedPerson;
-  updatedAt: string;
+  actor: FounderName | 'Studio System';
+  action: string;
+  targetName: string;
+  category: 'CRM' | 'Project' | 'Finance' | 'Growth' | 'Domain' | 'Vault';
+  timestamp: string;
 }
 
-export type ExpenseCategory =
-  | 'Studio Expense'
-  | 'Tech Expense'
-  | 'Food & Chai Expense'
-  | 'Client-Billable Expense';
-
-export type PaymentAccount = 'Krishna' | 'Vansh' | 'Studio Account';
-
-export interface ExpenseItem {
+export interface RnDProject {
   id: string;
   title: string;
-  category: ExpenseCategory;
-  amount: number;
-  date: string; // YYYY-MM-DD
-  paidBy: PaymentAccount;
-  linkedClient?: string;
-  notes: string;
-  reimbursed: boolean;
+  category: 'Sample Template' | '3D / WebGL Experience' | 'Internal Tool' | 'Ad Creative Concept' | 'Automation Script';
+  targetNiche: string;
+  status: 'Ideation' | 'Building' | 'Ready to Pitch' | 'Shipped';
+  leadFounder: FounderName;
+  previewUrl: string;
+  techStack: string[];
+  impactNotes: string;
+  updatedAt: string;
+  linkedClientIds?: string[];
 }
 
-export type PaymentMode = 'UPI' | 'Bank Transfer' | 'Cash';
+export interface StudioExpense {
+  id: string;
+  title: string;
+  category: 'Domain & Hosting' | 'Software / SaaS' | 'Meta Ad Spend' | 'Marketing & Samples' | 'Operations / Travel' | 'Equipment';
+  amount: number;
+  paidBy: ExpensePaidBy;
+  date: string;
+  clientRelated?: string;
+  reimbursed: boolean;
+  notes: string;
+}
 
 export interface ClientPayment {
   id: string;
-  date: string; // YYYY-MM-DD
+  clientId?: string;
   clientName: string;
+  projectTitle: string;
+  totalProjectValue: number;
   amountReceived: number;
-  paymentMode: PaymentMode;
-  receivedBy: PaymentAccount;
-  notes: string;
+  paymentDate: string;
+  paymentMode: 'UPI' | 'Bank NEFT/IMPS' | 'Cash';
+  receivedInAccount: ExpensePaidBy;
+  milestone: 'Advance (50%)' | 'Final Delivery (50%)' | 'Full Upfront' | 'Meta Ads Retainer' | 'Domain Renewal';
 }
 
-export interface VaultCredential {
+export interface EncryptedVaultItem {
   id: string;
-  servicePlatform: string;
-  ownerClientTag: string;
-  usernameEmail: string;
-  ciphertext: string;
+  title: string;
+  category: 'Studio Social / Email' | 'Hosting & Cloud' | 'Meta Business Suite' | 'Client Credentials' | 'Payment / Banking' | 'Client Contract / Document';
+  accountIdentifier: string;
+  loginUrl: string;
+  clientAssociated: string;
+  cipherText: string;
   iv: string;
   salt: string;
-  url: string;
-  notes: string;
-  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AethelDatabaseState {
   clients: ClientLead[];
-  metaCampaigns: MetaCampaign[];
-  websites: TechAsset[];
-  tickets: DeliveryTicket[];
-  prototypes: PrototypeItem[];
-  expenses: ExpenseItem[];
+  metaCampaigns: MetaAdCampaign[];
+  websites: HostedWebsite[];
+  tickets: ClientTicket[];
+  rndProjects: RnDProject[];
+  expenses: StudioExpense[];
   payments: ClientPayment[];
-  vaultCredentials: VaultCredential[];
+  vaultItems: EncryptedVaultItem[];
+  tasks?: StudioTask[];
+  activityLogs?: ActivityLogEntry[];
+  lastUpdated: string;
 }

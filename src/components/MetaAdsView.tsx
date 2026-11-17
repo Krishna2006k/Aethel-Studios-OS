@@ -1,566 +1,447 @@
 import React, { useState } from 'react';
 import {
+  Megaphone,
   Plus,
-  CheckSquare,
-  Square,
-  Trash2,
   TrendingUp,
-  Edit3,
+  Target,
+  IndianRupee,
+  Users,
+  ArrowUpRight,
+  Sparkles,
 } from 'lucide-react';
-import type {
-  MetaCampaign,
-  CampaignStatus,
-  PackageDuration,
-  CampaignObjective,
-} from '../types';
-import {
-  formatINR,
-  calculateCPL,
-  calculateCampaignProgress,
-} from '../utils/calculations';
+import { ClientLead, MetaAdCampaign } from '../types';
+import { calculateCPL, formatINR } from '../utils/calculations';
 
 interface MetaAdsViewProps {
-  campaigns: MetaCampaign[];
-  onUpdateCampaign: (c: MetaCampaign) => void;
-  onDeleteCampaign: (id: string) => void;
-  onOpenAddCampaign: () => void;
+  campaigns: MetaAdCampaign[];
+  clients?: ClientLead[];
+  onUpdateCampaign: (updated: MetaAdCampaign) => void;
+  onAddCampaign: (newCampaign: MetaAdCampaign) => void;
+  onOpenClient360?: (clientId: string) => void;
 }
-
-const CAMPAIGN_STATUSES: CampaignStatus[] = [
-  'Active & Scaling',
-  'Learning Phase',
-  'Creative Testing',
-  'Paused',
-  'Completed',
-];
-
-const PACKAGE_DURATIONS: PackageDuration[] = [
-  '7 Days',
-  '15 Days',
-  '30 Days',
-  'Monthly Retainer',
-];
-
-const AD_OBJECTIVES: CampaignObjective[] = [
-  'WhatsApp Inquiries',
-  'Lead Generation Form',
-  'Local Store Visits / Reach',
-  'Instagram Profile Visits',
-];
 
 export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
   campaigns,
+  clients = [],
   onUpdateCampaign,
-  onDeleteCampaign,
-  onOpenAddCampaign,
+  onAddCampaign,
+  onOpenClient360,
 }) => {
-  const [statusFilter, setStatusFilter] = useState<string>('ALL');
-  const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<'All' | MetaAdCampaign['status']>('All');
+  const [clientName, setClientName] = useState('');
+  const [campaignName, setCampaignName] = useState('');
+  const [objective, setObjective] = useState<MetaAdCampaign['objective']>('WhatsApp Messages');
+  const [totalBudget, setTotalBudget] = useState(12000);
+  const [agencyFee, setAgencyFee] = useState(4000);
+  const [notes, setNotes] = useState('');
 
-  const filtered = campaigns.filter(
-    (c) => statusFilter === 'ALL' || c.status === statusFilter
+  const filteredCampaigns = campaigns.filter((c) =>
+    statusFilter === 'All' ? true : c.status === statusFilter
   );
 
-  const totalBudget = campaigns.reduce((s, c) => s + c.totalAdBudget, 0);
-  const totalSpend = campaigns.reduce((s, c) => s + c.adSpendUsed, 0);
+  const totalBudgetManaged = campaigns.reduce((s, c) => s + c.totalBudget, 0);
+  const totalSpent = campaigns.reduce((s, c) => s + c.amountSpent, 0);
   const totalAgencyFees = campaigns.reduce((s, c) => s + c.agencyFee, 0);
   const totalLeads = campaigns.reduce((s, c) => s + c.leadsGenerated, 0);
-  const blendedCPL = calculateCPL(totalSpend, totalLeads);
+  const avgCPL = calculateCPL(totalSpent, totalLeads);
+
+  const handleCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!clientName.trim() || !campaignName.trim()) return;
+    const matched = clients.find(
+      (c) => c.businessName.toLowerCase() === clientName.trim().toLowerCase()
+    );
+    const today = new Date().toISOString().slice(0, 10);
+    onAddCampaign({
+      id: `meta-${Date.now()}`,
+      clientId: matched?.id,
+      clientName: matched ? matched.businessName : clientName.trim(),
+      campaignName: campaignName.trim(),
+      objective,
+      status: 'Active',
+      totalBudget: Number(totalBudget),
+      amountSpent: 0,
+      agencyFee: Number(agencyFee),
+      leadsGenerated: 0,
+      startDate: today,
+      endDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+      notes: notes.trim() || 'Targeted hyper-local lead generation campaign.',
+    });
+    setClientName('');
+    setCampaignName('');
+    setNotes('');
+    setShowAdd(false);
+  };
 
   return (
-    <div className="space-y-5 sm:space-y-6">
-      {/* Header & Summary Strip */}
-      <div className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 lg:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-5 sm:space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <span className="text-xs font-bold tracking-wider uppercase text-[#2563EB] block">
-              03 / META ADS &amp; LOCAL GROWTH MANAGER
-            </span>
-            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
-              Hyperlocal Performance &amp; CPL Command
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-600 mt-1">
-              Managing 7-day Starter, 15-day Growth, and 30-day Scale Meta Ad sprints across Maharashtra.
-            </p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] mb-1">
+            GROWTH · META ADS & LEAD FUNNELS
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
+            Client Ad Spend, CPL & Retainer Tracker
+          </h1>
+          <p className="text-xs sm:text-sm text-[#64748B] mt-0.5">
+            Client Ad Spend is tracked as a pass-through budget, strictly separated from Aethel Studios' Agency Retainer revenue.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center bg-[#F8F9FA] p-1 rounded-xl border border-[#EAECEF]">
+            {(['All', 'Active', 'Completed', 'Paused'] as const).map((st) => (
+              <button
+                key={st}
+                onClick={() => setStatusFilter(st as typeof statusFilter)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  statusFilter === st
+                    ? 'bg-[#0B0F19] text-white'
+                    : 'text-[#64748B] hover:text-[#0B0F19]'
+                }`}
+              >
+                {st}
+              </button>
+            ))}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-            <select
-              aria-label="Filter campaigns by status"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3.5 sm:px-4 py-2 rounded-full bg-[#F8F9FA] border border-[#EAECEF] text-xs font-semibold text-[#0B0F19]"
-            >
-              <option value="ALL">All Campaign Statuses</option>
-              {CAMPAIGN_STATUSES.map((st) => (
-                <option key={st} value={st}>
-                  {st}
-                </option>
-              ))}
-            </select>
+          <button
+            onClick={() => setShowAdd(!showAdd)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-[#1E293B] text-white text-xs font-bold shadow-xs cursor-pointer"
+          >
+            <Plus className="w-4 h-4 text-[#60A5FA]" />
+            Launch Campaign
+          </button>
+        </div>
+      </div>
 
-            <button
-              type="button"
-              onClick={onOpenAddCampaign}
-              className="px-4 py-2 sm:py-2.5 rounded-full bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Launch Meta Campaign</span>
-            </button>
+      {/* Summary Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-[#0B0F19] text-white rounded-3xl p-5 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#94A3B8] text-xs font-medium">
+            <span>Client Ad Spend (Pass-Through)</span>
+            <Megaphone className="w-4 h-4 text-[#60A5FA]" />
+          </div>
+          <div className="my-2">
+            <div className="text-2xl font-extrabold font-mono text-white">
+              {formatINR(totalSpent)}{' '}
+              <span className="text-xs text-[#94A3B8] font-normal">
+                / {formatINR(totalBudgetManaged)}
+              </span>
+            </div>
+          </div>
+          <div className="text-[11px] text-[#34D399] font-mono">
+            Excluded from studio operational expenses
           </div>
         </div>
 
-        {/* 4 Metric Summary Row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 pt-4 border-t border-[#EAECEF]">
-          <div>
-            <span className="text-[11px] sm:text-xs text-slate-500 block">Total Ad Budget Managed</span>
-            <span className="font-mono text-lg sm:text-2xl font-bold text-[#0B0F19] mt-0.5 block">
-              {formatINR(totalBudget)}
-            </span>
+        <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#64748B] text-xs font-medium">
+            <span>Aethel Agency Retainer Fees</span>
+            <IndianRupee className="w-4 h-4 text-[#059669]" />
           </div>
-          <div>
-            <span className="text-[11px] sm:text-xs text-slate-500 block">Ad Spend Utilized</span>
-            <span className="font-mono text-lg sm:text-2xl font-bold text-[#2563EB] mt-0.5 block">
-              {formatINR(totalSpend)}
-            </span>
+          <div className="text-2xl font-extrabold font-mono text-[#059669] my-2">
+            {formatINR(totalAgencyFees)}
           </div>
-          <div>
-            <span className="text-[11px] sm:text-xs text-slate-500 block">Aethel Agency Retainer Fees</span>
-            <span className="font-mono text-lg sm:text-2xl font-bold text-[#059669] mt-0.5 block">
-              {formatINR(totalAgencyFees)}
-            </span>
+          <div className="text-[11px] text-[#64748B]">Pure studio management revenue</div>
+        </div>
+
+        <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#64748B] text-xs font-medium">
+            <span>Total Client Leads Generated</span>
+            <Users className="w-4 h-4 text-[#2563EB]" />
           </div>
-          <div>
-            <span className="text-[11px] sm:text-xs text-slate-500 block">Total Leads &amp; Blended CPL</span>
-            <span className="font-mono text-base sm:text-2xl font-bold text-[#0B0F19] mt-0.5 block">
-              {totalLeads} leads · {formatINR(blendedCPL)}/lead
-            </span>
+          <div className="text-2xl font-extrabold font-mono text-[#0B0F19] my-2">
+            {totalLeads}
+          </div>
+          <div className="text-[11px] text-[#64748B]">Qualified WhatsApp & Form inquiries</div>
+        </div>
+
+        <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#64748B] text-xs font-medium">
+            <span>Studio Average CPL</span>
+            <Target className="w-4 h-4 text-[#059669]" />
+          </div>
+          <div className="text-2xl font-extrabold font-mono text-[#0B0F19] my-2">
+            {formatINR(avgCPL)}
+          </div>
+          <div className="text-[11px] text-[#059669] font-semibold">
+            High-converting hyper-local funnels
           </div>
         </div>
       </div>
 
-      {/* Campaign Cards Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-        {filtered.map((campaign) => {
-          const cpl = calculateCPL(campaign.adSpendUsed, campaign.leadsGenerated);
-          const prog = calculateCampaignProgress(campaign.startDate, campaign.endDate);
-          const isEndingSoon = prog.daysRemaining <= 3 && campaign.status !== 'Completed';
-          const isEditing = editingCampaignId === campaign.id;
-
-          return (
-            <div
-              key={campaign.id}
-              className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between space-y-5"
+      {showAdd && (
+        <form
+          onSubmit={handleCreate}
+          className="bg-white rounded-3xl p-6 border-2 border-[#2563EB]/20 shadow-lg space-y-4"
+        >
+          <div className="flex items-center justify-between border-b border-[#EAECEF] pb-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-[#2563EB]">
+              + Launch New Meta Ad Campaign
+            </h3>
+            <button
+              type="button"
+              onClick={() => setShowAdd(false)}
+              className="text-xs text-[#64748B]"
             >
-              <div className="space-y-4">
-                {/* Top Header */}
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#2563EB]">
-                      {campaign.packageDuration} · {campaign.objective}
-                    </span>
-                    <h2 className="text-lg font-bold text-[#0B0F19] mt-0.5">
-                      {campaign.clientName}
-                    </h2>
-                    <p className="text-xs text-slate-500">
-                      {campaign.niche} · Lead: {campaign.assignedLead}
-                    </p>
-                  </div>
+              Cancel
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Client Business Name *
+              </label>
+              <input
+                type="text"
+                required
+                list="meta-client-list"
+                value={clientName}
+                onChange={(e) => setClientName(e.target.value)}
+                placeholder="e.g., Royal Orchid Lawns"
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
+              />
+              <datalist id="meta-client-list">
+                {clients.map((c) => (
+                  <option key={c.id} value={c.businessName} />
+                ))}
+              </datalist>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Campaign Title *
+              </label>
+              <input
+                type="text"
+                required
+                value={campaignName}
+                onChange={(e) => setCampaignName(e.target.value)}
+                placeholder="Wedding Season Inquiry Funnel"
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Objective
+              </label>
+              <select
+                value={objective}
+                onChange={(e) =>
+                  setObjective(e.target.value as MetaAdCampaign['objective'])
+                }
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm bg-white"
+              >
+                <option value="WhatsApp Messages">WhatsApp Messages</option>
+                <option value="Lead Generation Form">Lead Generation Form</option>
+                <option value="Website Traffic">Website Traffic</option>
+                <option value="Instagram Reach">Instagram Reach</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Client Ad Budget (₹)
+              </label>
+              <input
+                type="number"
+                value={totalBudget}
+                onChange={(e) => setTotalBudget(Number(e.target.value))}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Aethel Agency Fee (₹)
+              </label>
+              <input
+                type="number"
+                value={agencyFee}
+                onChange={(e) => setAgencyFee(Number(e.target.value))}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Creative / Targeting Notes
+              </label>
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="10km radius, 24-50 age group..."
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              className="px-6 py-2.5 rounded-full bg-[#2563EB] text-white text-xs font-bold cursor-pointer"
+            >
+              Save Campaign
+            </button>
+          </div>
+        </form>
+      )}
 
-                  <select
-                    aria-label={`Status for ${campaign.clientName}`}
-                    value={campaign.status}
-                    onChange={(e) =>
-                      onUpdateCampaign({
-                        ...campaign,
-                        status: e.target.value as CampaignStatus,
-                      })
-                    }
-                    className="px-3 py-1 rounded-full bg-[#F8F9FA] border border-[#EAECEF] text-xs font-semibold text-[#0B0F19]"
-                  >
-                    {CAMPAIGN_STATUSES.map((st) => (
-                      <option key={st} value={st}>
-                        {st}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+      {/* Campaign Cards or Clean Empty State Onboarding (Part 5) */}
+      {filteredCampaigns.length === 0 ? (
+        <div className="bg-white rounded-3xl p-8 border border-[#EAECEF] text-center max-w-xl mx-auto space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center mx-auto">
+            <Sparkles className="w-6 h-6" />
+          </div>
+          <h3 className="text-lg font-extrabold text-[#0B0F19]">
+            No {statusFilter !== 'All' ? statusFilter : ''} Meta Ad Campaigns Yet
+          </h3>
+          <p className="text-xs text-[#64748B] leading-relaxed">
+            Launch a hyper-local WhatsApp or Instant Form lead generation campaign for any client in your CRM pipeline to track Ad Spend, CPL, and Agency Retainer fees automatically.
+          </p>
+          <button
+            onClick={() => setShowAdd(true)}
+            className="px-5 py-2.5 rounded-xl bg-[#2563EB] text-white text-xs font-bold cursor-pointer"
+          >
+            + Launch First Campaign
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          {filteredCampaigns.map((camp) => {
+            const cpl = calculateCPL(camp.amountSpent, camp.leadsGenerated);
+            const burnPercent =
+              camp.totalBudget > 0
+                ? Math.min(100, Math.round((camp.amountSpent / camp.totalBudget) * 100))
+                : 0;
 
-                {/* Progress Bar of Days Remaining */}
-                <div className="space-y-1.5 bg-[#F8F9FA] p-3.5 rounded-2xl border border-[#EAECEF]">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-mono text-slate-600">
-                      {campaign.startDate} &rarr; {campaign.endDate}
+            return (
+              <div
+                key={camp.id}
+                className="bg-white rounded-3xl p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between space-y-5"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold text-[#2563EB]">
+                      {camp.objective}
                     </span>
-                    <span
-                      className={`font-mono font-bold ${
-                        isEndingSoon ? 'text-rose-600' : 'text-[#0B0F19]'
+                    <select
+                      value={camp.status}
+                      onChange={(e) =>
+                        onUpdateCampaign({
+                          ...camp,
+                          status: e.target.value as MetaAdCampaign['status'],
+                        })
+                      }
+                      aria-label={`Campaign status for ${camp.campaignName}`}
+                      className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border cursor-pointer ${
+                        camp.status === 'Active'
+                          ? 'bg-[#D1FAE5]/60 text-[#059669] border-[#A7F3D0]'
+                          : camp.status === 'Completed'
+                          ? 'bg-slate-100 text-slate-700 border-slate-200'
+                          : 'bg-amber-50 text-amber-700 border-amber-200'
                       }`}
                     >
-                      {prog.daysRemaining}d remaining ({prog.percentComplete}%)
-                    </span>
-                  </div>
-                  <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${
-                        isEndingSoon ? 'bg-amber-500' : 'bg-[#2563EB]'
-                      }`}
-                      style={{ width: `${prog.percentComplete}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Financial & ROI Metrics (Inline Editable Spend & Leads) */}
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="p-3 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
-                    <span className="text-slate-500 block">Total Ad Budget</span>
-                    <span className="font-mono text-sm font-bold text-[#0B0F19] mt-0.5 block">
-                      {formatINR(campaign.totalAdBudget)}
-                    </span>
-                    <span className="text-[11px] text-slate-500 block mt-0.5">
-                      Agency Fee: <strong className="font-mono">{formatINR(campaign.agencyFee)}</strong>
-                    </span>
-                  </div>
-
-                  <div className="p-3 rounded-2xl bg-[#0B0F19] text-white">
-                    <span className="text-[#94A3B8] block flex items-center justify-between">
-                      <span>Auto CPL (INR)</span>
-                      <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-                    </span>
-                    <span className="font-mono text-lg font-bold text-emerald-400 mt-0.5 block">
-                      {formatINR(cpl)} / lead
-                    </span>
-                    <span className="text-[11px] text-[#94A3B8] block">
-                      {campaign.leadsGenerated} WhatsApp / Leads
-                    </span>
+                      <option value="Active">● Active</option>
+                      <option value="Learning">◐ Learning</option>
+                      <option value="Paused">❚❚ Paused</option>
+                      <option value="Completed">✓ Completed</option>
+                    </select>
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                      Ad Spend Used (₹)
-                    </label>
-                    <input
-                      type="number"
-                      aria-label={`Ad spend used for ${campaign.clientName}`}
-                      value={campaign.adSpendUsed}
-                      onChange={(e) =>
-                        onUpdateCampaign({
-                          ...campaign,
-                          adSpendUsed: Number(e.target.value) || 0,
-                        })
-                      }
-                      className="w-full px-3 py-1.5 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono text-xs font-bold text-[#0B0F19]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                      Leads / Clicks Generated
-                    </label>
-                    <input
-                      type="number"
-                      aria-label={`Leads generated for ${campaign.clientName}`}
-                      value={campaign.leadsGenerated}
-                      onChange={(e) =>
-                        onUpdateCampaign({
-                          ...campaign,
-                          leadsGenerated: Number(e.target.value) || 0,
-                        })
-                      }
-                      className="w-full px-3 py-1.5 rounded-xl border border-[#EAECEF] bg-[#F8F9FA] font-mono text-xs font-bold text-[#059669]"
-                    />
-                  </div>
-                </div>
-
-                {/* Expandable Full-Field Editor */}
-                {isEditing && (
-                  <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#2563EB]/40 space-y-3 text-xs">
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                          Total Ad Budget (₹)
-                        </label>
-                        <input
-                          type="number"
-                          value={campaign.totalAdBudget}
-                          onChange={(e) =>
-                            onUpdateCampaign({
-                              ...campaign,
-                              totalAdBudget: Number(e.target.value) || 0,
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white font-mono text-xs"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                          Agency Fee (₹)
-                        </label>
-                        <input
-                          type="number"
-                          value={campaign.agencyFee}
-                          onChange={(e) =>
-                            onUpdateCampaign({
-                              ...campaign,
-                              agencyFee: Number(e.target.value) || 0,
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white font-mono text-xs"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                          Sprint Package
-                        </label>
-                        <select
-                          value={campaign.packageDuration}
-                          onChange={(e) =>
-                            onUpdateCampaign({
-                              ...campaign,
-                              packageDuration: e.target.value as PackageDuration,
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white text-xs"
-                        >
-                          {PACKAGE_DURATIONS.map((d) => (
-                            <option key={d} value={d}>
-                              {d}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                          Objective
-                        </label>
-                        <select
-                          value={campaign.objective}
-                          onChange={(e) =>
-                            onUpdateCampaign({
-                              ...campaign,
-                              objective: e.target.value as CampaignObjective,
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white text-xs"
-                        >
-                          {AD_OBJECTIVES.map((o) => (
-                            <option key={o} value={o}>
-                              {o}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                          Start Date
-                        </label>
-                        <input
-                          type="date"
-                          value={campaign.startDate}
-                          onChange={(e) =>
-                            onUpdateCampaign({
-                              ...campaign,
-                              startDate: e.target.value,
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white font-mono text-xs"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                          End Date
-                        </label>
-                        <input
-                          type="date"
-                          value={campaign.endDate}
-                          onChange={(e) =>
-                            onUpdateCampaign({
-                              ...campaign,
-                              endDate: e.target.value,
-                            })
-                          }
-                          className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white font-mono text-xs"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                        Audience &amp; Hook Notes
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={campaign.audienceNotes}
-                        onChange={(e) =>
-                          onUpdateCampaign({
-                            ...campaign,
-                            audienceNotes: e.target.value,
-                          })
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() =>
+                          camp.clientId && onOpenClient360 && onOpenClient360(camp.clientId)
                         }
-                        className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white text-xs"
+                        className="text-xs font-bold uppercase tracking-wider text-[#64748B] hover:text-[#2563EB] flex items-center gap-1 cursor-pointer"
+                      >
+                        {camp.clientName}
+                        {camp.clientId && <ArrowUpRight className="w-3 h-3" />}
+                      </button>
+                    </div>
+                    <h3 className="text-base font-extrabold text-[#0B0F19] leading-snug mt-0.5">
+                      {camp.campaignName}
+                    </h3>
+                  </div>
+
+                  {/* Budget Progress Bar */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-[#64748B]">Ad Spend Utilized</span>
+                      <span className="font-mono font-bold text-[#0B0F19]">
+                        {formatINR(camp.amountSpent)} / {formatINR(camp.totalBudget)} ({burnPercent}%)
+                      </span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-[#F1F5F9] overflow-hidden">
+                      <div
+                        className="h-full bg-[#2563EB] rounded-full transition-all"
+                        style={{ width: `${burnPercent}%` }}
                       />
                     </div>
                   </div>
-                )}
 
-                {/* Technical Checklist Controls */}
-                <div className="space-y-1.5 pt-2 border-t border-[#EAECEF]">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
-                    Technical Funnel Checklist
-                  </span>
-                  <div className="flex flex-col gap-1.5 text-xs">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onUpdateCampaign({
-                          ...campaign,
-                          metaPixelInstalled: !campaign.metaPixelInstalled,
-                        })
-                      }
-                      className="flex items-center gap-2 text-left text-slate-700 hover:text-[#0B0F19] cursor-pointer"
-                    >
-                      {campaign.metaPixelInstalled ? (
-                        <CheckSquare className="w-4 h-4 text-[#059669] shrink-0" />
-                      ) : (
-                        <Square className="w-4 h-4 text-slate-400 shrink-0" />
-                      )}
-                      <span>Meta Pixel Installed</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onUpdateCampaign({
-                          ...campaign,
-                          whatsappFlowConnected: !campaign.whatsappFlowConnected,
-                        })
-                      }
-                      className="flex items-center gap-2 text-left text-slate-700 hover:text-[#0B0F19] cursor-pointer"
-                    >
-                      {campaign.whatsappFlowConnected ? (
-                        <CheckSquare className="w-4 h-4 text-[#059669] shrink-0" />
-                      ) : (
-                        <Square className="w-4 h-4 text-slate-400 shrink-0" />
-                      )}
-                      <span>WhatsApp Direct Flow Connected</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onUpdateCampaign({
-                          ...campaign,
-                          gbpSynced: !campaign.gbpSynced,
-                        })
-                      }
-                      className="flex items-center gap-2 text-left text-slate-700 hover:text-[#0B0F19] cursor-pointer"
-                    >
-                      {campaign.gbpSynced ? (
-                        <CheckSquare className="w-4 h-4 text-[#059669] shrink-0" />
-                      ) : (
-                        <Square className="w-4 h-4 text-slate-400 shrink-0" />
-                      )}
-                      <span>Google Business Profile Synced</span>
-                    </button>
+                  {/* Key Metrics Grid */}
+                  <div className="grid grid-cols-3 gap-2 pt-2">
+                    <div className="p-3 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+                      <div className="text-[10px] font-bold uppercase text-[#64748B]">
+                        Leads
+                      </div>
+                      <div className="text-base font-extrabold font-mono text-[#0B0F19] mt-0.5">
+                        {camp.leadsGenerated}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+                      <div className="text-[10px] font-bold uppercase text-[#64748B]">
+                        CPL
+                      </div>
+                      <div className="text-base font-extrabold font-mono text-[#059669] mt-0.5">
+                        {cpl > 0 ? formatINR(cpl) : '—'}
+                      </div>
+                    </div>
+                    <div className="p-3 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+                      <div className="text-[10px] font-bold uppercase text-[#64748B]">
+                        Retainer
+                      </div>
+                      <div className="text-base font-extrabold font-mono text-[#2563EB] mt-0.5">
+                        {formatINR(camp.agencyFee)}
+                      </div>
+                    </div>
                   </div>
+
+                  <p className="text-xs text-[#64748B] leading-relaxed">{camp.notes}</p>
                 </div>
 
-                {/* Audience & Hook Notes */}
-                <div className="pt-2 border-t border-[#EAECEF]">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                    Ad Creative &amp; Audience Notes
-                  </span>
-                  <p className="text-xs text-slate-600 leading-relaxed">
-                    {campaign.audienceNotes}
-                  </p>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-[#EAECEF] flex items-center justify-between text-xs">
-                <span className="font-mono text-slate-500">
-                  Remaining Budget: {formatINR(Math.max(0, campaign.totalAdBudget - campaign.adSpendUsed))}
-                </span>
-                <div className="flex items-center gap-2">
+                {/* Fast Inline Update Controls */}
+                <div className="pt-3 border-t border-[#F1F5F9] flex items-center justify-between gap-2">
                   <button
-                    type="button"
                     onClick={() =>
-                      setEditingCampaignId(isEditing ? null : campaign.id)
+                      onUpdateCampaign({
+                        ...camp,
+                        leadsGenerated: camp.leadsGenerated + 5,
+                      })
                     }
-                    className="px-2.5 py-1 rounded-full border border-[#EAECEF] hover:border-[#2563EB] text-xs font-semibold text-[#2563EB] flex items-center gap-1 cursor-pointer"
+                    className="flex-1 py-2 px-3 rounded-xl bg-[#F8F9FA] hover:bg-[#EFF6FF] text-[#0B0F19] hover:text-[#2563EB] text-xs font-bold border border-[#EAECEF] transition-colors cursor-pointer"
                   >
-                    <Edit3 className="w-3 h-3" />
-                    <span>{isEditing ? 'Done' : 'Edit Fields'}</span>
+                    +5 Leads
                   </button>
                   <button
-                    type="button"
-                    onClick={() => onDeleteCampaign(campaign.id)}
-                    aria-label={`Delete campaign for ${campaign.clientName}`}
-                    className="text-slate-400 hover:text-rose-600 p-1 transition-colors cursor-pointer"
+                    onClick={() =>
+                      onUpdateCampaign({
+                        ...camp,
+                        amountSpent: Math.min(camp.totalBudget, camp.amountSpent + 1000),
+                      })
+                    }
+                    className="flex-1 py-2 px-3 rounded-xl bg-[#F8F9FA] hover:bg-[#EFF6FF] text-[#0B0F19] hover:text-[#2563EB] text-xs font-bold border border-[#EAECEF] transition-colors cursor-pointer"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    +₹1k Spend
                   </button>
                 </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Performance Comparison Table */}
-      <div className="bg-white border border-[#EAECEF] rounded-3xl overflow-hidden shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
-        <div className="px-6 py-4 border-b border-[#EAECEF] flex items-center justify-between">
-          <h3 className="text-sm font-bold text-[#0B0F19]">
-            Campaign ROI &amp; Cost-Per-Lead Ledger
-          </h3>
-          <span className="text-xs text-slate-500 font-mono">
-            All metrics in ₹ INR
-          </span>
+            );
+          })}
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-[#EAECEF] bg-[#F8F9FA] text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                <th className="py-3 px-4">Client &amp; Niche</th>
-                <th className="py-3 px-4">Objective &amp; Package</th>
-                <th className="py-3 px-4 text-right">Total Budget</th>
-                <th className="py-3 px-4 text-right">Spend Used</th>
-                <th className="py-3 px-4 text-right">Agency Fee</th>
-                <th className="py-3 px-4 text-right">Leads</th>
-                <th className="py-3 px-4 text-right">CPL (₹)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#EAECEF] text-xs">
-              {filtered.map((c) => (
-                <tr key={c.id} className="hover:bg-slate-50/80">
-                  <td className="py-3 px-4 font-bold text-[#0B0F19]">
-                    {c.clientName}
-                    <span className="block text-[11px] font-normal text-slate-500">
-                      {c.niche}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-slate-600">
-                    {c.objective} ({c.packageDuration})
-                  </td>
-                  <td className="py-3 px-4 text-right font-mono">
-                    {formatINR(c.totalAdBudget)}
-                  </td>
-                  <td className="py-3 px-4 text-right font-mono font-semibold text-[#2563EB]">
-                    {formatINR(c.adSpendUsed)}
-                  </td>
-                  <td className="py-3 px-4 text-right font-mono text-[#059669] font-semibold">
-                    {formatINR(c.agencyFee)}
-                  </td>
-                  <td className="py-3 px-4 text-right font-mono font-bold">
-                    {c.leadsGenerated}
-                  </td>
-                  <td className="py-3 px-4 text-right font-mono font-bold text-[#0B0F19]">
-                    {formatINR(calculateCPL(c.adSpendUsed, c.leadsGenerated))}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      )}
     </div>
   );
 };
