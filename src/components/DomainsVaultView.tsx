@@ -50,18 +50,18 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Header */}
-      <div className="bg-white border border-[#EAECEF] rounded-3xl p-6 sm:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+      <div className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 lg:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <span className="text-xs font-bold tracking-wider uppercase text-[#2563EB] block">
               04 / TECH ASSETS, DOMAINS &amp; HOSTING VAULT
             </span>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
               Production Websites, Edge Workers &amp; Domain Registry
             </h1>
-            <p className="text-sm text-slate-600 mt-1">
+            <p className="text-xs sm:text-sm text-slate-600 mt-1">
               Tracking {websites.length} deployed properties · Total Annual Renewal Commitment:{' '}
               <span className="font-mono font-bold text-[#0B0F19]">
                 {formatINR(totalAnnualRenewal)}/yr
@@ -69,8 +69,8 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3">
+            <div className="relative flex-1 sm:flex-initial">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -78,14 +78,14 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search domain, client, or stack..."
                 aria-label="Search deployed websites"
-                className="pl-10 pr-4 py-2 rounded-full bg-[#F8F9FA] border border-[#EAECEF] text-xs text-[#0B0F19] focus:outline-none focus:border-[#2563EB]"
+                className="w-full sm:w-64 pl-10 pr-4 py-2 rounded-full bg-[#F8F9FA] border border-[#EAECEF] text-xs text-[#0B0F19] focus:outline-none focus:border-[#2563EB]"
               />
             </div>
 
             <button
               type="button"
               onClick={onOpenAddWebsite}
-              className="px-4 py-2.5 rounded-full bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-4 py-2.5 rounded-full bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Register Deployed Site</span>
@@ -95,7 +95,7 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
       </div>
 
       {/* Cards Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {filtered.map((site) => {
           const daysLeft = calculateDaysRemaining(site.renewalDate);
           const isExpiringUnder30 = daysLeft <= 30;
@@ -104,7 +104,7 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
           return (
             <div
               key={site.id}
-              className="bg-white border border-[#EAECEF] rounded-3xl p-6 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between space-y-5"
+              className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between space-y-5"
             >
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-3">

@@ -53,18 +53,18 @@ export const RnDLabView: React.FC<RnDLabViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Header */}
-      <div className="bg-white border border-[#EAECEF] rounded-3xl p-6 sm:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-6">
+      <div className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 lg:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-4 sm:space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <span className="text-xs font-bold tracking-wider uppercase text-[#2563EB] block">
               06 / R&amp;D LAB &amp; PROTOTYPES
             </span>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
               Proprietary IP, Vibe-Coding Lab &amp; Pitch Demos
             </h1>
-            <p className="text-sm text-slate-600 mt-1">
+            <p className="text-xs sm:text-sm text-slate-600 mt-1">
               Reusable industry systems built with Google AI Studio, ChatGPT Codex, Cursor, v0, Bolt &amp; Supabase.
             </p>
           </div>
@@ -80,11 +80,11 @@ export const RnDLabView: React.FC<RnDLabViewProps> = ({
         </div>
 
         {/* 4 Stage Filter Pills */}
-        <div className="flex items-center gap-2 overflow-x-auto pt-2 border-t border-[#EAECEF]">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-2 border-t border-[#EAECEF]">
           <button
             type="button"
             onClick={() => setStageFilter('ALL')}
-            className={`px-4 py-2 rounded-full text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 sm:px-4 py-2 rounded-full text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
               stageFilter === 'ALL'
                 ? 'bg-[#0B0F19] text-white'
                 : 'bg-[#F8F9FA] text-slate-600 hover:text-[#0B0F19]'
@@ -99,7 +99,7 @@ export const RnDLabView: React.FC<RnDLabViewProps> = ({
                 key={stage}
                 type="button"
                 onClick={() => setStageFilter(stage)}
-                className={`px-4 py-2 rounded-full text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-3.5 sm:px-4 py-2 rounded-full text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                   stageFilter === stage
                     ? 'bg-[#0B0F19] text-white'
                     : 'bg-[#F8F9FA] text-slate-600 hover:text-[#0B0F19]'
@@ -113,13 +113,13 @@ export const RnDLabView: React.FC<RnDLabViewProps> = ({
       </div>
 
       {/* Prototypes Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {filtered.map((proto) => {
           const isEditingPrompt = editingPromptId === proto.id;
           return (
             <div
               key={proto.id}
-              className="bg-white border border-[#EAECEF] rounded-3xl p-6 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between space-y-5"
+              className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between space-y-5"
             >
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-3">

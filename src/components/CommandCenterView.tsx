@@ -98,22 +98,22 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
   }).format(new Date());
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 sm:space-y-8">
       {/* Hero Editorial Banner */}
-      <section className="bg-white border border-[#EAECEF] rounded-3xl p-6 sm:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
-        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+      <section className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 lg:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 sm:gap-6">
           <div className="space-y-2 max-w-3xl">
-            <div className="flex flex-wrap items-center gap-3 text-xs font-bold tracking-wider text-[#2563EB]">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs font-bold tracking-wider text-[#2563EB]">
               <span>01 / COMMAND CENTER</span>
               <span className="text-slate-300" aria-hidden="true">/</span>
               <span className="font-mono text-slate-500 font-normal">{todayFormatted}</span>
               <span className="text-slate-300" aria-hidden="true">/</span>
               <span className="text-[#0D281D] font-medium">Pune • Risod • Washim</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-[#0B0F19] text-balance">
+            <h1 className="text-xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-[#0B0F19] text-balance">
               Good day, Vansh &amp; Krishna. Here is your live studio pulse.
             </h1>
-            <p className="text-sm sm:text-base text-slate-600 leading-relaxed">
+            <p className="text-xs sm:text-base text-slate-600 leading-relaxed">
               Active Sprint Focus: Closing <strong className="text-[#0B0F19] font-semibold">Sanjeevani Hospital Clinic OS</strong>, scaling <strong className="text-[#0B0F19] font-semibold">Imperial Pavilion Wedding Ads</strong>, and shipping <strong className="text-[#0B0F19] font-semibold">Aurelia Sanctuary</strong> suite booking flow.
             </p>
           </div>
@@ -123,14 +123,14 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
             <div
               role="group"
               aria-label="Filter Command Center by Co-Founder"
-              className="inline-flex items-center p-1 bg-[#F8F9FA] border border-[#EAECEF] rounded-full"
+              className="grid grid-cols-3 sm:inline-flex items-center p-1 bg-[#F8F9FA] border border-[#EAECEF] rounded-full"
             >
               {(['All Studio', 'Krishna', 'Vansh'] as FounderFilter[]).map((f) => (
                 <button
                   key={f}
                   type="button"
                   onClick={() => onChangeFounderFilter(f)}
-                  className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                  className={`px-3 sm:px-4 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap text-center cursor-pointer ${
                     founderFilter === f
                       ? 'bg-[#0B0F19] text-white shadow-xs'
                       : 'text-slate-600 hover:text-[#0B0F19]'
@@ -145,9 +145,9 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
       </section>
 
       {/* 4 High-Contrast KPI Cards (1 Obsidian #0B0F19 + 3 Crisp White #FFFFFF) */}
-      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+      <section className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5">
         {/* KPI 1: Obsidian Card - Net Studio Cashflow */}
-        <div className="bg-[#0B0F19] text-white rounded-3xl p-6 flex flex-col justify-between shadow-[0_14px_34px_-12px_rgba(11,15,25,0.22)]">
+        <div className="bg-[#0B0F19] text-white rounded-3xl p-5 sm:p-6 flex flex-col justify-between shadow-[0_14px_34px_-12px_rgba(11,15,25,0.22)]">
           <div>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-bold tracking-wider uppercase text-[#94A3B8]">

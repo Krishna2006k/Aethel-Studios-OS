@@ -353,16 +353,16 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label="Universal Quick Action Command Modal"
-      className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
     >
-      <div className="bg-white border border-[#EAECEF] rounded-3xl w-full max-w-2xl p-6 sm:p-8 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-start justify-between gap-4 border-b border-[#EAECEF] pb-4">
+      <div className="bg-white border border-[#EAECEF] rounded-t-3xl sm:rounded-3xl w-full max-w-2xl p-4 sm:p-8 shadow-2xl space-y-5 sm:space-y-6 max-h-[92dvh] sm:max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between gap-4 border-b border-[#EAECEF] pb-3.5 sm:pb-4">
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#2563EB] flex items-center gap-1.5">
+            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#2563EB] flex items-center gap-1.5">
               <Zap className="w-3.5 h-3.5" />
               <span>UNIVERSAL COMMAND BAR (CTRL+K)</span>
             </span>
-            <h2 className="text-xl font-bold text-[#0B0F19] mt-0.5">
+            <h2 className="text-lg sm:text-xl font-bold text-[#0B0F19] mt-0.5">
               Rapid Studio Action &amp; Record Creator
             </h2>
           </div>
@@ -371,20 +371,20 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close Quick Action Modal"
-            className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+            className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Action Switcher Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
           {TABS.map((t) => (
             <button
               key={t.id}
               type="button"
               onClick={() => setActiveTab(t.id)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                 activeTab === t.id
                   ? 'bg-[#0B0F19] text-white'
                   : 'bg-[#F8F9FA] text-slate-600 hover:text-[#0B0F19]'

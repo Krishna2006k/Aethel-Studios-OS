@@ -318,7 +318,7 @@ export default function App() {
           }
         />
 
-        <main className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8 pt-6 pb-16">
+        <main className="mx-auto max-w-[1440px] px-3 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-14 sm:pb-16">
           {activeModule === 'command-center' && (
             <CommandCenterView
               db={dbState}
@@ -414,14 +414,14 @@ export default function App() {
       </div>
 
       {/* Editorial Footer */}
-      <footer className="border-t border-[#EAECEF] bg-white py-6 px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-[1440px] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <div>
+      <footer className="border-t border-[#EAECEF] bg-white py-5 sm:py-6 px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-[1440px] flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left text-xs text-slate-500">
+          <div className="leading-relaxed">
             <strong className="text-[#0B0F19]">Aethel Studios</strong> — Internal Agency &amp; Growth Operating System · Founded by{' '}
             <strong className="text-[#0B0F19]">Vansh Khakole</strong> (<span className="font-mono">+91 97632 74410</span>) &amp;{' '}
             <strong className="text-[#0B0F19]">Krishna Khakole</strong> (<span className="font-mono">+91 93099 70761</span>)
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-4">
             <span className="font-mono">aethelstudios.in@gmail.com</span>
             <span aria-hidden="true">·</span>
             <span>Pune &amp; Maharashtra, India</span>
@@ -469,7 +469,7 @@ export default function App() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-5 right-5 z-50 px-4 py-3 rounded-full bg-[#0B0F19] text-white text-xs font-semibold shadow-xl border border-white/10"
+          className="fixed bottom-4 left-4 right-4 sm:left-auto sm:right-5 sm:bottom-5 z-50 px-4 py-3 rounded-2xl sm:rounded-full bg-[#0B0F19] text-white text-xs font-semibold shadow-xl border border-white/10 text-center sm:text-left"
         >
           {toastMessage}
         </div>

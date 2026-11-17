@@ -129,18 +129,18 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Top Financial Summary Bar */}
-      <div className="bg-white border border-[#EAECEF] rounded-3xl p-6 sm:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-6">
+      <div className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 lg:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-5 sm:space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <span className="text-xs font-bold tracking-wider uppercase text-[#2563EB] block">
               07 / STUDIO FINANCE, REVENUE &amp; CO-FOUNDER SPLIT LEDGER
             </span>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
               Studio Treasury &amp; Co-Founder Settlement Engine
             </h1>
-            <p className="text-sm text-slate-600 mt-1">
+            <p className="text-xs sm:text-sm text-slate-600 mt-1">
               Transparent INR ledger tracking client inflows, out-of-pocket expenses, and Krishna vs Vansh reimbursements.
             </p>
           </div>
@@ -156,13 +156,13 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
         </div>
 
         {/* 3 Primary Financial Pillars */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4">
+          <div className="p-4 sm:p-5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
             <div className="flex items-center justify-between text-xs text-slate-500">
               <span>Total Revenue Collected (₹)</span>
               <ArrowDownLeft className="w-4 h-4 text-[#059669]" />
             </div>
-            <div className="font-mono text-3xl font-bold text-[#059669] mt-2">
+            <div className="font-mono text-2xl sm:text-3xl font-bold text-[#059669] mt-2">
               {formatINR(finance.totalRevenueCollected)}
             </div>
             <p className="text-xs text-slate-500 mt-1">
@@ -170,12 +170,12 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
             </p>
           </div>
 
-          <div className="p-5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+          <div className="p-4 sm:p-5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
             <div className="flex items-center justify-between text-xs text-slate-500">
               <span>Total Studio Expenses (₹)</span>
               <ArrowUpRight className="w-4 h-4 text-rose-600" />
             </div>
-            <div className="font-mono text-3xl font-bold text-[#0B0F19] mt-2">
+            <div className="font-mono text-2xl sm:text-3xl font-bold text-[#0B0F19] mt-2">
               {formatINR(finance.totalStudioExpenses)}
             </div>
             <p className="text-xs text-slate-500 mt-1">
@@ -183,12 +183,12 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
             </p>
           </div>
 
-          <div className="p-5 rounded-2xl bg-[#0B0F19] text-white">
+          <div className="p-4 sm:p-5 rounded-2xl bg-[#0B0F19] text-white">
             <div className="flex items-center justify-between text-xs text-[#94A3B8]">
               <span>Net Studio Profit (₹)</span>
               <span className="font-mono text-emerald-400">Net Margin</span>
             </div>
-            <div className="font-mono text-3xl font-bold text-white mt-2">
+            <div className="font-mono text-2xl sm:text-3xl font-bold text-white mt-2">
               {formatINR(finance.netProfit)}
             </div>
             <p className="text-xs text-[#94A3B8] mt-1">
@@ -201,25 +201,25 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
         </div>
 
         {/* Co-Founder Out-of-Pocket Split Calculator */}
-        <div className="p-5 sm:p-6 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-4">
+        <div className="p-4 sm:p-6 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <Scale className="w-4 h-4 text-[#2563EB]" />
-              <h2 className="text-sm font-bold text-[#0B0F19]">
+              <Scale className="w-4 h-4 text-[#2563EB] shrink-0" />
+              <h2 className="text-xs sm:text-sm font-bold text-[#0B0F19]">
                 Co-Founder Out-of-Pocket Split &amp; Reimbursement Calculator
               </h2>
             </div>
-            <span className="text-xs font-mono text-slate-500">
+            <span className="text-[11px] sm:text-xs font-mono text-slate-500">
               Unreimbursed Personal Spend Settlement
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-            <div className="bg-white p-4 rounded-2xl border border-[#EAECEF]">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4 text-xs">
+            <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-[#EAECEF]">
               <span className="text-slate-500 block">
                 Krishna Paid Out-of-Pocket (Personal)
               </span>
-              <span className="font-mono text-xl font-bold text-[#0B0F19] mt-1 block">
+              <span className="font-mono text-lg sm:text-xl font-bold text-[#0B0F19] mt-1 block">
                 {formatINR(finance.krishnaOutOfPocket)}
               </span>
               <span className="text-[11px] text-slate-500 mt-1 block">
@@ -227,11 +227,11 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
               </span>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-[#EAECEF]">
+            <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-[#EAECEF]">
               <span className="text-slate-500 block">
                 Vansh Paid Out-of-Pocket (Personal)
               </span>
-              <span className="font-mono text-xl font-bold text-[#0B0F19] mt-1 block">
+              <span className="font-mono text-lg sm:text-xl font-bold text-[#0B0F19] mt-1 block">
                 {formatINR(finance.vanshOutOfPocket)}
               </span>
               <span className="text-[11px] text-slate-500 mt-1 block">
@@ -239,11 +239,11 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
               </span>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-[#EAECEF]">
+            <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-[#EAECEF]">
               <span className="text-slate-500 block">
                 Paid from Shared Studio Account
               </span>
-              <span className="font-mono text-xl font-bold text-[#2563EB] mt-1 block">
+              <span className="font-mono text-lg sm:text-xl font-bold text-[#2563EB] mt-1 block">
                 {formatINR(finance.studioAccountExpenses)}
               </span>
               <span className="text-[11px] text-slate-500 mt-1 block">
@@ -259,40 +259,40 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
       </div>
 
       {/* Sub-Tabs: Expenses Tracker vs Client Payments / Inflow Log */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="inline-flex items-center p-1 bg-white border border-[#EAECEF] rounded-full">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="inline-flex items-center p-1 bg-white border border-[#EAECEF] rounded-full overflow-x-auto no-scrollbar max-w-full">
           <button
             type="button"
             onClick={() => setSubTab('expenses')}
-            className={`px-5 py-2 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+            className={`px-3.5 sm:px-5 py-2 rounded-full text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
               subTab === 'expenses'
                 ? 'bg-[#0B0F19] text-white'
                 : 'text-slate-600 hover:text-[#0B0F19]'
             }`}
           >
-            1. Expenses Tracker ({expenses.length})
+            1. Expenses ({expenses.length})
           </button>
           <button
             type="button"
             onClick={() => setSubTab('payments')}
-            className={`px-5 py-2 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+            className={`px-3.5 sm:px-5 py-2 rounded-full text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
               subTab === 'payments'
                 ? 'bg-[#0B0F19] text-white'
                 : 'text-slate-600 hover:text-[#0B0F19]'
             }`}
           >
-            2. Client Payments / Inflow Log ({payments.length})
+            2. Client Payments ({payments.length})
           </button>
         </div>
 
         {subTab === 'expenses' && (
-          <div className="flex items-center gap-1.5 overflow-x-auto">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
             {EXPENSE_CATEGORIES.map((cat) => (
               <button
                 key={cat}
                 type="button"
                 onClick={() => setCategoryFilter(cat)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                   categoryFilter === cat
                     ? 'bg-[#2563EB] text-white'
                     : 'bg-white border border-[#EAECEF] text-slate-600 hover:text-[#0B0F19]'
@@ -306,93 +306,164 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
       </div>
 
       {subTab === 'expenses' ? (
-        <div className="bg-white border border-[#EAECEF] rounded-3xl overflow-hidden shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-[#EAECEF] bg-[#F8F9FA] text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  <th className="py-3.5 px-4">Date</th>
-                  <th className="py-3.5 px-4">Expense Item &amp; Notes</th>
-                  <th className="py-3.5 px-4">Category</th>
-                  <th className="py-3.5 px-4">Paid By</th>
-                  <th className="py-3.5 px-4 text-right">Amount (₹)</th>
-                  <th className="py-3.5 px-4">Reimbursed</th>
-                  <th className="py-3.5 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#EAECEF] text-xs">
-                {filteredExpenses.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="py-10 text-center text-slate-400">
-                      No expenses recorded in this category.
-                    </td>
+        <div className="space-y-3">
+          {/* Mobile Expenses Card List (md:hidden) */}
+          <div className="md:hidden space-y-3">
+            {filteredExpenses.length === 0 ? (
+              <div className="bg-white border border-[#EAECEF] rounded-2xl p-6 text-center text-xs text-slate-400">
+                No expenses recorded in this category.
+              </div>
+            ) : (
+              filteredExpenses.map((exp) => (
+                <div
+                  key={exp.id}
+                  className="bg-white border border-[#EAECEF] rounded-2xl p-4 shadow-2xs space-y-2.5 text-xs"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <span className="font-bold text-[#0B0F19] text-sm block">
+                        {exp.title}
+                      </span>
+                      <span className="text-slate-500 block mt-0.5">
+                        {exp.category} · <span className="font-mono">{exp.date}</span>
+                      </span>
+                    </div>
+                    <span className="font-mono text-sm font-bold text-[#0B0F19] shrink-0">
+                      {formatINR(exp.amount)}
+                    </span>
+                  </div>
+
+                  {exp.notes && (
+                    <p className="text-slate-500 text-xs">
+                      {exp.notes}
+                      {exp.linkedClient ? ` · Client: ${exp.linkedClient}` : ''}
+                    </p>
+                  )}
+
+                  <div className="pt-2 border-t border-[#EAECEF] flex items-center justify-between">
+                    <span className="text-slate-600">
+                      Paid by: <strong className="text-[#0B0F19]">{exp.paidBy}</strong>
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onUpdateExpense({
+                            ...exp,
+                            reimbursed: !exp.reimbursed,
+                          })
+                        }
+                        className={`inline-flex items-center gap-1 text-xs font-semibold cursor-pointer ${
+                          exp.reimbursed ? 'text-[#059669]' : 'text-amber-700'
+                        }`}
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>{exp.reimbursed ? 'Settled' : 'Pending Split'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteExpense(exp.id)}
+                        aria-label={`Delete expense ${exp.title}`}
+                        className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Desktop Expenses Table (hidden md:block) */}
+          <div className="hidden md:block bg-white border border-[#EAECEF] rounded-3xl overflow-hidden shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-[#EAECEF] bg-[#F8F9FA] text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                    <th className="py-3.5 px-4">Date</th>
+                    <th className="py-3.5 px-4">Expense Item &amp; Notes</th>
+                    <th className="py-3.5 px-4">Category</th>
+                    <th className="py-3.5 px-4">Paid By</th>
+                    <th className="py-3.5 px-4 text-right">Amount (₹)</th>
+                    <th className="py-3.5 px-4">Reimbursed</th>
+                    <th className="py-3.5 px-4 text-right">Actions</th>
                   </tr>
-                ) : (
-                  filteredExpenses.map((exp) => (
-                    <tr key={exp.id} className="hover:bg-slate-50/80">
-                      <td className="py-3.5 px-4 font-mono text-slate-600 whitespace-nowrap">
-                        {exp.date}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className="font-bold text-[#0B0F19] block">
-                          {exp.title}
-                        </span>
-                        <span className="text-slate-500">
-                          {exp.notes}
-                          {exp.linkedClient ? ` · Client: ${exp.linkedClient}` : ''}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 font-medium text-slate-700">
-                        {exp.category}
-                      </td>
-                      <td className="py-3.5 px-4 font-semibold text-[#0B0F19]">
-                        {exp.paidBy}
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0B0F19]">
-                        {formatINR(exp.amount)}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onUpdateExpense({
-                              ...exp,
-                              reimbursed: !exp.reimbursed,
-                            })
-                          }
-                          className={`inline-flex items-center gap-1 text-xs font-semibold cursor-pointer ${
-                            exp.reimbursed ? 'text-[#059669]' : 'text-amber-700'
-                          }`}
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>{exp.reimbursed ? 'Settled' : 'Pending Split'}</span>
-                        </button>
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => onDeleteExpense(exp.id)}
-                          aria-label={`Delete expense ${exp.title}`}
-                          className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                </thead>
+                <tbody className="divide-y divide-[#EAECEF] text-xs">
+                  {filteredExpenses.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-10 text-center text-slate-400">
+                        No expenses recorded in this category.
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : (
+                    filteredExpenses.map((exp) => (
+                      <tr key={exp.id} className="hover:bg-slate-50/80">
+                        <td className="py-3.5 px-4 font-mono text-slate-600 whitespace-nowrap">
+                          {exp.date}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="font-bold text-[#0B0F19] block">
+                            {exp.title}
+                          </span>
+                          <span className="text-slate-500">
+                            {exp.notes}
+                            {exp.linkedClient ? ` · Client: ${exp.linkedClient}` : ''}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 font-medium text-slate-700">
+                          {exp.category}
+                        </td>
+                        <td className="py-3.5 px-4 font-semibold text-[#0B0F19]">
+                          {exp.paidBy}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0B0F19]">
+                          {formatINR(exp.amount)}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onUpdateExpense({
+                                ...exp,
+                                reimbursed: !exp.reimbursed,
+                              })
+                            }
+                            className={`inline-flex items-center gap-1 text-xs font-semibold cursor-pointer ${
+                              exp.reimbursed ? 'text-[#059669]' : 'text-amber-700'
+                            }`}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>{exp.reimbursed ? 'Settled' : 'Pending Split'}</span>
+                          </button>
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <button
+                            type="button"
+                            onClick={() => onDeleteExpense(exp.id)}
+                            aria-label={`Delete expense ${exp.title}`}
+                            className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-4 sm:space-y-5">
           {/* Quick Inline Client Payment Logger (Live Synced with Pipeline Accounts) */}
           <form
             onSubmit={handleLogPaymentSubmit}
-            className="bg-white border border-[#EAECEF] rounded-3xl p-5 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end"
+            className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-5 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end"
           >
-            <div className="lg:col-span-2">
+            <div className="sm:col-span-2 lg:col-span-2">
               <label className="block text-[11px] font-bold uppercase text-slate-500 mb-1">
                 Pipeline Client (Auto-Syncs Balance)
               </label>
@@ -474,14 +545,52 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
 
             <button
               type="submit"
-              className="px-4 py-2 rounded-xl bg-[#0D281D] hover:bg-[#059669] text-white text-xs font-semibold transition-colors cursor-pointer"
+              className="w-full px-4 py-2.5 sm:py-2 rounded-xl bg-[#0D281D] hover:bg-[#059669] text-white text-xs font-semibold transition-colors cursor-pointer"
             >
               + Record Inflow
             </button>
           </form>
 
-          {/* Inflow Table */}
-          <div className="bg-white border border-[#EAECEF] rounded-3xl overflow-hidden shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+          {/* Mobile Client Payments Card List (md:hidden) */}
+          <div className="md:hidden space-y-3">
+            {payments.map((pay) => (
+              <div
+                key={pay.id}
+                className="bg-white border border-[#EAECEF] rounded-2xl p-4 shadow-2xs space-y-2 text-xs"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="font-bold text-[#0B0F19] text-sm block">
+                      {pay.clientName}
+                    </span>
+                    <span className="font-mono text-slate-500 text-[11px]">
+                      {pay.date} · {pay.paymentMode}
+                    </span>
+                  </div>
+                  <span className="font-mono text-sm font-bold text-[#059669] shrink-0">
+                    +{formatINR(pay.amountReceived)}
+                  </span>
+                </div>
+                <p className="text-slate-500">{pay.notes}</p>
+                <div className="pt-2 border-t border-[#EAECEF] flex items-center justify-between">
+                  <span className="text-slate-600">
+                    Received by: <strong className="text-[#0B0F19]">{pay.receivedBy}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onDeletePayment(pay.id)}
+                    aria-label={`Delete payment from ${pay.clientName}`}
+                    className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop Inflow Table (hidden md:block) */}
+          <div className="hidden md:block bg-white border border-[#EAECEF] rounded-3xl overflow-hidden shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>

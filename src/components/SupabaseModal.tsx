@@ -111,20 +111,20 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label="Supabase Cloud Connection and SQL Schema Setup"
-      className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
     >
-      <div className="bg-white border border-[#EAECEF] rounded-3xl w-full max-w-3xl p-6 sm:p-8 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-start justify-between gap-4 border-b border-[#EAECEF] pb-4">
+      <div className="bg-white border border-[#EAECEF] rounded-t-3xl sm:rounded-3xl w-full max-w-3xl p-4 sm:p-8 shadow-2xl space-y-5 sm:space-y-6 max-h-[92dvh] sm:max-h-[90vh] overflow-y-auto">
+        <div className="flex items-start justify-between gap-4 border-b border-[#EAECEF] pb-3.5 sm:pb-4">
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#2563EB] flex items-center gap-1.5">
+            <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-[#2563EB] flex items-center gap-1.5">
               {syncMode === 'cloud' ? (
-                <Cloud className="w-3.5 h-3.5 text-[#059669]" />
+                <Cloud className="w-3.5 h-3.5 text-[#059669] shrink-0" />
               ) : (
-                <Database className="w-3.5 h-3.5 text-amber-600" />
+                <Database className="w-3.5 h-3.5 text-amber-600 shrink-0" />
               )}
               <span>HYBRID SUPABASE CLOUD + LOCAL FALLBACK ENGINE</span>
             </span>
-            <h2 className="text-xl font-bold text-[#0B0F19] mt-0.5">
+            <h2 className="text-lg sm:text-xl font-bold text-[#0B0F19] mt-0.5">
               Supabase PostgreSQL Connection, SQL Schema &amp; JSON Backup
             </h2>
           </div>
@@ -133,7 +133,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close Supabase Setup Modal"
-            className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+            className="p-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
@@ -141,7 +141,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
 
         {/* 1. Connection Form */}
         <form onSubmit={handleSaveConnection} className="space-y-4 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-4">
             <div>
               <label className="block font-bold text-[#0B0F19] mb-1">
                 SUPABASE_URL
@@ -168,11 +168,11 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <span className="text-slate-500">
               Credentials are persisted in <code className="font-mono">localStorage</code> and initialize <code className="font-mono">@supabase/supabase-js</code> dynamically.
             </span>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               {existing && (
                 <button
                   type="button"
@@ -243,8 +243,8 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
         </div>
 
         {/* 3. Complete PostgreSQL Schema with Copy Button */}
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
+        <div className="space-y-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div>
               <h3 className="text-xs font-bold uppercase tracking-wider text-[#0B0F19]">
                 30-Second Supabase SQL Setup Schema
@@ -257,7 +257,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
             <button
               type="button"
               onClick={handleCopySql}
-              className="px-4 py-2 rounded-full bg-[#0D281D] hover:bg-[#059669] text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-4 py-2 rounded-full bg-[#0D281D] hover:bg-[#059669] text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
             >
               {copiedSql ? (
                 <>
@@ -273,7 +273,7 @@ export const SupabaseModal: React.FC<SupabaseModalProps> = ({
             </button>
           </div>
 
-          <pre className="p-4 rounded-2xl bg-[#0B0F19] text-slate-200 font-mono text-[11px] overflow-x-auto max-h-56 leading-relaxed">
+          <pre className="p-3.5 sm:p-4 rounded-2xl bg-[#0B0F19] text-slate-200 font-mono text-[11px] overflow-x-auto max-h-56 leading-relaxed">
             {SUPABASE_COMPLETE_SQL_SCHEMA}
           </pre>
         </div>

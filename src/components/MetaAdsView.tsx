@@ -68,28 +68,28 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
   const blendedCPL = calculateCPL(totalSpend, totalLeads);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Header & Summary Strip */}
-      <div className="bg-white border border-[#EAECEF] rounded-3xl p-6 sm:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-6">
+      <div className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 lg:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-5 sm:space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <span className="text-xs font-bold tracking-wider uppercase text-[#2563EB] block">
               03 / META ADS &amp; LOCAL GROWTH MANAGER
             </span>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
               Hyperlocal Performance &amp; CPL Command
             </h1>
-            <p className="text-sm text-slate-600 mt-1">
+            <p className="text-xs sm:text-sm text-slate-600 mt-1">
               Managing 7-day Starter, 15-day Growth, and 30-day Scale Meta Ad sprints across Maharashtra.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
             <select
               aria-label="Filter campaigns by status"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-4 py-2 rounded-full bg-[#F8F9FA] border border-[#EAECEF] text-xs font-semibold text-[#0B0F19]"
+              className="px-3.5 sm:px-4 py-2 rounded-full bg-[#F8F9FA] border border-[#EAECEF] text-xs font-semibold text-[#0B0F19]"
             >
               <option value="ALL">All Campaign Statuses</option>
               {CAMPAIGN_STATUSES.map((st) => (
@@ -102,7 +102,7 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
             <button
               type="button"
               onClick={onOpenAddCampaign}
-              className="px-4 py-2.5 rounded-full bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-4 py-2 sm:py-2.5 rounded-full bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Launch Meta Campaign</span>
@@ -111,28 +111,28 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
         </div>
 
         {/* 4 Metric Summary Row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-[#EAECEF]">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 pt-4 border-t border-[#EAECEF]">
           <div>
-            <span className="text-xs text-slate-500 block">Total Ad Budget Managed</span>
-            <span className="font-mono text-2xl font-bold text-[#0B0F19] mt-0.5 block">
+            <span className="text-[11px] sm:text-xs text-slate-500 block">Total Ad Budget Managed</span>
+            <span className="font-mono text-lg sm:text-2xl font-bold text-[#0B0F19] mt-0.5 block">
               {formatINR(totalBudget)}
             </span>
           </div>
           <div>
-            <span className="text-xs text-slate-500 block">Ad Spend Utilized</span>
-            <span className="font-mono text-2xl font-bold text-[#2563EB] mt-0.5 block">
+            <span className="text-[11px] sm:text-xs text-slate-500 block">Ad Spend Utilized</span>
+            <span className="font-mono text-lg sm:text-2xl font-bold text-[#2563EB] mt-0.5 block">
               {formatINR(totalSpend)}
             </span>
           </div>
           <div>
-            <span className="text-xs text-slate-500 block">Aethel Agency Retainer Fees</span>
-            <span className="font-mono text-2xl font-bold text-[#059669] mt-0.5 block">
+            <span className="text-[11px] sm:text-xs text-slate-500 block">Aethel Agency Retainer Fees</span>
+            <span className="font-mono text-lg sm:text-2xl font-bold text-[#059669] mt-0.5 block">
               {formatINR(totalAgencyFees)}
             </span>
           </div>
           <div>
-            <span className="text-xs text-slate-500 block">Total Leads &amp; Blended CPL</span>
-            <span className="font-mono text-2xl font-bold text-[#0B0F19] mt-0.5 block">
+            <span className="text-[11px] sm:text-xs text-slate-500 block">Total Leads &amp; Blended CPL</span>
+            <span className="font-mono text-base sm:text-2xl font-bold text-[#0B0F19] mt-0.5 block">
               {totalLeads} leads · {formatINR(blendedCPL)}/lead
             </span>
           </div>
@@ -140,7 +140,7 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
       </div>
 
       {/* Campaign Cards Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {filtered.map((campaign) => {
           const cpl = calculateCPL(campaign.adSpendUsed, campaign.leadsGenerated);
           const prog = calculateCampaignProgress(campaign.startDate, campaign.endDate);
@@ -150,7 +150,7 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
           return (
             <div
               key={campaign.id}
-              className="bg-white border border-[#EAECEF] rounded-3xl p-6 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between space-y-5"
+              className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between space-y-5"
             >
               <div className="space-y-4">
                 {/* Top Header */}

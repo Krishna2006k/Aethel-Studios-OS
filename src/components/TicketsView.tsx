@@ -57,18 +57,18 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Header & Filter Tabs */}
-      <div className="bg-white border border-[#EAECEF] rounded-3xl p-6 sm:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-6">
+      <div className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 lg:p-8 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-4 sm:space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
             <span className="text-xs font-bold tracking-wider uppercase text-[#2563EB] block">
               05 / DELIVERIES, BUGS &amp; CLIENT CHANGE REQUESTS
             </span>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-[#0B0F19] mt-1">
               Post-Sales Execution &amp; Scope Guardrail Board
             </h1>
-            <p className="text-sm text-slate-600 mt-1">
+            <p className="text-xs sm:text-sm text-slate-600 mt-1">
               Every WhatsApp revision, production bug, and billable extra tracked from report to deployment · Urgent bugs auto-sync Website Health in Module 04.
             </p>
           </div>
@@ -84,13 +84,13 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
         </div>
 
         {/* Category Filter Tabs */}
-        <div className="flex items-center gap-2 overflow-x-auto pt-2 border-t border-[#EAECEF]">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-2 border-t border-[#EAECEF]">
           {CATEGORY_TABS.map((tab) => (
             <button
               key={tab}
               type="button"
               onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 rounded-full text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
+              className={`px-3.5 sm:px-4 py-2 rounded-full text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                 activeTab === tab
                   ? 'bg-[#0B0F19] text-white'
                   : 'bg-[#F8F9FA] text-slate-600 hover:text-[#0B0F19]'
@@ -103,13 +103,13 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
       </div>
 
       {/* 4 Workflow State Columns */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 items-start">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5 items-start">
         {WORKFLOW_STATES.map((state) => {
           const columnTickets = filtered.filter((t) => t.state === state);
           return (
             <div
               key={state}
-              className="bg-white border border-[#EAECEF] rounded-3xl p-5 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-4"
+              className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-5 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-4"
             >
               <div className="flex items-center justify-between border-b border-[#EAECEF] pb-3">
                 <h2 className="text-xs font-bold uppercase tracking-wider text-[#0B0F19]">

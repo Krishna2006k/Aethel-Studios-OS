@@ -134,16 +134,16 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6">
       {/* Signature Obsidian (#0B0F19) Vault Header */}
-      <div className="bg-[#0B0F19] text-white rounded-3xl p-6 sm:p-8 shadow-[0_16px_40px_-12px_rgba(11,15,25,0.28)] space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+      <div className="bg-[#0B0F19] text-white rounded-3xl p-4 sm:p-6 lg:p-8 shadow-[0_16px_40px_-12px_rgba(11,15,25,0.28)] space-y-5 sm:space-y-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 sm:gap-6">
           <div className="space-y-2 max-w-2xl">
             <div className="flex items-center gap-2 text-xs font-bold tracking-wider uppercase text-emerald-400">
-              <ShieldCheck className="w-4 h-4" />
+              <ShieldCheck className="w-4 h-4 shrink-0" />
               <span>08 / ZERO-KNOWLEDGE ENCRYPTED CREDENTIALS VAULT</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-white">
               Client-Side AES-GCM 256-Bit &amp; PBKDF2 Key Vault
             </h1>
             <p className="text-xs sm:text-sm text-[#94A3B8] leading-relaxed">
@@ -162,21 +162,21 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
         </div>
 
         {/* Active Session Master Passphrase Control Bar */}
-        <div className="p-4 sm:p-5 rounded-2xl bg-white/5 border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3 flex-1">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shrink-0">
+        <div className="p-3.5 sm:p-5 rounded-2xl bg-white/5 border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shrink-0">
               {masterPassphrase ? (
-                <Unlock className="w-5 h-5" />
+                <Unlock className="w-4 h-4 sm:w-5 sm:h-5" />
               ) : (
-                <Lock className="w-5 h-5 text-amber-400" />
+                <Lock className="w-4 h-4 sm:w-5 sm:h-5 text-amber-400" />
               )}
             </div>
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <label
                 htmlFor="vault-master-passphrase-input"
-                className="text-xs font-bold uppercase tracking-wider text-[#94A3B8] block"
+                className="text-[11px] sm:text-xs font-bold uppercase tracking-wider text-[#94A3B8] block"
               >
-                Active Session Master Passphrase (RAM Only — Demo Passphrase:{' '}
+                Active Session Master Passphrase (RAM Only — Demo:{' '}
                 <code className="text-emerald-400 font-mono">aethel2026</code>)
               </label>
               <div className="mt-1.5 flex items-center gap-2">
@@ -195,7 +195,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
                   type="button"
                   onClick={() => setShowPassphraseText(!showPassphraseText)}
                   aria-label="Toggle Master Passphrase Visibility"
-                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 cursor-pointer"
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 cursor-pointer shrink-0"
                 >
                   {showPassphraseText ? (
                     <EyeOff className="w-4 h-4" />
@@ -207,7 +207,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={() => {
@@ -237,9 +237,9 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
         {showAddForm && (
           <form
             onSubmit={handleCreateEncryptedRecord}
-            className="p-5 rounded-2xl bg-white/5 border border-white/15 space-y-4"
+            className="p-4 sm:p-5 rounded-2xl bg-white/5 border border-white/15 space-y-4"
           >
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
               <h2 className="text-sm font-bold text-white flex items-center gap-2">
                 <KeyRound className="w-4 h-4 text-emerald-400" />
                 <span>Encrypt &amp; Store New Credential</span>
@@ -345,7 +345,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
       </div>
 
       {/* Encrypted Credentials Cards Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {credentials.map((cred) => {
           const decryptedValue = revealedSecrets[cred.id];
           const cipherPreview = formatCipherPreview(cred.ciphertext, cred.iv);
@@ -353,18 +353,18 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
           return (
             <div
               key={cred.id}
-              className="bg-white border border-[#EAECEF] rounded-3xl p-6 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between space-y-4"
+              className="bg-white border border-[#EAECEF] rounded-3xl p-4 sm:p-6 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between space-y-4"
             >
               <div className="space-y-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <span className="text-xs font-bold text-[#2563EB]">
+                  <div className="min-w-0">
+                    <span className="text-xs font-bold text-[#2563EB] block truncate">
                       {cred.ownerClientTag}
                     </span>
-                    <h2 className="text-lg font-bold text-[#0B0F19] mt-0.5">
+                    <h2 className="text-base sm:text-lg font-bold text-[#0B0F19] mt-0.5 leading-snug">
                       {cred.servicePlatform}
                     </h2>
-                    <p className="font-mono text-xs text-slate-500 mt-0.5">
+                    <p className="font-mono text-xs text-slate-500 mt-0.5 break-all">
                       User: {cred.usernameEmail}
                     </p>
                   </div>
@@ -373,7 +373,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
                     href={cred.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-3 py-1.5 rounded-full bg-[#F8F9FA] border border-[#EAECEF] hover:border-[#0B0F19] text-xs font-semibold text-[#0B0F19] flex items-center gap-1 transition-colors"
+                    className="px-3 py-1.5 rounded-full bg-[#F8F9FA] border border-[#EAECEF] hover:border-[#0B0F19] text-xs font-semibold text-[#0B0F19] flex items-center gap-1 transition-colors shrink-0"
                   >
                     <span>Console</span>
                     <ExternalLink className="w-3 h-3" />
@@ -381,8 +381,8 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
                 </div>
 
                 {/* Masked Secret & Cipher Preview */}
-                <div className="p-4 rounded-2xl bg-[#0B0F19] text-white space-y-2.5">
-                  <div className="flex items-center justify-between text-[11px] text-[#94A3B8]">
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-[#0B0F19] text-white space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] sm:text-[11px] text-[#94A3B8]">
                     <span>
                       {decryptedValue
                         ? 'DECRYPTED SECRET (Auto-hides in 10s)'
@@ -393,8 +393,8 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="font-mono text-sm font-bold tracking-wider truncate">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div className="font-mono text-xs sm:text-sm font-bold tracking-wider break-all sm:truncate">
                       {decryptedValue ? (
                         <span className="text-emerald-300 select-all">
                           {decryptedValue}
@@ -408,7 +408,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
                       <button
                         type="button"
                         onClick={() => handleRevealFor10Seconds(cred)}
-                        className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="flex-1 sm:flex-initial justify-center px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
                         {decryptedValue ? (
                           <>
@@ -426,7 +426,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
                       <button
                         type="button"
                         onClick={() => handleDecryptAndCopy(cred)}
-                        className="px-3 py-1.5 rounded-full bg-[#2563EB] hover:bg-blue-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="flex-1 sm:flex-initial justify-center px-3 py-1.5 rounded-full bg-[#2563EB] hover:bg-blue-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
                       >
                         {copiedId === cred.id ? (
                           <>
@@ -452,14 +452,14 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
               </div>
 
               <div className="pt-3 border-t border-[#EAECEF] flex items-center justify-between text-xs text-slate-400">
-                <span className="font-mono">
+                <span className="font-mono text-[11px] truncate">
                   Salt: {cred.salt.slice(0, 10)}... · Encrypted {cred.createdAt}
                 </span>
                 <button
                   type="button"
                   onClick={() => onDeleteCredential(cred.id)}
                   aria-label={`Delete credential ${cred.servicePlatform}`}
-                  className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer"
+                  className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer shrink-0"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
