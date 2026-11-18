@@ -1,14 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Wrench,
   Plus,
-  CheckCircle2,
-  Clock,
-  AlertTriangle,
-  Layers,
-  CheckSquare,
   ArrowUpRight,
   Trash2,
+  Pencil,
+  X,
+  Check,
 } from 'lucide-react';
 import {
   ClientLead,
@@ -30,10 +27,13 @@ interface TicketsViewProps {
   websites: HostedWebsite[];
   tasks: StudioTask[];
   initialSubView?: 'projects' | 'tasks';
+  onUpdateClient?: (updated: ClientLead) => void;
   onUpdateTicket: (updated: ClientTicket) => void;
   onAddTicket: (newTicket: ClientTicket) => void;
+  onDeleteTicket?: (ticketId: string) => void;
   onToggleMilestone: (clientId: string, stage: ProjectMilestoneStage) => void;
   onAddTask: (task: StudioTask) => void;
+  onUpdateTask?: (updated: StudioTask) => void;
   onToggleTaskStatus: (taskId: string) => void;
   onDeleteTask: (taskId: string) => void;
   onOpenClient360: (clientId: string) => void;
@@ -47,10 +47,13 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
   websites,
   tasks,
   initialSubView = 'projects',
+  onUpdateClient,
   onUpdateTicket,
   onAddTicket,
+  onDeleteTicket,
   onToggleMilestone,
   onAddTask,
+  onUpdateTask,
   onToggleTaskStatus,
   onDeleteTask,
   onOpenClient360,
@@ -59,14 +62,35 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
     initialSubView === 'tasks' ? 'tasks' : 'projects'
   );
 
+  // Always sync sub-tab when user clicks Projects & Deliveries vs Tasks & Follow-ups in sidebar
   useEffect(() => {
-    if (initialSubView === 'tasks') {
-      setActiveSubTab('tasks');
-    } else if (activeSubTab === 'tasks') {
-      setActiveSubTab('projects');
-    }
+    setActiveSubTab(initialSubView === 'tasks' ? 'tasks' : 'projects');
   }, [initialSubView]);
 
+  // Inline Edit State for Project Milestone Cards (Tab 1)
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+  const [projectDraft, setProjectDraft] = useState<ClientLead | null>(null);
+
+  const handleStartEditProject = (client: ClientLead) => {
+    setEditingProjectId(client.id);
+    setProjectDraft({ ...client });
+  };
+
+  const handleSaveProjectEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!projectDraft || !onUpdateClient) return;
+    onUpdateClient({
+      ...projectDraft,
+      businessName: projectDraft.businessName.trim() || 'Studio Client',
+      packageTier: projectDraft.packageTier.trim() || 'Custom Website',
+      finalAgreedPrice: Math.max(0, Number(projectDraft.finalAgreedPrice) || 0),
+      advancePaid: Math.max(0, Number(projectDraft.advancePaid) || 0),
+    });
+    setEditingProjectId(null);
+    setProjectDraft(null);
+  };
+
+  // Revision Ticket Create & Inline Edit State (Tab 2)
   const [showAddTicketForm, setShowAddTicketForm] = useState(false);
   const [clientName, setClientName] = useState('');
   const [domainName, setDomainName] = useState('');
@@ -76,7 +100,33 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
   const [assignedTo, setAssignedTo] = useState<FounderName>('Vansh');
   const [description, setDescription] = useState('');
 
-  // Quick Task Form
+  const [editingTicketId, setEditingTicketId] = useState<string | null>(null);
+  const [ticketDraft, setTicketDraft] = useState<ClientTicket | null>(null);
+
+  const handleStartEditTicket = (tkt: ClientTicket) => {
+    setEditingTicketId(tkt.id);
+    setTicketDraft({ ...tkt });
+  };
+
+  const handleSaveTicketEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ticketDraft || !ticketDraft.title.trim()) return;
+    const matched = clients.find(
+      (c) => c.businessName.toLowerCase() === ticketDraft.clientName.trim().toLowerCase()
+    );
+    onUpdateTicket({
+      ...ticketDraft,
+      clientId: matched ? matched.id : ticketDraft.clientId,
+      clientName: matched ? matched.businessName : ticketDraft.clientName.trim(),
+      title: ticketDraft.title.trim(),
+      domainName: ticketDraft.domainName.trim() || 'client-site.in',
+      description: ticketDraft.description.trim(),
+    });
+    setEditingTicketId(null);
+    setTicketDraft(null);
+  };
+
+  // Quick Task Create & Inline Edit State (Tab 3)
   const [taskTitle, setTaskTitle] = useState('');
   const [taskClient, setTaskClient] = useState('');
   const [taskType, setTaskType] = useState<StudioTask['type']>('Follow-up');
@@ -85,6 +135,29 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
   const [taskDue, setTaskDue] = useState(
     new Date(Date.now() + 86400000).toISOString().slice(0, 10)
   );
+
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [taskDraft, setTaskDraft] = useState<StudioTask | null>(null);
+
+  const handleStartEditTask = (tsk: StudioTask) => {
+    setEditingTaskId(tsk.id);
+    setTaskDraft({ ...tsk });
+  };
+
+  const handleSaveTaskEdit = () => {
+    if (!taskDraft || !taskDraft.title.trim() || !onUpdateTask) return;
+    const matched = clients.find(
+      (c) => c.businessName.toLowerCase() === taskDraft.clientName.trim().toLowerCase()
+    );
+    onUpdateTask({
+      ...taskDraft,
+      clientId: matched ? matched.id : taskDraft.clientId,
+      clientName: matched ? matched.businessName : taskDraft.clientName.trim(),
+      title: taskDraft.title.trim(),
+    });
+    setEditingTaskId(null);
+    setTaskDraft(null);
+  };
 
   const projectClients = clients.filter(
     (c) =>
@@ -146,7 +219,7 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
       <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] mb-1">
-            CLIENT OPERATIONS · PROJECT MILESTONES, DELIVERIES & TASKS
+            CLIENT OPERATIONS · PROJECT MILESTONES, DELIVERIES &amp; TASKS
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
             {activeSubTab === 'tasks'
@@ -156,7 +229,7 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
               : 'Project Delivery & 6-Stage Milestones'}
           </h1>
           <p className="text-xs sm:text-sm text-[#64748B] mt-0.5">
-            Track every client project from <strong>Requirements → Design → Development → Testing → Deployment → Handover</strong>.
+            Track and edit every client project from <strong>Requirements → Design → Development → Testing → Deployment → Handover</strong>.
           </p>
         </div>
 
@@ -190,18 +263,19 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
                   : 'text-[#64748B] hover:text-[#0B0F19]'
               }`}
             >
-              3. Tasks & Follow-ups ({tasks.filter((t) => t.status !== 'Completed').length})
+              3. Tasks &amp; Follow-ups ({tasks.filter((t) => t.status !== 'Completed').length})
             </button>
           </div>
         </div>
       </div>
 
-      {/* VIEW 1: 6-STAGE PROJECT MILESTONE TRACKER (PART 5) */}
+      {/* VIEW 1: 6-STAGE PROJECT MILESTONE TRACKER */}
       {activeSubTab === 'projects' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {projectClients.map((client) => {
             const prog = calculateClientProjectProgress(client, tickets, websites);
             const pending = calculatePendingBalance(client.finalAgreedPrice, client.advancePaid);
+            const isEditing = editingProjectId === client.id && projectDraft !== null;
 
             return (
               <div
@@ -224,10 +298,176 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
                       <div className="text-xs text-[#64748B]">{client.packageTier}</div>
                     </div>
 
-                    <span className="font-mono text-base font-extrabold text-[#2563EB]">
-                      {prog.percent}%
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {onUpdateClient && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            isEditing
+                              ? setEditingProjectId(null)
+                              : handleStartEditProject(client)
+                          }
+                          aria-label={`Edit project ${client.businessName}`}
+                          className="px-2.5 py-1 rounded-lg bg-[#F8F9FA] hover:bg-[#EFF6FF] text-[#475569] hover:text-[#2563EB] border border-[#EAECEF] text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <Pencil className="w-3 h-3" /> Edit
+                        </button>
+                      )}
+                      <span className="font-mono text-base font-extrabold text-[#2563EB]">
+                        {prog.percent}%
+                      </span>
+                    </div>
                   </div>
+
+                  {/* Inline Project Edit Form */}
+                  {isEditing && projectDraft && (
+                    <form
+                      onSubmit={handleSaveProjectEdit}
+                      className="p-4 rounded-2xl bg-[#F8F9FA] border-2 border-[#2563EB] space-y-3"
+                    >
+                      <div className="flex items-center justify-between border-b border-[#EAECEF] pb-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB]">
+                          Edit Project Scope, Stage &amp; Financials (Syncs to Pipeline &amp; Finance)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingProjectId(null);
+                            setProjectDraft(null);
+                          }}
+                          className="text-[#64748B] hover:text-[#0B0F19] cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                            Client Business Name
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={projectDraft.businessName}
+                            onChange={(e) =>
+                              setProjectDraft({
+                                ...projectDraft,
+                                businessName: e.target.value,
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-xl bg-white border border-[#EAECEF] text-xs font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                            Project Scope / Deliverables
+                          </label>
+                          <input
+                            type="text"
+                            value={projectDraft.packageTier}
+                            onChange={(e) =>
+                              setProjectDraft({
+                                ...projectDraft,
+                                packageTier: e.target.value,
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-xl bg-white border border-[#EAECEF] text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                            Pipeline Stage
+                          </label>
+                          <select
+                            value={projectDraft.stage}
+                            onChange={(e) =>
+                              setProjectDraft({
+                                ...projectDraft,
+                                stage: e.target.value as ClientLead['stage'],
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-xl bg-white border border-[#EAECEF] text-xs font-bold"
+                          >
+                            <option value="In Building">In Building</option>
+                            <option value="Live / Payment Pending">Live / Payment Pending</option>
+                            <option value="Delivered / Live">Delivered / Live</option>
+                            <option value="In Talks / Demo Shown">In Talks / Demo Shown</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                            Lead Owner
+                          </label>
+                          <select
+                            value={projectDraft.assignedTo}
+                            onChange={(e) =>
+                              setProjectDraft({
+                                ...projectDraft,
+                                assignedTo: e.target.value as FounderName,
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-xl bg-white border border-[#EAECEF] text-xs font-bold"
+                          >
+                            <option value="Both">Both</option>
+                            <option value="Krishna">Krishna</option>
+                            <option value="Vansh">Vansh</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                            Agreed Project Value (₹)
+                          </label>
+                          <input
+                            type="number"
+                            value={projectDraft.finalAgreedPrice}
+                            onChange={(e) =>
+                              setProjectDraft({
+                                ...projectDraft,
+                                finalAgreedPrice: Number(e.target.value),
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-xl bg-white border border-[#EAECEF] text-xs font-mono font-bold"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                            Paid / Collected (₹)
+                          </label>
+                          <input
+                            type="number"
+                            value={projectDraft.advancePaid}
+                            onChange={(e) =>
+                              setProjectDraft({
+                                ...projectDraft,
+                                advancePaid: Number(e.target.value),
+                              })
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-xl bg-white border border-[#EAECEF] text-xs font-mono font-bold text-[#059669]"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingProjectId(null);
+                            setProjectDraft(null);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-white border border-[#EAECEF] text-[#64748B] text-xs font-bold cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="submit"
+                          className="px-4 py-1.5 rounded-xl bg-[#2563EB] text-white text-xs font-bold cursor-pointer"
+                        >
+                          Save Changes
+                        </button>
+                      </div>
+                    </form>
+                  )}
 
                   {/* Progress Bar */}
                   <div className="w-full h-2.5 bg-[#F1F5F9] rounded-full overflow-hidden">
@@ -311,11 +551,17 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
               />
               <input
                 type="text"
+                list="ticket-client-list"
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
                 placeholder="Client Name"
                 className="px-3.5 py-2 rounded-xl border border-[#EAECEF] text-xs"
               />
+              <datalist id="ticket-client-list">
+                {clients.map((c) => (
+                  <option key={c.id} value={c.businessName} />
+                ))}
+              </datalist>
               <input
                 type="text"
                 value={domainName}
@@ -323,6 +569,17 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
                 placeholder="Domain (e.g. site.in)"
                 className="px-3.5 py-2 rounded-xl border border-[#EAECEF] text-xs font-mono"
               />
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value as ClientTicket['category'])}
+                className="px-3.5 py-2 rounded-xl border border-[#EAECEF] text-xs bg-white"
+              >
+                <option value="Copy/Image Update">Copy/Image Update</option>
+                <option value="UI/Layout Tweak">UI/Layout Tweak</option>
+                <option value="Bug Fix">Bug Fix</option>
+                <option value="WhatsApp/Lead Form">WhatsApp/Lead Form</option>
+                <option value="SEO/Speed">SEO/Speed</option>
+              </select>
               <select
                 value={priority}
                 onChange={(e) => setPriority(e.target.value as ClientTicket['priority'])}
@@ -332,6 +589,22 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
                 <option value="High">High</option>
                 <option value="Normal">Normal</option>
               </select>
+              <select
+                value={assignedTo}
+                onChange={(e) => setAssignedTo(e.target.value as FounderName)}
+                className="px-3.5 py-2 rounded-xl border border-[#EAECEF] text-xs bg-white"
+              >
+                <option value="Vansh">Vansh</option>
+                <option value="Krishna">Krishna</option>
+                <option value="Both">Both</option>
+              </select>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Notes or details..."
+                className="px-3.5 py-2 rounded-xl border border-[#EAECEF] text-xs"
+              />
               <button
                 type="submit"
                 className="px-4 py-2 rounded-xl bg-[#0B0F19] text-white text-xs font-bold cursor-pointer"
@@ -356,42 +629,180 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
                     </span>
                   </div>
                   <div className="space-y-2.5">
-                    {colTickets.map((tkt) => (
-                      <div
-                        key={tkt.id}
-                        className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-2 text-xs"
-                      >
-                        <div className="flex items-center justify-between text-[10px] font-bold">
-                          <span
-                            className={
-                              tkt.priority === 'Urgent' ? 'text-rose-600' : 'text-[#2563EB]'
-                            }
+                    {colTickets.map((tkt) => {
+                      const isEditingTkt =
+                        editingTicketId === tkt.id && ticketDraft !== null;
+
+                      if (isEditingTkt && ticketDraft) {
+                        return (
+                          <form
+                            key={tkt.id}
+                            onSubmit={handleSaveTicketEdit}
+                            className="p-3.5 rounded-2xl bg-white border-2 border-[#2563EB] space-y-2 text-xs"
                           >
-                            {tkt.priority} · {tkt.category}
-                          </span>
-                          <span className="font-mono text-[#64748B]">{tkt.assignedTo}</span>
-                        </div>
-                        <div className="font-bold text-[#0B0F19]">{tkt.title}</div>
-                        <div className="text-[11px] text-[#64748B]">{tkt.clientName}</div>
-                        <select
-                          value={tkt.status}
-                          onChange={(e) =>
-                            onUpdateTicket({
-                              ...tkt,
-                              status: e.target.value as ClientTicket['status'],
-                            })
-                          }
-                          aria-label={`Status for ${tkt.title}`}
-                          className="w-full mt-1 px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white text-[11px] font-bold"
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold uppercase text-[#2563EB]">
+                                Edit Ticket
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingTicketId(null);
+                                  setTicketDraft(null);
+                                }}
+                                className="text-[#64748B] hover:text-[#0B0F19] cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <input
+                              type="text"
+                              required
+                              value={ticketDraft.title}
+                              onChange={(e) =>
+                                setTicketDraft({ ...ticketDraft, title: e.target.value })
+                              }
+                              placeholder="Ticket Title"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] text-xs font-bold"
+                            />
+                            <input
+                              type="text"
+                              list="ticket-client-list"
+                              value={ticketDraft.clientName}
+                              onChange={(e) =>
+                                setTicketDraft({
+                                  ...ticketDraft,
+                                  clientName: e.target.value,
+                                })
+                              }
+                              placeholder="Client Name"
+                              className="w-full px-2.5 py-1.5 rounded-lg border border-[#EAECEF] text-xs"
+                            />
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <select
+                                value={ticketDraft.priority}
+                                onChange={(e) =>
+                                  setTicketDraft({
+                                    ...ticketDraft,
+                                    priority: e.target.value as ClientTicket['priority'],
+                                  })
+                                }
+                                className="px-2 py-1 rounded-lg border border-[#EAECEF] text-[11px] bg-white"
+                              >
+                                <option value="Urgent">Urgent</option>
+                                <option value="High">High</option>
+                                <option value="Normal">Normal</option>
+                              </select>
+                              <select
+                                value={ticketDraft.assignedTo}
+                                onChange={(e) =>
+                                  setTicketDraft({
+                                    ...ticketDraft,
+                                    assignedTo: e.target.value as FounderName,
+                                  })
+                                }
+                                className="px-2 py-1 rounded-lg border border-[#EAECEF] text-[11px] bg-white"
+                              >
+                                <option value="Vansh">Vansh</option>
+                                <option value="Krishna">Krishna</option>
+                                <option value="Both">Both</option>
+                              </select>
+                            </div>
+                            <select
+                              value={ticketDraft.category}
+                              onChange={(e) =>
+                                setTicketDraft({
+                                  ...ticketDraft,
+                                  category: e.target.value as ClientTicket['category'],
+                                })
+                              }
+                              className="w-full px-2 py-1 rounded-lg border border-[#EAECEF] text-[11px] bg-white"
+                            >
+                              <option value="Copy/Image Update">Copy/Image Update</option>
+                              <option value="UI/Layout Tweak">UI/Layout Tweak</option>
+                              <option value="Bug Fix">Bug Fix</option>
+                              <option value="WhatsApp/Lead Form">WhatsApp/Lead Form</option>
+                              <option value="SEO/Speed">SEO/Speed</option>
+                            </select>
+                            <div className="flex justify-end gap-1.5 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingTicketId(null);
+                                  setTicketDraft(null);
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-[#F8F9FA] text-[#64748B] text-[11px] font-bold cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="submit"
+                                className="px-3 py-1 rounded-lg bg-[#2563EB] text-white text-[11px] font-bold cursor-pointer"
+                              >
+                                Save
+                              </button>
+                            </div>
+                          </form>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={tkt.id}
+                          className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-2 text-xs"
                         >
-                          {STATUSES.map((s) => (
-                            <option key={s} value={s}>
-                              {s}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
+                          <div className="flex items-center justify-between text-[10px] font-bold">
+                            <span
+                              className={
+                                tkt.priority === 'Urgent' ? 'text-rose-600' : 'text-[#2563EB]'
+                              }
+                            >
+                              {tkt.priority} · {tkt.category}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className="font-mono text-[#64748B]">{tkt.assignedTo}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditTicket(tkt)}
+                                aria-label={`Edit ticket ${tkt.title}`}
+                                className="p-1 rounded text-[#64748B] hover:text-[#2563EB] cursor-pointer"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                              {onDeleteTicket && (
+                                <button
+                                  type="button"
+                                  onClick={() => onDeleteTicket(tkt.id)}
+                                  aria-label={`Delete ticket ${tkt.title}`}
+                                  className="p-1 rounded text-[#94A3B8] hover:text-rose-600 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="font-bold text-[#0B0F19]">{tkt.title}</div>
+                          <div className="text-[11px] text-[#64748B]">{tkt.clientName}</div>
+                          <select
+                            value={tkt.status}
+                            onChange={(e) =>
+                              onUpdateTicket({
+                                ...tkt,
+                                status: e.target.value as ClientTicket['status'],
+                              })
+                            }
+                            aria-label={`Status for ${tkt.title}`}
+                            className="w-full mt-1 px-2.5 py-1.5 rounded-lg border border-[#EAECEF] bg-white text-[11px] font-bold"
+                          >
+                            {STATUSES.map((s) => (
+                              <option key={s} value={s}>
+                                {s}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               );
@@ -486,69 +897,190 @@ export const TicketsView: React.FC<TicketsViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EAECEF] text-xs">
-                  {tasks.map((tsk) => (
-                    <tr key={tsk.id} className="hover:bg-[#F8F9FA]/60">
-                      <td className="py-3.5 px-5">
-                        <input
-                          type="checkbox"
-                          checked={tsk.status === 'Completed'}
-                          onChange={() => onToggleTaskStatus(tsk.id)}
-                          aria-label={`Mark ${tsk.title} complete`}
-                          className="w-4 h-4 accent-[#2563EB] cursor-pointer"
-                        />
-                      </td>
-                      <td className="py-3.5 px-4 font-bold">
-                        <span
-                          className={
-                            tsk.priority === 'Urgent'
-                              ? 'text-rose-600'
-                              : tsk.priority === 'High'
-                              ? 'text-amber-600'
-                              : 'text-[#2563EB]'
-                          }
-                        >
-                          {tsk.priority}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div
-                          className={`font-bold ${
-                            tsk.status === 'Completed'
-                              ? 'line-through text-[#94A3B8]'
-                              : 'text-[#0B0F19]'
-                          }`}
-                        >
-                          {tsk.title}
-                        </div>
-                        <div className="text-[11px] text-[#64748B]">{tsk.type}</div>
-                      </td>
-                      <td className="py-3.5 px-4 font-semibold text-[#2563EB]">
-                        {tsk.clientId ? (
-                          <button
-                            onClick={() => onOpenClient360(tsk.clientId!)}
-                            className="hover:underline cursor-pointer"
+                  {tasks.map((tsk) => {
+                    const isEditingTask = editingTaskId === tsk.id && taskDraft !== null;
+
+                    if (isEditingTask && taskDraft) {
+                      return (
+                        <tr key={tsk.id} className="bg-[#EFF6FF]/40">
+                          <td className="py-3 px-5">
+                            <input
+                              type="checkbox"
+                              checked={taskDraft.status === 'Completed'}
+                              onChange={() =>
+                                setTaskDraft({
+                                  ...taskDraft,
+                                  status:
+                                    taskDraft.status === 'Completed' ? 'Pending' : 'Completed',
+                                })
+                              }
+                              className="w-4 h-4 accent-[#2563EB]"
+                            />
+                          </td>
+                          <td className="py-3 px-4">
+                            <select
+                              value={taskDraft.priority}
+                              onChange={(e) =>
+                                setTaskDraft({
+                                  ...taskDraft,
+                                  priority: e.target.value as StudioTask['priority'],
+                                })
+                              }
+                              className="px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-xs font-bold"
+                            >
+                              <option value="Urgent">Urgent</option>
+                              <option value="High">High</option>
+                              <option value="Normal">Normal</option>
+                            </select>
+                          </td>
+                          <td className="py-3 px-4">
+                            <input
+                              type="text"
+                              value={taskDraft.title}
+                              onChange={(e) =>
+                                setTaskDraft({ ...taskDraft, title: e.target.value })
+                              }
+                              className="w-full px-2.5 py-1 rounded-lg bg-white border border-[#EAECEF] text-xs font-bold"
+                            />
+                          </td>
+                          <td className="py-3 px-4">
+                            <input
+                              type="text"
+                              list="tasks-client-list"
+                              value={taskDraft.clientName}
+                              onChange={(e) =>
+                                setTaskDraft({ ...taskDraft, clientName: e.target.value })
+                              }
+                              className="w-full px-2.5 py-1 rounded-lg bg-white border border-[#EAECEF] text-xs"
+                            />
+                          </td>
+                          <td className="py-3 px-4">
+                            <select
+                              value={taskDraft.assignedTo}
+                              onChange={(e) =>
+                                setTaskDraft({
+                                  ...taskDraft,
+                                  assignedTo: e.target.value as FounderName,
+                                })
+                              }
+                              className="px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-xs font-bold"
+                            >
+                              <option value="Krishna">Krishna</option>
+                              <option value="Vansh">Vansh</option>
+                              <option value="Both">Both</option>
+                            </select>
+                          </td>
+                          <td className="py-3 px-4">
+                            <input
+                              type="date"
+                              value={taskDraft.dueDate}
+                              onChange={(e) =>
+                                setTaskDraft({ ...taskDraft, dueDate: e.target.value })
+                              }
+                              className="px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-xs font-mono"
+                            />
+                          </td>
+                          <td className="py-3 px-5 text-right">
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={handleSaveTaskEdit}
+                                className="px-2.5 py-1 rounded-lg bg-[#2563EB] text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Check className="w-3 h-3" /> Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingTaskId(null);
+                                  setTaskDraft(null);
+                                }}
+                                className="p-1 rounded-lg text-[#64748B] hover:text-[#0B0F19] cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return (
+                      <tr key={tsk.id} className="hover:bg-[#F8F9FA]/60">
+                        <td className="py-3.5 px-5">
+                          <input
+                            type="checkbox"
+                            checked={tsk.status === 'Completed'}
+                            onChange={() => onToggleTaskStatus(tsk.id)}
+                            aria-label={`Mark ${tsk.title} complete`}
+                            className="w-4 h-4 accent-[#2563EB] cursor-pointer"
+                          />
+                        </td>
+                        <td className="py-3.5 px-4 font-bold">
+                          <span
+                            className={
+                              tsk.priority === 'Urgent'
+                                ? 'text-rose-600'
+                                : tsk.priority === 'High'
+                                ? 'text-amber-600'
+                                : 'text-[#2563EB]'
+                            }
                           >
-                            {tsk.clientName}
-                          </button>
-                        ) : (
-                          tsk.clientName
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 font-semibold text-[#475569]">
-                        {tsk.assignedTo}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-[#64748B]">{tsk.dueDate}</td>
-                      <td className="py-3.5 px-5 text-right">
-                        <button
-                          onClick={() => onDeleteTask(tsk.id)}
-                          aria-label={`Delete task ${tsk.title}`}
-                          className="p-1.5 rounded-lg text-[#94A3B8] hover:text-rose-600 cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                            {tsk.priority}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div
+                            className={`font-bold ${
+                              tsk.status === 'Completed'
+                                ? 'line-through text-[#94A3B8]'
+                                : 'text-[#0B0F19]'
+                            }`}
+                          >
+                            {tsk.title}
+                          </div>
+                          <div className="text-[11px] text-[#64748B]">{tsk.type}</div>
+                        </td>
+                        <td className="py-3.5 px-4 font-semibold text-[#2563EB]">
+                          {tsk.clientId ? (
+                            <button
+                              onClick={() => onOpenClient360(tsk.clientId!)}
+                              className="hover:underline cursor-pointer"
+                            >
+                              {tsk.clientName}
+                            </button>
+                          ) : (
+                            tsk.clientName
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 font-semibold text-[#475569]">
+                          {tsk.assignedTo}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-[#64748B]">{tsk.dueDate}</td>
+                        <td className="py-3.5 px-5 text-right">
+                          <div className="inline-flex items-center gap-1">
+                            {onUpdateTask && (
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditTask(tsk)}
+                                aria-label={`Edit task ${tsk.title}`}
+                                className="px-2 py-1 rounded-lg bg-[#F8F9FA] hover:bg-[#EFF6FF] text-[#475569] hover:text-[#2563EB] border border-[#EAECEF] text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Pencil className="w-3 h-3" /> Edit
+                              </button>
+                            )}
+                            <button
+                              onClick={() => onDeleteTask(tsk.id)}
+                              aria-label={`Delete task ${tsk.title}`}
+                              className="p-1.5 rounded-lg text-[#94A3B8] hover:text-rose-600 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

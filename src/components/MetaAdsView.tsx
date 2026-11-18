@@ -9,6 +9,8 @@ import {
   Sparkles,
   Trash2,
   CheckCircle2,
+  Pencil,
+  X,
 } from 'lucide-react';
 import { ClientLead, ExpensePaidBy, MetaAdCampaign } from '../types';
 import { calculateCPL, formatINR } from '../utils/calculations';
@@ -40,6 +42,40 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
   const [agencyFee, setAgencyFee] = useState(0);
   const [paidBy, setPaidBy] = useState<ExpensePaidBy>('Vansh');
   const [notes, setNotes] = useState('');
+
+  // Full Card Edit State
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<MetaAdCampaign | null>(null);
+
+  const handleStartEdit = (camp: MetaAdCampaign) => {
+    setEditingId(camp.id);
+    setEditDraft({ ...camp });
+  };
+
+  const handleSaveEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editDraft || !editDraft.campaignName.trim()) return;
+    const matched = clients.find(
+      (c) =>
+        c.businessName.toLowerCase() === editDraft.clientName.trim().toLowerCase() ||
+        c.businessName.toLowerCase().includes(editDraft.clientName.trim().toLowerCase())
+    );
+    const cleanBudget = Math.max(0, Number(editDraft.totalBudget) || 0);
+    const cleanSpent = Math.max(0, Number(editDraft.amountSpent) || 0);
+    onUpdateCampaign({
+      ...editDraft,
+      clientId: matched ? matched.id : editDraft.clientId,
+      clientName: matched ? matched.businessName : editDraft.clientName.trim(),
+      campaignName: editDraft.campaignName.trim(),
+      totalBudget: Math.max(cleanBudget, cleanSpent),
+      amountSpent: cleanSpent,
+      agencyFee: Math.max(0, Number(editDraft.agencyFee) || 0),
+      leadsGenerated: Math.max(0, Number(editDraft.leadsGenerated) || 0),
+      notes: editDraft.notes.trim(),
+    });
+    setEditingId(null);
+    setEditDraft(null);
+  };
 
   const filteredCampaigns = campaigns.filter((c) =>
     statusFilter === 'All' ? true : c.status === statusFilter
@@ -353,6 +389,232 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
               camp.totalBudget > 0
                 ? Math.min(100, Math.round((camp.amountSpent / camp.totalBudget) * 100))
                 : 0;
+            const isEditing = editingId === camp.id && editDraft !== null;
+
+            if (isEditing && editDraft) {
+              return (
+                <form
+                  key={camp.id}
+                  onSubmit={handleSaveEdit}
+                  className="bg-white rounded-3xl p-6 border-2 border-[#2563EB] shadow-lg flex flex-col justify-between space-y-3"
+                >
+                  <div className="flex items-center justify-between border-b border-[#EAECEF] pb-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#2563EB]">
+                      Edit Campaign (Syncs to Finance)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingId(null);
+                        setEditDraft(null);
+                      }}
+                      className="p-1 rounded-lg text-[#64748B] hover:text-[#0B0F19] cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                          Client Business Name *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          list="meta-client-list"
+                          value={editDraft.clientName}
+                          onChange={(e) =>
+                            setEditDraft({ ...editDraft, clientName: e.target.value })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                          Campaign Title *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={editDraft.campaignName}
+                          onChange={(e) =>
+                            setEditDraft({ ...editDraft, campaignName: e.target.value })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs font-bold"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                          Objective
+                        </label>
+                        <select
+                          value={editDraft.objective}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              objective: e.target.value as MetaAdCampaign['objective'],
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs bg-white"
+                        >
+                          <option value="Website Traffic">Website Traffic</option>
+                          <option value="WhatsApp Messages">WhatsApp Messages</option>
+                          <option value="Lead Generation Form">Lead Generation Form</option>
+                          <option value="Instagram Reach">Instagram Reach</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                          Status
+                        </label>
+                        <select
+                          value={editDraft.status}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              status: e.target.value as MetaAdCampaign['status'],
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs bg-white font-bold"
+                        >
+                          <option value="Active">Active</option>
+                          <option value="Learning">Learning</option>
+                          <option value="Paused">Paused</option>
+                          <option value="Completed">Completed</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                          Budget (₹)
+                        </label>
+                        <input
+                          type="number"
+                          value={editDraft.totalBudget}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              totalBudget: Number(e.target.value),
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                          Spend (₹)
+                        </label>
+                        <input
+                          type="number"
+                          value={editDraft.amountSpent}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              amountSpent: Number(e.target.value),
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs font-mono font-bold text-[#2563EB]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                          Retainer (₹)
+                        </label>
+                        <input
+                          type="number"
+                          value={editDraft.agencyFee}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              agencyFee: Number(e.target.value),
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                          Leads Generated
+                        </label>
+                        <input
+                          type="number"
+                          value={editDraft.leadsGenerated}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              leadsGenerated: Number(e.target.value),
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                          Paid By (Finance)
+                        </label>
+                        <select
+                          value={editDraft.paidBy || 'Vansh'}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              paidBy: e.target.value as ExpensePaidBy,
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs font-bold bg-white"
+                        >
+                          <option value="Vansh">Vansh</option>
+                          <option value="Krishna">Krishna</option>
+                          <option value="Studio Account">Studio Account</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                        Targeting / Creative Notes
+                      </label>
+                      <input
+                        type="text"
+                        value={editDraft.notes}
+                        onChange={(e) =>
+                          setEditDraft({ ...editDraft, notes: e.target.value })
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-[#F1F5F9] flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingId(null);
+                        setEditDraft(null);
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-[#F8F9FA] text-[#64748B] text-xs font-bold cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 rounded-xl bg-[#2563EB] text-white text-xs font-bold cursor-pointer"
+                    >
+                      Save &amp; Sync
+                    </button>
+                  </div>
+                </form>
+              );
+            }
 
             return (
               <div
@@ -392,6 +654,15 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
                         <option value="Paused">❚❚ Paused</option>
                         <option value="Completed">✓ Completed</option>
                       </select>
+
+                      <button
+                        type="button"
+                        onClick={() => handleStartEdit(camp)}
+                        aria-label={`Edit campaign ${camp.campaignName}`}
+                        className="px-2.5 py-1 rounded-lg bg-[#F8F9FA] hover:bg-[#EFF6FF] text-[#475569] hover:text-[#2563EB] border border-[#EAECEF] text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <Pencil className="w-3 h-3" /> Edit
+                      </button>
 
                       {onDeleteCampaign && (
                         <button

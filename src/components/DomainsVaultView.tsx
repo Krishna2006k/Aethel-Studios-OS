@@ -11,6 +11,9 @@ import {
   ArrowUpRight,
   Trash2,
   CheckCircle2,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
 import { ClientLead, ExpensePaidBy, HostedWebsite } from '../types';
 import { calculateDaysUntilExpiry, formatINR } from '../utils/calculations';
@@ -45,6 +48,35 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
   const [paidBy, setPaidBy] = useState<ExpensePaidBy>('Vansh');
   const [githubRepo, setGithubRepo] = useState('');
 
+  // Inline Row Edit State
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<HostedWebsite | null>(null);
+
+  const handleStartEdit = (site: HostedWebsite) => {
+    setEditingId(site.id);
+    setEditDraft({ ...site });
+  };
+
+  const handleSaveEdit = () => {
+    if (!editDraft || !editDraft.domainName.trim()) return;
+    const cleanDomain = editDraft.domainName.trim().replace(/^https?:\/\//, '');
+    const matched = clients.find(
+      (c) =>
+        c.businessName.toLowerCase() === editDraft.clientName.trim().toLowerCase() ||
+        c.businessName.toLowerCase().includes(editDraft.clientName.trim().toLowerCase())
+    );
+    onUpdateWebsite({
+      ...editDraft,
+      clientId: matched ? matched.id : editDraft.clientId,
+      clientName: matched ? matched.businessName : editDraft.clientName.trim(),
+      domainName: cleanDomain,
+      liveUrl: `https://${cleanDomain}`,
+      renewalCostINR: Math.max(0, Number(editDraft.renewalCostINR) || 0),
+    });
+    setEditingId(null);
+    setEditDraft(null);
+  };
+
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!domainName.trim()) return;
@@ -77,7 +109,6 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
     setShowAdd(false);
   };
 
-  // Sort websites by upcoming renewal date for the Renewal Calendar Strip
   const sortedByRenewal = [...websites].sort(
     (a, b) => calculateDaysUntilExpiry(a.expiryDate) - calculateDaysUntilExpiry(b.expiryDate)
   );
@@ -289,13 +320,162 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
                 <th className="py-4 px-4">Expiry Countdown</th>
                 <th className="py-4 px-4">Paid By (Finance Sync)</th>
                 <th className="py-4 px-4 text-right">Domain Cost (₹)</th>
-                <th className="py-4 px-5 text-right">Action</th>
+                <th className="py-4 px-5 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#EAECEF] text-xs">
               {websites.map((site) => {
                 const daysLeft = calculateDaysUntilExpiry(site.expiryDate);
                 const isExpiring = daysLeft <= 45;
+                const isEditing = editingId === site.id && editDraft !== null;
+
+                if (isEditing && editDraft) {
+                  return (
+                    <tr key={site.id} className="bg-[#EFF6FF]/40">
+                      <td className="py-3.5 px-5 space-y-1">
+                        <input
+                          type="text"
+                          value={editDraft.domainName}
+                          onChange={(e) =>
+                            setEditDraft({ ...editDraft, domainName: e.target.value })
+                          }
+                          className="w-full px-2.5 py-1 rounded-lg bg-white border border-[#EAECEF] font-mono font-bold text-xs"
+                          placeholder="domain.com"
+                        />
+                        <input
+                          type="text"
+                          value={editDraft.githubRepo}
+                          onChange={(e) =>
+                            setEditDraft({ ...editDraft, githubRepo: e.target.value })
+                          }
+                          className="w-full px-2.5 py-1 rounded-lg bg-white border border-[#EAECEF] font-mono text-[11px]"
+                          placeholder="github-org/repo"
+                        />
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <input
+                          type="text"
+                          list="domain-client-list"
+                          value={editDraft.clientName}
+                          onChange={(e) =>
+                            setEditDraft({ ...editDraft, clientName: e.target.value })
+                          }
+                          className="w-full px-2.5 py-1 rounded-lg bg-white border border-[#EAECEF] font-bold text-xs"
+                        />
+                      </td>
+                      <td className="py-3.5 px-4 space-y-1">
+                        <select
+                          value={editDraft.registrar}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              registrar: e.target.value as HostedWebsite['registrar'],
+                            })
+                          }
+                          className="w-full px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-xs"
+                        >
+                          <option value="Hostinger">Hostinger</option>
+                          <option value="GoDaddy">GoDaddy</option>
+                          <option value="Namecheap">Namecheap</option>
+                          <option value="Cloudflare">Cloudflare</option>
+                          <option value="Client Owned">Client Owned</option>
+                        </select>
+                        <select
+                          value={editDraft.hostingPlatform}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              hostingPlatform:
+                                e.target.value as HostedWebsite['hostingPlatform'],
+                            })
+                          }
+                          className="w-full px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-xs"
+                        >
+                          <option value="Vercel">Vercel</option>
+                          <option value="Cloudflare Pages">Cloudflare Pages</option>
+                          <option value="Hostinger VPS">Hostinger VPS</option>
+                          <option value="Netlify">Netlify</option>
+                        </select>
+                      </td>
+                      <td className="py-3.5 px-4 space-y-1">
+                        <select
+                          value={editDraft.siteStatus}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              siteStatus: e.target.value as HostedWebsite['siteStatus'],
+                            })
+                          }
+                          className="w-full px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-xs font-bold"
+                        >
+                          <option value="Online">Online</option>
+                          <option value="Maintenance">Maintenance</option>
+                          <option value="Staging">Staging</option>
+                        </select>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <input
+                          type="date"
+                          value={editDraft.expiryDate}
+                          onChange={(e) =>
+                            setEditDraft({ ...editDraft, expiryDate: e.target.value })
+                          }
+                          className="px-2 py-1 rounded-lg bg-white border border-[#EAECEF] font-mono text-xs"
+                        />
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <select
+                          value={editDraft.paidBy || 'Vansh'}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              paidBy: e.target.value as ExpensePaidBy,
+                            })
+                          }
+                          className="px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-xs font-bold"
+                        >
+                          <option value="Vansh">Vansh</option>
+                          <option value="Krishna">Krishna</option>
+                          <option value="Studio Account">Studio Account</option>
+                        </select>
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <input
+                          type="number"
+                          value={editDraft.renewalCostINR}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              renewalCostINR: Number(e.target.value),
+                            })
+                          }
+                          className="w-24 px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-right font-mono font-bold text-xs"
+                        />
+                      </td>
+                      <td className="py-3.5 px-5 text-right">
+                        <div className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={handleSaveEdit}
+                            className="px-2.5 py-1 rounded-lg bg-[#2563EB] text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <Check className="w-3 h-3" /> Save
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(null);
+                              setEditDraft(null);
+                            }}
+                            className="p-1 rounded-lg text-[#64748B] hover:text-[#0B0F19] cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
 
                 return (
                   <tr key={site.id} className="hover:bg-[#F8F9FA]/60 transition-colors">
@@ -406,15 +586,25 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
                       </div>
                     </td>
                     <td className="py-4 px-5 text-right">
-                      {onDeleteWebsite && (
+                      <div className="inline-flex items-center gap-1">
                         <button
-                          onClick={() => onDeleteWebsite(site.id)}
-                          aria-label={`Delete domain ${site.domainName}`}
-                          className="p-1.5 rounded-lg text-[#94A3B8] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          type="button"
+                          onClick={() => handleStartEdit(site)}
+                          aria-label={`Edit domain ${site.domainName}`}
+                          className="px-2 py-1 rounded-lg bg-[#F8F9FA] hover:bg-[#EFF6FF] text-[#475569] hover:text-[#2563EB] border border-[#EAECEF] text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Pencil className="w-3 h-3" /> Edit
                         </button>
-                      )}
+                        {onDeleteWebsite && (
+                          <button
+                            onClick={() => onDeleteWebsite(site.id)}
+                            aria-label={`Delete domain ${site.domainName}`}
+                            className="p-1.5 rounded-lg text-[#94A3B8] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

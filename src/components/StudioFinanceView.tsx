@@ -1,17 +1,14 @@
 import React, { useState } from 'react';
 import {
   Wallet,
-  Plus,
-  CheckCircle2,
-  ArrowUpRight,
   Scale,
-  Receipt,
-  CreditCard,
   Trash2,
   BarChart3,
-  Layers,
   Megaphone,
   TrendingUp,
+  Pencil,
+  Check,
+  X,
 } from 'lucide-react';
 import {
   StudioExpense,
@@ -36,6 +33,7 @@ interface StudioFinanceViewProps {
   onAddExpense: (newExp: StudioExpense) => void;
   onDeleteExpense: (expenseId: string) => void;
   onAddPayment: (newPay: ClientPayment) => void;
+  onUpdatePayment?: (updated: ClientPayment) => void;
   onDeletePayment: (paymentId: string) => void;
   onOpenClient360?: (clientId: string) => void;
 }
@@ -50,6 +48,7 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
   onAddExpense,
   onDeleteExpense,
   onAddPayment,
+  onUpdatePayment,
   onDeletePayment,
   onOpenClient360,
 }) => {
@@ -80,7 +79,47 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
   const [payAccount, setPayAccount] = useState<ExpensePaidBy>('Studio Account');
   const [payMilestone, setPayMilestone] = useState<ClientPayment['milestone']>('Advance (50%)');
 
-  // Single Canonical Financial Calculation (Part 5 & Part 13)
+  // Inline Edit Payment State
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [paymentDraft, setPaymentDraft] = useState<ClientPayment | null>(null);
+
+  const handleStartEditPayment = (pay: ClientPayment) => {
+    setEditingPaymentId(pay.id);
+    setPaymentDraft({ ...pay });
+  };
+
+  const handleSavePaymentEdit = () => {
+    if (!paymentDraft || !onUpdatePayment) return;
+    onUpdatePayment({
+      ...paymentDraft,
+      clientName: paymentDraft.clientName.trim(),
+      projectTitle: paymentDraft.projectTitle.trim(),
+      amountReceived: Math.max(0, Number(paymentDraft.amountReceived) || 0),
+    });
+    setEditingPaymentId(null);
+    setPaymentDraft(null);
+  };
+
+  // Inline Edit Expense State
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [expenseDraft, setExpenseDraft] = useState<StudioExpense | null>(null);
+
+  const handleStartEditExpense = (exp: StudioExpense) => {
+    setEditingExpenseId(exp.id);
+    setExpenseDraft({ ...exp });
+  };
+
+  const handleSaveExpenseEdit = () => {
+    if (!expenseDraft) return;
+    onUpdateExpense({
+      ...expenseDraft,
+      title: expenseDraft.title.trim(),
+      amount: Math.max(0, Number(expenseDraft.amount) || 0),
+    });
+    setEditingExpenseId(null);
+    setExpenseDraft(null);
+  };
+
   const finances = calculateStudioFinances(expenses, payments, clients, metaCampaigns);
 
   const handleCreateExpense = (e: React.FormEvent) => {
@@ -124,14 +163,12 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
     setPayTitle('');
   };
 
-  // Accounts Receivable breakdown per client
   const receivableClients = clients.filter(
     (c) =>
       c.stage !== 'Rejected / Dropped' &&
       (c.finalAgreedPrice > 0 || c.advancePaid > 0)
   );
 
-  // Niche revenue analytics
   const nicheBreakdown = ['Banquet/Lawns', 'Clinic/Hospital', 'Retail/Electronics', 'Cafe/Restaurant', 'Real Estate/Interior'].map(
     (nicheName) => {
       const nicheClients = clients.filter(
@@ -154,7 +191,7 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] mb-1">
-            MANAGEMENT · UNIFIED FINANCIAL LEDGER & ANALYTICS
+            MANAGEMENT · UNIFIED FINANCIAL LEDGER &amp; ANALYTICS
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
             {activeTab === 'analytics'
@@ -189,9 +226,8 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
         </div>
       </div>
 
-      {/* PART 5: 3-STREAM FINANCIAL SEPARATION (Agency Revenue vs Client Ad Spend vs Studio Expenses) */}
+      {/* 3-STREAM FINANCIAL SEPARATION */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Stream 1: Agency Revenue & Receivables */}
         <div className="bg-[#0B0F19] text-white rounded-3xl p-5 border border-[#0B0F19] flex flex-col justify-between space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-mono uppercase tracking-widest text-[#34D399] font-bold">
@@ -216,11 +252,10 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
           </div>
         </div>
 
-        {/* Stream 2: Agency Operational Expenses & Net Profit */}
         <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between space-y-4 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-mono uppercase tracking-widest text-[#2563EB] font-bold">
-              STREAM 02 · STUDIO NET PROFIT & OPS
+              STREAM 02 · STUDIO NET PROFIT &amp; OPS
             </span>
             <Wallet className="w-4 h-4 text-[#2563EB]" />
           </div>
@@ -241,7 +276,6 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
           </div>
         </div>
 
-        {/* Stream 3: Client Advertising Expenditure (Strictly Separated Pass-Through) */}
         <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between space-y-4 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-mono uppercase tracking-widest text-indigo-600 font-bold">
@@ -272,7 +306,7 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
           <div className="flex items-center gap-2">
             <Scale className="w-5 h-5 text-[#2563EB]" />
             <h2 className="text-base font-extrabold text-[#0B0F19]">
-              Co-Founder Out-of-Pocket Split & Reimbursement Calculator
+              Co-Founder Out-of-Pocket Split &amp; Reimbursement Calculator
             </h2>
           </div>
           <span className="text-xs font-mono text-[#64748B]">
@@ -418,7 +452,7 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
                 <thead>
                   <tr className="bg-[#F8F9FA] border-b border-[#EAECEF] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
                     <th className="py-3.5 px-5">Date</th>
-                    <th className="py-3.5 px-4">Client & Milestone Note</th>
+                    <th className="py-3.5 px-4">Client &amp; Milestone Note</th>
                     <th className="py-3.5 px-4">Payment Mode</th>
                     <th className="py-3.5 px-4">Received By</th>
                     <th className="py-3.5 px-4 text-right">Amount Received (₹)</th>
@@ -426,37 +460,183 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EAECEF] text-xs">
-                  {payments.map((pay) => (
-                    <tr key={pay.id} className="hover:bg-[#F8F9FA]/60 transition-colors">
-                      <td className="py-3.5 px-5 font-mono text-[#64748B]">
-                        {pay.paymentDate}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="font-bold text-[#0B0F19]">{pay.clientName}</div>
-                        <div className="text-[11px] text-[#64748B]">
-                          {pay.projectTitle} · {pay.milestone}
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-4 font-semibold text-[#475569]">
-                        {pay.paymentMode}
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-[#0B0F19]">
-                        {pay.receivedInAccount}
-                      </td>
-                      <td className="py-3.5 px-4 text-right font-mono font-extrabold text-[#059669]">
-                        +{formatINR(pay.amountReceived)}
-                      </td>
-                      <td className="py-3.5 px-5 text-right">
-                        <button
-                          onClick={() => onDeletePayment(pay.id)}
-                          aria-label={`Delete payment from ${pay.clientName}`}
-                          className="p-1.5 rounded-lg text-[#94A3B8] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {payments.map((pay) => {
+                    const isEditingPay =
+                      editingPaymentId === pay.id && paymentDraft !== null;
+
+                    if (isEditingPay && paymentDraft) {
+                      return (
+                        <tr key={pay.id} className="bg-[#EFF6FF]/40">
+                          <td className="py-3 px-5">
+                            <input
+                              type="date"
+                              value={paymentDraft.paymentDate}
+                              onChange={(e) =>
+                                setPaymentDraft({
+                                  ...paymentDraft,
+                                  paymentDate: e.target.value,
+                                })
+                              }
+                              className="px-2 py-1 rounded-lg bg-white border border-[#EAECEF] font-mono text-xs"
+                            />
+                          </td>
+                          <td className="py-3 px-4 space-y-1">
+                            <input
+                              type="text"
+                              list="finance-client-list"
+                              value={paymentDraft.clientName}
+                              onChange={(e) =>
+                                setPaymentDraft({
+                                  ...paymentDraft,
+                                  clientName: e.target.value,
+                                })
+                              }
+                              className="w-full px-2.5 py-1 rounded-lg bg-white border border-[#EAECEF] font-bold text-xs"
+                            />
+                            <div className="flex gap-1.5">
+                              <input
+                                type="text"
+                                value={paymentDraft.projectTitle}
+                                onChange={(e) =>
+                                  setPaymentDraft({
+                                    ...paymentDraft,
+                                    projectTitle: e.target.value,
+                                  })
+                                }
+                                className="flex-1 px-2.5 py-1 rounded-lg bg-white border border-[#EAECEF] text-[11px]"
+                              />
+                              <select
+                                value={paymentDraft.milestone}
+                                onChange={(e) =>
+                                  setPaymentDraft({
+                                    ...paymentDraft,
+                                    milestone: e.target.value as ClientPayment['milestone'],
+                                  })
+                                }
+                                className="px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-[11px]"
+                              >
+                                <option value="Advance (50%)">Advance (50%)</option>
+                                <option value="Final Delivery (50%)">Final Delivery (50%)</option>
+                                <option value="Full Upfront">Full Upfront</option>
+                                <option value="Meta Ads Retainer">Meta Ads Retainer</option>
+                                <option value="Domain Renewal">Domain Renewal</option>
+                              </select>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <select
+                              value={paymentDraft.paymentMode}
+                              onChange={(e) =>
+                                setPaymentDraft({
+                                  ...paymentDraft,
+                                  paymentMode: e.target.value as ClientPayment['paymentMode'],
+                                })
+                              }
+                              className="px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-xs font-semibold"
+                            >
+                              <option value="UPI">UPI</option>
+                              <option value="Bank NEFT/IMPS">Bank NEFT/IMPS</option>
+                              <option value="Cash">Cash</option>
+                            </select>
+                          </td>
+                          <td className="py-3 px-4">
+                            <select
+                              value={paymentDraft.receivedInAccount}
+                              onChange={(e) =>
+                                setPaymentDraft({
+                                  ...paymentDraft,
+                                  receivedInAccount: e.target.value as ExpensePaidBy,
+                                })
+                              }
+                              className="px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-xs font-bold"
+                            >
+                              <option value="Studio Account">Studio Account</option>
+                              <option value="Vansh">Vansh</option>
+                              <option value="Krishna">Krishna</option>
+                            </select>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <input
+                              type="number"
+                              value={paymentDraft.amountReceived}
+                              onChange={(e) =>
+                                setPaymentDraft({
+                                  ...paymentDraft,
+                                  amountReceived: Number(e.target.value),
+                                })
+                              }
+                              className="w-24 px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-right font-mono font-extrabold text-xs text-[#059669]"
+                            />
+                          </td>
+                          <td className="py-3 px-5 text-right">
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={handleSavePaymentEdit}
+                                className="px-2.5 py-1 rounded-lg bg-[#2563EB] text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Check className="w-3 h-3" /> Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingPaymentId(null);
+                                  setPaymentDraft(null);
+                                }}
+                                className="p-1 rounded-lg text-[#64748B] hover:text-[#0B0F19] cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return (
+                      <tr key={pay.id} className="hover:bg-[#F8F9FA]/60 transition-colors">
+                        <td className="py-3.5 px-5 font-mono text-[#64748B]">
+                          {pay.paymentDate}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-[#0B0F19]">{pay.clientName}</div>
+                          <div className="text-[11px] text-[#64748B]">
+                            {pay.projectTitle} · {pay.milestone}
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4 font-semibold text-[#475569]">
+                          {pay.paymentMode}
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-[#0B0F19]">
+                          {pay.receivedInAccount}
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-extrabold text-[#059669]">
+                          +{formatINR(pay.amountReceived)}
+                        </td>
+                        <td className="py-3.5 px-5 text-right">
+                          <div className="inline-flex items-center gap-1">
+                            {onUpdatePayment && (
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditPayment(pay)}
+                                aria-label={`Edit payment from ${pay.clientName}`}
+                                className="px-2 py-1 rounded-lg bg-[#F8F9FA] hover:bg-[#EFF6FF] text-[#475569] hover:text-[#2563EB] border border-[#EAECEF] text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Pencil className="w-3 h-3" /> Edit
+                              </button>
+                            )}
+                            <button
+                              onClick={() => onDeletePayment(pay.id)}
+                              aria-label={`Delete payment from ${pay.clientName}`}
+                              className="p-1.5 rounded-lg text-[#94A3B8] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -470,7 +650,7 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
           <div className="p-5 border-b border-[#EAECEF] flex items-center justify-between">
             <div>
               <h3 className="text-base font-extrabold text-[#0B0F19]">
-                Client Accounts Receivable & Collection Schedule
+                Client Accounts Receivable &amp; Collection Schedule
               </h3>
               <p className="text-xs text-[#64748B]">
                 Every rupee here is directly derived from the unified Client Pipeline.
@@ -584,16 +764,16 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
                 }
                 className="w-full px-3 py-2 rounded-xl border border-[#EAECEF] text-xs bg-[#F8F9FA]"
               >
-                <option value="Domain & Hosting">Domain & Hosting</option>
+                <option value="Domain & Hosting">Domain &amp; Hosting</option>
                 <option value="Software / SaaS">Software / SaaS</option>
-                <option value="Marketing & Samples">Marketing & Samples</option>
+                <option value="Marketing & Samples">Marketing &amp; Samples</option>
                 <option value="Operations / Travel">Operations / Travel</option>
                 <option value="Equipment">Equipment</option>
               </select>
             </div>
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1">
-                Amount (₹) & Paid By
+                Amount (₹) &amp; Paid By
               </label>
               <div className="flex gap-1.5">
                 <input
@@ -632,7 +812,7 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
                     <th className="py-3.5 px-4">Category</th>
                     <th className="py-3.5 px-4">Paid By</th>
                     <th className="py-3.5 px-4 text-right">Amount (₹)</th>
-                    <th className="py-3.5 px-5 text-right">Status & Action</th>
+                    <th className="py-3.5 px-5 text-right">Status &amp; Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EAECEF] text-xs">
@@ -648,6 +828,117 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
                         exp.clientRelated &&
                         c.businessName.toLowerCase() === exp.clientRelated.toLowerCase()
                     );
+                    const isEditingExp =
+                      editingExpenseId === exp.id && expenseDraft !== null;
+
+                    if (isEditingExp && expenseDraft) {
+                      return (
+                        <tr key={exp.id} className="bg-[#EFF6FF]/40">
+                          <td className="py-3 px-5">
+                            <input
+                              type="date"
+                              value={expenseDraft.date}
+                              onChange={(e) =>
+                                setExpenseDraft({ ...expenseDraft, date: e.target.value })
+                              }
+                              className="px-2 py-1 rounded-lg bg-white border border-[#EAECEF] font-mono text-xs"
+                            />
+                          </td>
+                          <td className="py-3 px-4 space-y-1">
+                            <input
+                              type="text"
+                              value={expenseDraft.title}
+                              onChange={(e) =>
+                                setExpenseDraft({ ...expenseDraft, title: e.target.value })
+                              }
+                              className="w-full px-2.5 py-1 rounded-lg bg-white border border-[#EAECEF] font-bold text-xs"
+                            />
+                            <input
+                              type="text"
+                              list="finance-client-list"
+                              value={expenseDraft.clientRelated || ''}
+                              onChange={(e) =>
+                                setExpenseDraft({
+                                  ...expenseDraft,
+                                  clientRelated: e.target.value,
+                                })
+                              }
+                              placeholder="Client Related"
+                              className="w-full px-2.5 py-1 rounded-lg bg-white border border-[#EAECEF] text-[11px]"
+                            />
+                          </td>
+                          <td className="py-3 px-4">
+                            <select
+                              value={expenseDraft.category}
+                              onChange={(e) =>
+                                setExpenseDraft({
+                                  ...expenseDraft,
+                                  category: e.target.value as StudioExpense['category'],
+                                })
+                              }
+                              className="px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-xs"
+                            >
+                              <option value="Domain & Hosting">Domain &amp; Hosting</option>
+                              <option value="Meta Ad Spend">Meta Ad Spend</option>
+                              <option value="Software / SaaS">Software / SaaS</option>
+                              <option value="Marketing & Samples">Marketing &amp; Samples</option>
+                              <option value="Operations / Travel">Operations / Travel</option>
+                              <option value="Equipment">Equipment</option>
+                            </select>
+                          </td>
+                          <td className="py-3 px-4">
+                            <select
+                              value={expenseDraft.paidBy}
+                              onChange={(e) =>
+                                setExpenseDraft({
+                                  ...expenseDraft,
+                                  paidBy: e.target.value as ExpensePaidBy,
+                                })
+                              }
+                              className="px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-xs font-bold"
+                            >
+                              <option value="Vansh">Vansh</option>
+                              <option value="Krishna">Krishna</option>
+                              <option value="Studio Account">Studio Account</option>
+                            </select>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <input
+                              type="number"
+                              value={expenseDraft.amount}
+                              onChange={(e) =>
+                                setExpenseDraft({
+                                  ...expenseDraft,
+                                  amount: Number(e.target.value),
+                                })
+                              }
+                              className="w-24 px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-right font-mono font-bold text-xs text-rose-600"
+                            />
+                          </td>
+                          <td className="py-3 px-5 text-right">
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={handleSaveExpenseEdit}
+                                className="px-2.5 py-1 rounded-lg bg-[#2563EB] text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <Check className="w-3 h-3" /> Save
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingExpenseId(null);
+                                  setExpenseDraft(null);
+                                }}
+                                className="p-1 rounded-lg text-[#64748B] hover:text-[#0B0F19] cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
 
                     return (
                       <tr key={exp.id} className="hover:bg-[#F8F9FA]/60">
@@ -725,7 +1016,7 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
                           </div>
                         </td>
                         <td className="py-3.5 px-5 text-right">
-                          <div className="inline-flex items-center gap-2">
+                          <div className="inline-flex items-center gap-1.5">
                             <button
                               onClick={() =>
                                 onUpdateExpense({ ...exp, reimbursed: !exp.reimbursed })
@@ -737,6 +1028,14 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
                               }`}
                             >
                               {exp.reimbursed ? '✓ Reimbursed' : 'Mark Reimbursed'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditExpense(exp)}
+                              aria-label={`Edit expense ${exp.title}`}
+                              className="px-2 py-1 rounded-lg bg-[#F8F9FA] hover:bg-[#EFF6FF] text-[#475569] hover:text-[#2563EB] border border-[#EAECEF] text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Pencil className="w-3 h-3" /> Edit
                             </button>
                             <button
                               onClick={() => onDeleteExpense(exp.id)}
@@ -810,7 +1109,7 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
                 CO-FOUNDER PERFORMANCE
               </div>
               <h3 className="text-lg font-extrabold text-[#0B0F19]">
-                Deal Ownership & Cashflow Split
+                Deal Ownership &amp; Cashflow Split
               </h3>
             </div>
 

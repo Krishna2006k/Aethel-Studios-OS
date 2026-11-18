@@ -5,13 +5,12 @@ import {
   Unlock,
   KeyRound,
   Plus,
-  Eye,
-  EyeOff,
   Copy,
   Check,
   Trash2,
-  ExternalLink,
   Search,
+  Pencil,
+  X,
 } from 'lucide-react';
 import { EncryptedVaultItem } from '../types';
 import { encryptSecret, decryptSecret } from '../utils/cryptoService';
@@ -19,12 +18,14 @@ import { encryptSecret, decryptSecret } from '../utils/cryptoService';
 interface EncryptedVaultViewProps {
   vaultItems: EncryptedVaultItem[];
   onAddVaultItem: (item: EncryptedVaultItem) => void;
+  onUpdateVaultItem?: (item: EncryptedVaultItem) => void;
   onDeleteVaultItem: (id: string) => void;
 }
 
 export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
   vaultItems,
   onAddVaultItem,
+  onUpdateVaultItem,
   onDeleteVaultItem,
 }) => {
   const [masterPassphrase, setMasterPassphrase] = useState('aethel-2025');
@@ -44,6 +45,53 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
   const [loginUrl, setLoginUrl] = useState('https://');
   const [clientAssociated, setClientAssociated] = useState('Aethel Studios Core');
   const [plainSecret, setPlainSecret] = useState('');
+
+  // Inline Edit Vault Item State
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<EncryptedVaultItem | null>(null);
+  const [editNewSecret, setEditNewSecret] = useState('');
+
+  const handleStartEdit = (item: EncryptedVaultItem) => {
+    setEditingId(item.id);
+    setEditDraft({ ...item });
+    setEditNewSecret(decryptedMap[item.id] || '');
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editDraft || !editDraft.title.trim() || !onUpdateVaultItem) return;
+    try {
+      setErrorMsg(null);
+      let nextCipher = editDraft.cipherText;
+      let nextIv = editDraft.iv;
+      let nextSalt = editDraft.salt;
+
+      if (editNewSecret.trim()) {
+        const encrypted = await encryptSecret(editNewSecret.trim(), masterPassphrase);
+        nextCipher = encrypted.ciphertext;
+        nextIv = encrypted.iv;
+        nextSalt = encrypted.salt;
+        setDecryptedMap((prev) => ({ ...prev, [editDraft.id]: editNewSecret.trim() }));
+      }
+
+      onUpdateVaultItem({
+        ...editDraft,
+        title: editDraft.title.trim(),
+        accountIdentifier: editDraft.accountIdentifier.trim(),
+        loginUrl: editDraft.loginUrl.trim(),
+        clientAssociated: editDraft.clientAssociated.trim() || 'Aethel Studios Core',
+        cipherText: nextCipher,
+        iv: nextIv,
+        salt: nextSalt,
+        updatedAt: new Date().toISOString().slice(0, 10),
+      });
+      setEditingId(null);
+      setEditDraft(null);
+      setEditNewSecret('');
+    } catch (err: unknown) {
+      setErrorMsg(err instanceof Error ? err.message : 'Encryption error while updating');
+    }
+  };
 
   const handleEncryptAndSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,7 +129,6 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
       return;
     }
 
-    // Handle pre-seeded demo items
     if (item.cipherText.startsWith('DEMO_LOCKED_')) {
       if (masterPassphrase === 'aethel-2025' || masterPassphrase.length >= 4) {
         const demoPlain =
@@ -165,7 +212,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
           <div className="flex items-center gap-2.5 text-xs text-slate-300">
             <KeyRound className="w-4 h-4 text-[#34D399] shrink-0" />
             <span>
-              Active Session Master Key (Default demo key:{' '}
+              Active Session Master Key (Default key:{' '}
               <code className="font-mono text-white bg-white/10 px-1.5 py-0.5 rounded">
                 aethel-2025
               </code>
@@ -243,7 +290,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g., GoDaddy DNS Login — Aura Clinic"
+                placeholder="e.g., GoDaddy DNS Login — Kabra Mobiles"
                 className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
               />
             </div>
@@ -329,6 +376,138 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {filteredItems.map((item) => {
           const isUnlocked = Boolean(decryptedMap[item.id]);
+          const isEditing = editingId === item.id && editDraft !== null;
+
+          if (isEditing && editDraft) {
+            return (
+              <form
+                key={item.id}
+                onSubmit={handleSaveEdit}
+                className="bg-white rounded-3xl p-5 border-2 border-[#2563EB] shadow-lg flex flex-col justify-between space-y-3"
+              >
+                <div className="flex items-center justify-between border-b border-[#EAECEF] pb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB]">
+                    Edit Encrypted Credential
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingId(null);
+                      setEditDraft(null);
+                    }}
+                    className="text-[#64748B] hover:text-[#0B0F19] cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-2.5">
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                      Credential Title *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editDraft.title}
+                      onChange={(e) =>
+                        setEditDraft({ ...editDraft, title: e.target.value })
+                      }
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs font-bold"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                        Category
+                      </label>
+                      <select
+                        value={editDraft.category}
+                        onChange={(e) =>
+                          setEditDraft({
+                            ...editDraft,
+                            category: e.target.value as EncryptedVaultItem['category'],
+                          })
+                        }
+                        className="w-full px-2 py-1.5 rounded-xl border border-[#EAECEF] text-xs bg-white"
+                      >
+                        <option value="Client Credentials">Client Credentials</option>
+                        <option value="Hosting & Cloud">Hosting &amp; Cloud</option>
+                        <option value="Meta Business Suite">Meta Business Suite</option>
+                        <option value="Studio Social / Email">Studio Social / Email</option>
+                        <option value="Client Contract / Document">Client Contract / Document</option>
+                        <option value="Payment / Banking">Payment / Banking</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                        Client Associated
+                      </label>
+                      <input
+                        type="text"
+                        value={editDraft.clientAssociated}
+                        onChange={(e) =>
+                          setEditDraft({
+                            ...editDraft,
+                            clientAssociated: e.target.value,
+                          })
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                      Account Identifier / Username
+                    </label>
+                    <input
+                      type="text"
+                      value={editDraft.accountIdentifier}
+                      onChange={(e) =>
+                        setEditDraft({
+                          ...editDraft,
+                          accountIdentifier: e.target.value,
+                        })
+                      }
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                      New Secret to Encrypt (Leave blank to keep existing)
+                    </label>
+                    <input
+                      type="text"
+                      value={editNewSecret}
+                      onChange={(e) => setEditNewSecret(e.target.value)}
+                      placeholder="Enter new password/token..."
+                      className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-[#F1F5F9] flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingId(null);
+                      setEditDraft(null);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-[#F8F9FA] text-[#64748B] text-xs font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 rounded-xl bg-[#2563EB] text-white text-xs font-bold cursor-pointer"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </form>
+            );
+          }
+
           return (
             <div
               key={item.id}
@@ -337,7 +516,19 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
               <div className="space-y-3">
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="font-bold text-[#2563EB]">{item.category}</span>
-                  <span className="font-mono text-[#64748B]">{item.updatedAt}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-[#64748B]">{item.updatedAt}</span>
+                    {onUpdateVaultItem && (
+                      <button
+                        type="button"
+                        onClick={() => handleStartEdit(item)}
+                        aria-label={`Edit ${item.title}`}
+                        className="px-2 py-0.5 rounded-lg bg-[#F8F9FA] hover:bg-[#EFF6FF] text-[#475569] hover:text-[#2563EB] border border-[#EAECEF] text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Pencil className="w-2.5 h-2.5" /> Edit
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div>

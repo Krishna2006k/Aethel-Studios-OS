@@ -44,6 +44,7 @@ import {
   recordPaymentAndSyncClient,
   toggleClientMilestone,
   updateExpenseAndSyncSource,
+  updatePaymentAndSyncClient,
 } from './utils/syncEngine';
 
 export default function App() {
@@ -226,7 +227,7 @@ export default function App() {
       tickets: prev.tickets.map((t) => (t.id === updated.id ? updated : t)),
       activityLogs: appendActivityLog(prev, {
         actor: updated.assignedTo === 'Both' ? 'Vansh' : updated.assignedTo,
-        action: `Updated ticket status to ${updated.status}`,
+        action: `Updated ticket: ${updated.title} (${updated.status})`,
         targetName: updated.clientName,
         category: 'Project',
       }),
@@ -246,6 +247,13 @@ export default function App() {
     }));
   };
 
+  const handleDeleteTicket = (ticketId: string) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      tickets: prev.tickets.filter((t) => t.id !== ticketId),
+    }));
+  };
+
   const handleAddTask = (newTask: StudioTask) => {
     persistUpdate((prev) => ({
       ...prev,
@@ -256,6 +264,13 @@ export default function App() {
         targetName: newTask.clientName,
         category: 'CRM',
       }),
+    }));
+  };
+
+  const handleUpdateTask = (updated: StudioTask) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      tasks: (prev.tasks || []).map((t) => (t.id === updated.id ? updated : t)),
     }));
   };
 
@@ -301,6 +316,13 @@ export default function App() {
     }));
   };
 
+  const handleDeleteRnD = (projectId: string) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      rndProjects: prev.rndProjects.filter((r) => r.id !== projectId),
+    }));
+  };
+
   const handleUpdateExpense = (updated: StudioExpense) => {
     persistUpdate((prev) => updateExpenseAndSyncSource(prev, updated));
   };
@@ -326,6 +348,10 @@ export default function App() {
     persistUpdate((prev) => recordPaymentAndSyncClient(prev, newPay));
   };
 
+  const handleUpdatePayment = (updated: ClientPayment) => {
+    persistUpdate((prev) => updatePaymentAndSyncClient(prev, updated));
+  };
+
   const handleDeletePayment = (paymentId: string) => {
     persistUpdate((prev) => deletePaymentAndSyncClient(prev, paymentId));
   };
@@ -340,6 +366,13 @@ export default function App() {
         targetName: item.clientAssociated,
         category: 'Vault',
       }),
+    }));
+  };
+
+  const handleUpdateVaultItem = (updated: EncryptedVaultItem) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      vaultItems: prev.vaultItems.map((v) => (v.id === updated.id ? updated : v)),
     }));
   };
 
@@ -448,10 +481,13 @@ export default function App() {
               websites={dbState.websites}
               tasks={dbState.tasks || []}
               initialSubView={activeModule === 'tasks' ? 'tasks' : 'projects'}
+              onUpdateClient={handleUpdateClient}
               onUpdateTicket={handleUpdateTicket}
               onAddTicket={handleAddTicket}
+              onDeleteTicket={handleDeleteTicket}
               onToggleMilestone={handleToggleMilestone}
               onAddTask={handleAddTask}
+              onUpdateTask={handleUpdateTask}
               onToggleTaskStatus={handleToggleTaskStatus}
               onDeleteTask={handleDeleteTask}
               onOpenClient360={handleOpenClient360}
@@ -491,6 +527,7 @@ export default function App() {
               onAddExpense={handleAddExpense}
               onDeleteExpense={handleDeleteExpense}
               onAddPayment={handleAddPayment}
+              onUpdatePayment={handleUpdatePayment}
               onDeletePayment={handleDeletePayment}
               onOpenClient360={handleOpenClient360}
             />
@@ -502,6 +539,7 @@ export default function App() {
               clients={dbState.clients}
               onUpdateProject={handleUpdateRnD}
               onAddProject={handleAddRnD}
+              onDeleteProject={handleDeleteRnD}
               onOpenClient360={handleOpenClient360}
             />
           )}
@@ -510,6 +548,7 @@ export default function App() {
             <EncryptedVaultView
               vaultItems={dbState.vaultItems}
               onAddVaultItem={handleAddVaultItem}
+              onUpdateVaultItem={handleUpdateVaultItem}
               onDeleteVaultItem={handleDeleteVaultItem}
             />
           )}
@@ -523,15 +562,15 @@ export default function App() {
                 A
               </div>
               <span>
-                <strong className="text-[#0B0F19]">Aethel Studios</strong> — Unified Agency & Growth Operating System · Founded by{' '}
-                <strong className="text-[#0B0F19]">Vansh Khakole</strong> &{' '}
+                <strong className="text-[#0B0F19]">Aethel Studios</strong> — Unified Agency &amp; Growth Operating System · Founded by{' '}
+                <strong className="text-[#0B0F19]">Vansh Khakole</strong> &amp;{' '}
                 <strong className="text-[#0B0F19]">Krishna Khakole</strong>
               </span>
             </div>
             <div className="flex items-center gap-4 font-mono text-[11px]">
               <span>aethelstudios.in@gmail.com</span>
               <span>·</span>
-              <span>Pune & Maharashtra, India</span>
+              <span>Pune &amp; Maharashtra, India</span>
             </div>
           </div>
         </footer>

@@ -1116,3 +1116,54 @@ export function deletePaymentAndSyncClient(
     lastUpdated: new Date().toISOString(),
   });
 }
+
+/**
+ * Updates an existing ClientPayment in Studio Finance and automatically recalculates
+ * the linked ClientLead's `advancePaid` and `stage` across the Pipeline.
+ */
+export function updatePaymentAndSyncClient(
+  state: AethelDatabaseState,
+  updatedPayment: ClientPayment
+): AethelDatabaseState {
+  const cleanAmount = Math.max(0, Number(updatedPayment.amountReceived) || 0);
+  const matchedClient = state.clients.find(
+    (c) =>
+      (updatedPayment.clientId && c.id === updatedPayment.clientId) ||
+      normalizeName(c.businessName) === normalizeName(updatedPayment.clientName)
+  );
+
+  const enrichedPayment: ClientPayment = matchedClient
+    ? {
+        ...updatedPayment,
+        clientId: matchedClient.id,
+        clientName: matchedClient.businessName,
+        totalProjectValue: matchedClient.finalAgreedPrice || updatedPayment.totalProjectValue,
+        amountReceived: cleanAmount,
+      }
+    : {
+        ...updatedPayment,
+        amountReceived: cleanAmount,
+      };
+
+  const nextPayments = state.payments.map((p) =>
+    p.id === enrichedPayment.id ? enrichedPayment : p
+  );
+
+  const nextLogs = appendActivityLog(state, {
+    actor:
+      enrichedPayment.receivedInAccount === 'Studio Account'
+        ? 'Krishna'
+        : enrichedPayment.receivedInAccount,
+    action: `Updated payment entry to ₹${cleanAmount.toLocaleString('en-IN')} (${enrichedPayment.milestone})`,
+    targetName: enrichedPayment.clientName,
+    category: 'Finance',
+  });
+
+  return reconcileDatabaseIntegrity({
+    ...state,
+    payments: nextPayments,
+    activityLogs: nextLogs,
+    lastUpdated: new Date().toISOString(),
+  });
+}
+
