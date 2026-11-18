@@ -10,6 +10,7 @@ import { StudioFinanceView } from './components/StudioFinanceView';
 import { EncryptedVaultView } from './components/EncryptedVaultView';
 import { SupabaseModal } from './components/SupabaseModal';
 import { QuickActionModal } from './components/QuickActionModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import {
   AethelDatabaseState,
   ModuleId,
@@ -599,6 +600,8 @@ export default function App() {
         onAddTask={handleAddTask}
         onOpenClient360={handleOpenClient360}
       />
+
+      <OfflineIndicator />
     </div>
   );
 }

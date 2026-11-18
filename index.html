@@ -2,7 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0B0F19" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Aethel OS" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/pwa-192x192.png" />
     <title>Aethel OS — Internal Agency & Growth Operating System</title>
     <meta name="description" content="Internal agency management, CRM pipeline, Meta Ads tracker, domain registry, R&D lab, co-founder finance ledger, and zero-knowledge AES-GCM encrypted vault for Aethel Studios." />
     <meta property="og:title" content="Aethel OS — Internal Agency & Growth Operating System" />
@@ -12,10 +21,18 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400..700;1,400..700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <script>
+      // Capture beforeinstallprompt early before React hydration so mobile Chrome never misses it
+      window.__aethelDeferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', function (e) {
+        e.preventDefault();
+        window.__aethelDeferredPrompt = e;
+        window.dispatchEvent(new CustomEvent('aethel-pwa-prompt-ready'));
+      });
+    </script>
   </head>
   <body class="bg-[#F8F9FA] text-[#0B0F19] antialiased selection:bg-[#2563EB] selection:text-white">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-

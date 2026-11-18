@@ -166,6 +166,21 @@ async function startServer() {
     }
   });
 
+  const publicDir = path.join(__dirname, 'public');
+
+  app.get(['/manifest.webmanifest', '/manifest.json'], (_req, res) => {
+    res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(publicDir, 'manifest.webmanifest'));
+  });
+
+  app.get('/sw.js', (_req, res) => {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Service-Worker-Allowed', '/');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(publicDir, 'sw.js'));
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

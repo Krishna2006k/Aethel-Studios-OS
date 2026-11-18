@@ -25,6 +25,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { ClientLead, FounderName, ModuleId } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   activeModule: ModuleId;
@@ -325,8 +326,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           ))}
         </nav>
 
-        {/* Bottom Section: Settings, Help & Support, Krishna / Vansh Profile */}
+        {/* Bottom Section: Install App, Settings, Help & Support, Krishna / Vansh Profile */}
         <div className="p-2.5 border-t border-[#EAECEF] space-y-1 bg-[#FAFBFC]">
+          <PWAInstallButton variant="sidebar" collapsed={sidebarCollapsed} />
+
           <button
             onClick={onOpenSupabaseModal}
             title="Database & Cloud Settings"
@@ -530,8 +533,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </div>
 
-        {/* Right: Sync Status + Command Palette Trigger */}
+        {/* Right: Install App + Sync Status + Command Palette Trigger */}
         <div className="flex items-center gap-2 shrink-0">
+          <PWAInstallButton variant="header" />
+
           <button
             onClick={onOpenSupabaseModal}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold border transition-all cursor-pointer ${
@@ -639,10 +644,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               ))}
             </div>
 
-            <div className="p-3 border-t border-[#EAECEF] bg-[#F8F9FA]">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1.5">
-                Founder Workspace Filter
-              </div>
+            <div className="p-3 border-t border-[#EAECEF] bg-[#F8F9FA] space-y-2.5">
+              <PWAInstallButton variant="mobile-drawer" />
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1.5">
+                  Founder Workspace Filter
+                </div>
               <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-xl border border-[#EAECEF]">
                 {(['All', 'Krishna', 'Vansh'] as const).map((f) => (
                   <button
@@ -657,6 +664,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     {f === 'All' ? 'All Studio' : f}
                   </button>
                 ))}
+                </div>
               </div>
             </div>
           </div>
