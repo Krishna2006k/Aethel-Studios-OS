@@ -58,16 +58,29 @@ export default function App() {
   const [supabaseModalOpen, setSupabaseModalOpen] = useState(false);
   const [quickActionOpen, setQuickActionOpen] = useState(false);
 
-  const refreshFromSource = useCallback(async () => {
+  const refreshFromSource = useCallback(async (): Promise<{
+    mode: 'supabase' | 'local';
+    error?: string;
+  }> => {
     setIsSyncing(true);
     const result = await loadDatabaseState();
     setDbState(result.state);
     setSyncMode(result.mode);
     setIsSyncing(false);
+    return { mode: result.mode, error: result.error };
   }, []);
 
   useEffect(() => {
     refreshFromSource();
+  }, [refreshFromSource]);
+
+  // Keep multiple browser tabs / profiles in sync when focusing the window
+  useEffect(() => {
+    const handleFocus = () => {
+      refreshFromSource();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, [refreshFromSource]);
 
   // Global Ctrl+K / Cmd+K shortcut for Command Palette
@@ -88,7 +101,11 @@ export default function App() {
       saveToLocalStorage(updated);
       setIsSyncing(true);
       saveDatabaseState(updated).then((res) => {
-        if (res.synced) setSyncMode('supabase');
+        if (res.synced) {
+          setSyncMode('supabase');
+        } else if (res.error) {
+          setSyncMode('local');
+        }
         setIsSyncing(false);
       });
       return updated;
@@ -329,10 +346,10 @@ export default function App() {
     } catch {
       // ignore if offline
     }
-    const reconciledSeed = reconcileDatabaseIntegrity(SEED_DATA);
-    setDbState(reconciledSeed);
-    saveToLocalStorage(reconciledSeed);
-    await saveDatabaseState(reconciledSeed);
+    const emptyState = reconcileDatabaseIntegrity(SEED_DATA);
+    setDbState(emptyState);
+    saveToLocalStorage(emptyState);
+    await saveDatabaseState(emptyState);
   };
 
   // Urgent Badges for Sidebar Navigation

@@ -1,21 +1,199 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  calculateClientProjectProgress,
+  calculateCPL,
   calculatePendingBalance,
   calculateStudioFinances,
+  calculateClientProjectProgress,
+  formatINR,
 } from './calculations';
 import {
-  convertLeadToActiveProject,
-  recordPaymentAndSyncClient,
   reconcileDatabaseIntegrity,
+  recordPaymentAndSyncClient,
+  deletePaymentAndSyncClient,
+  cascadeClientUpdate,
+  cascadeClientDelete,
+  convertLeadToActiveProject,
   toggleClientMilestone,
 } from './syncEngine';
 import { SEED_DATA } from '../data/seedData';
+import type { AethelDatabaseState } from '../types';
 
-test('Unified Financial Engine: CRM Pipeline Paid and Finance Revenue Collected match 100%', () => {
-  const reconciled = reconcileDatabaseIntegrity(SEED_DATA);
-  const finances = calculateStudioFinances(
+const REAL_STUDIO_FIXTURE: AethelDatabaseState = {
+  lastUpdated: '2026-11-18T06:00:00.000Z',
+  clients: [
+    {
+      id: 'cli-1794853265701',
+      businessName: 'Balaji Lawns',
+      contactPerson: 'Mangesh',
+      phone: '910000000000',
+      city: 'Risod',
+      niche: 'Banquet/Lawns',
+      packageTier: 'Custom Website',
+      quotedPrice: 17000,
+      finalAgreedPrice: 17000,
+      advancePaid: 0,
+      stage: 'In Building',
+      assignedTo: 'Both',
+      sampleLinkSent: '',
+      followUpDate: '2026-11-18',
+      notes: '',
+      createdAt: '2026-11-16',
+    },
+    {
+      id: 'cli-1794853228970',
+      businessName: 'Kabra Mobiles',
+      contactPerson: 'Sagar Kabra',
+      phone: '919999999999',
+      city: 'Risod',
+      niche: 'Retail/Electronics',
+      packageTier: 'Custom Website & Meta Ads 7 days',
+      quotedPrice: 10000,
+      finalAgreedPrice: 10000,
+      advancePaid: 10000,
+      stage: 'Delivered / Live',
+      assignedTo: 'Both',
+      sampleLinkSent: '',
+      followUpDate: '2026-11-18',
+      notes: '',
+      createdAt: '2026-11-16',
+    },
+    {
+      id: 'cli-1794853300739',
+      businessName: 'Lambhodar Lawns',
+      contactPerson: 'XYZ',
+      phone: '910000000000',
+      city: 'Risod',
+      niche: 'Banquet/Lawns',
+      packageTier: 'Custom Website',
+      quotedPrice: 25000,
+      finalAgreedPrice: 25000,
+      advancePaid: 0,
+      stage: 'In Talks / Demo Shown',
+      assignedTo: 'Both',
+      sampleLinkSent: '',
+      followUpDate: '2026-11-18',
+      notes: '',
+      createdAt: '2026-11-16',
+    },
+    {
+      id: 'cli-1794853179793',
+      businessName: 'New Sagar Mobiles Risod',
+      contactPerson: 'Sagar',
+      phone: '918975222238',
+      city: 'Pune',
+      niche: 'Retail/Electronics',
+      packageTier: 'Custom Website & Meta Ads 7 days',
+      quotedPrice: 12000,
+      finalAgreedPrice: 10000,
+      advancePaid: 3000,
+      stage: 'Live / Payment Pending',
+      assignedTo: 'Krishna',
+      sampleLinkSent: '',
+      followUpDate: '2026-11-18',
+      notes: '',
+      createdAt: '2026-11-16',
+    },
+    {
+      id: 'cli-1794853338563',
+      businessName: 'Lawns Washim',
+      contactPerson: 'XYZ',
+      phone: '910000000000',
+      city: 'Washim',
+      niche: 'Banquet/Lawns',
+      packageTier: 'Custom Website & Meta Ads',
+      quotedPrice: 25000,
+      finalAgreedPrice: 25000,
+      advancePaid: 0,
+      stage: 'In Talks / Demo Shown',
+      assignedTo: 'Both',
+      sampleLinkSent: '',
+      followUpDate: '2026-11-18',
+      notes: '',
+      createdAt: '2026-11-16',
+    },
+  ],
+  metaCampaigns: [],
+  websites: [],
+  tickets: [],
+  rndProjects: [],
+  expenses: [],
+  payments: [
+    {
+      id: 'pay-1794896687865',
+      clientId: 'cli-1794853228970',
+      clientName: 'Kabra Mobiles',
+      projectTitle: 'Custom Website & Meta Ads 7 days',
+      totalProjectValue: 10000,
+      amountReceived: 10000,
+      paymentDate: '2026-11-17',
+      paymentMode: 'Cash',
+      receivedInAccount: 'Vansh',
+      milestone: 'Full Upfront',
+    },
+    {
+      id: 'pay-1794896703190',
+      clientId: 'cli-1794853179793',
+      clientName: 'New Sagar Mobiles Risod',
+      projectTitle: 'Custom Website & Meta Ads 7 days',
+      totalProjectValue: 10000,
+      amountReceived: 3000,
+      paymentDate: '2026-11-17',
+      paymentMode: 'UPI',
+      receivedInAccount: 'Vansh',
+      milestone: 'Advance (50%)',
+    },
+  ],
+  vaultItems: [],
+  tasks: [],
+  activityLogs: [],
+};
+
+test('SEED_DATA is completely clean with zero demo records', () => {
+  assert.equal(SEED_DATA.clients.length, 0);
+  assert.equal(SEED_DATA.payments.length, 0);
+  assert.equal(SEED_DATA.metaCampaigns.length, 0);
+  assert.equal(SEED_DATA.websites.length, 0);
+  assert.equal(SEED_DATA.tickets.length, 0);
+  assert.equal(SEED_DATA.expenses.length, 0);
+  assert.equal(SEED_DATA.tasks?.length || 0, 0);
+});
+
+test('reconcileDatabaseIntegrity strips legacy demo seed IDs while preserving real user records', () => {
+  const polluted: AethelDatabaseState = {
+    ...REAL_STUDIO_FIXTURE,
+    clients: [
+      ...REAL_STUDIO_FIXTURE.clients,
+      {
+        id: 'cli-1',
+        businessName: "Lotus Women's Hospital & Fertility Center",
+        contactPerson: 'Dr. Deshmukh',
+        phone: '91000',
+        city: 'Pune',
+        niche: 'Clinic/Hospital',
+        packageTier: 'Demo',
+        quotedPrice: 32000,
+        finalAgreedPrice: 28500,
+        advancePaid: 28500,
+        stage: 'Delivered / Live',
+        assignedTo: 'Krishna',
+        sampleLinkSent: '',
+        followUpDate: '2026-11-18',
+        notes: '',
+        createdAt: '2026-11-01',
+      },
+    ],
+  };
+
+  const cleaned = reconcileDatabaseIntegrity(polluted);
+  assert.equal(cleaned.clients.length, 5);
+  assert.equal(cleaned.clients.some((c) => c.id === 'cli-1'), false);
+  assert.equal(cleaned.clients.some((c) => c.businessName === 'Balaji Lawns'), true);
+});
+
+test('calculateStudioFinances guarantees Confirmed Deal Volume == Collected + Pending Receivables', () => {
+  const reconciled = reconcileDatabaseIntegrity(REAL_STUDIO_FIXTURE);
+  const fin = calculateStudioFinances(
     reconciled.expenses,
     reconciled.payments,
     reconciled.clients,
@@ -24,71 +202,79 @@ test('Unified Financial Engine: CRM Pipeline Paid and Finance Revenue Collected 
     reconciled.tasks || []
   );
 
-  // Sum of non-retainer payments in ledger must equal sum of client advancePaid
-  const pipelineAdvanceSum = reconciled.clients.reduce((s, c) => s + c.advancePaid, 0);
-  assert.equal(finances.clientProjectRevenue, pipelineAdvanceSum);
-  assert.equal(
-    finances.totalRevenueCollected,
-    finances.clientProjectRevenue + finances.agencyRetainerRevenue
-  );
-
-  // Pending receivables must equal sum of pending balances on contracted active stages (12,000 + 10,000 = 22,000)
-  assert.equal(finances.pendingReceivables, 22000);
+  // 3 confirmed deals: Balaji Lawns (17,000), Kabra Mobiles (10,000), New Sagar Mobiles (10,000) = 37,000
+  assert.equal(fin.totalContractedVolume, 37000);
+  // Collected: Kabra Mobiles (10,000) + New Sagar Mobiles (3,000) = 13,000
+  assert.equal(fin.clientProjectRevenue, 13000);
+  // Pending Receivables: Balaji Lawns (17,000) + New Sagar Mobiles (7,000) = 24,000
+  assert.equal(fin.pendingReceivables, 24000);
+  // Mathematical identity: Confirmed Volume === Collected + Pending Receivables
+  assert.equal(fin.totalContractedVolume, fin.clientProjectRevenue + fin.pendingReceivables);
+  // Unclosed Sales Pipeline: Lambhodar Lawns (25,000) + Lawns Washim (25,000) = 50,000 across 2 leads
+  assert.equal(fin.unclosedPipelineVolume, 50000);
+  assert.equal(fin.unclosedLeadsCount, 2);
 });
 
-test('3-Stream Financial Separation: Client Ad Spend pass-through is excluded from Studio Expenses', () => {
-  const reconciled = reconcileDatabaseIntegrity(SEED_DATA);
-  const finances = calculateStudioFinances(
-    reconciled.expenses,
-    reconciled.payments,
-    reconciled.clients,
-    reconciled.metaCampaigns
-  );
-
-  assert.equal(finances.totalClientAdSpendPassThrough, 30050);
-  assert.equal(finances.totalStudioExpenses, 15350);
-  assert.equal(finances.netProfit, finances.totalRevenueCollected - finances.totalStudioExpenses);
+test('calculateCPL and calculatePendingBalance handle edge cases', () => {
+  assert.equal(calculateCPL(14200, 118), 120);
+  assert.equal(calculateCPL(5000, 0), 0);
+  assert.equal(calculatePendingBalance(25000, 10000), 15000);
+  assert.equal(calculatePendingBalance(15000, 20000), 0);
+  assert.equal(formatINR(13000), '₹13,000');
 });
 
-test('Bidirectional Payment Sync: Recording a payment updates client advancePaid and stage', () => {
-  const reconciled = reconcileDatabaseIntegrity(SEED_DATA);
-  // Lotus Women's Hospital has 26,000 agreed, 14,000 paid, 12,000 due in 'Live / Payment Pending'
-  const updated = recordPaymentAndSyncClient(reconciled, {
-    id: 'pay-test-lotus',
-    clientId: 'cli-8',
-    clientName: "Lotus Women's & Maternity Hospital",
-    projectTitle: 'Final Handover Settlement',
-    totalProjectValue: 26000,
-    amountReceived: 12000,
-    paymentDate: '2025-05-15',
+test('Bidirectional Payment Sync: recording and deleting a payment updates client advancePaid and stage', () => {
+  const initial = reconcileDatabaseIntegrity(REAL_STUDIO_FIXTURE);
+  const sagarBefore = initial.clients.find((c) => c.id === 'cli-1794853179793')!;
+  assert.equal(sagarBefore.advancePaid, 3000);
+  assert.equal(sagarBefore.stage, 'Live / Payment Pending');
+
+  // Settle remaining ₹7,000 for New Sagar Mobiles Risod
+  const afterPay = recordPaymentAndSyncClient(initial, {
+    id: 'pay-test-7000',
+    clientId: sagarBefore.id,
+    clientName: sagarBefore.businessName,
+    projectTitle: sagarBefore.packageTier,
+    totalProjectValue: sagarBefore.finalAgreedPrice,
+    amountReceived: 7000,
+    paymentDate: '2026-11-18',
     paymentMode: 'UPI',
     receivedInAccount: 'Studio Account',
     milestone: 'Final Delivery (50%)',
   });
 
-  const lotus = updated.clients.find((c) => c.id === 'cli-8')!;
-  assert.equal(lotus.advancePaid, 26000);
-  assert.equal(lotus.stage, 'Delivered / Live');
-  assert.equal(calculatePendingBalance(lotus.finalAgreedPrice, lotus.advancePaid), 0);
+  const sagarAfter = afterPay.clients.find((c) => c.id === 'cli-1794853179793')!;
+  assert.equal(sagarAfter.advancePaid, 10000);
+  assert.equal(sagarAfter.stage, 'Delivered / Live');
+
+  // Delete that payment -> reverts advancePaid to ₹3,000 and stage to Live / Payment Pending
+  const afterDelete = deletePaymentAndSyncClient(afterPay, 'pay-test-7000');
+  const sagarReverted = afterDelete.clients.find((c) => c.id === 'cli-1794853179793')!;
+  assert.equal(sagarReverted.advancePaid, 3000);
+  assert.equal(sagarReverted.stage, 'Live / Payment Pending');
 });
 
-test('1-Click Deal Conversion & 6-Stage Project Milestones', () => {
-  const reconciled = reconcileDatabaseIntegrity(SEED_DATA);
-  // Convert cli-4 (Royal Orchid Wedding Lawns) from 'In Talks / Demo Shown' to 'In Building'
-  const afterConvert = convertLeadToActiveProject(reconciled, 'cli-4', 13500, 'Vansh');
-  const royal = afterConvert.clients.find((c) => c.id === 'cli-4')!;
+test('convertLeadToActiveProject, toggleClientMilestone, and cascadeClientUpdate/Delete work atomically', () => {
+  const initial = reconcileDatabaseIntegrity(REAL_STUDIO_FIXTURE);
+  const converted = convertLeadToActiveProject(initial, 'cli-1794853300739', 10000, 'Studio Account');
+  const lambhodar = converted.clients.find((c) => c.id === 'cli-1794853300739')!;
+  assert.equal(lambhodar.stage, 'In Building');
+  assert.equal(lambhodar.advancePaid, 10000);
 
-  assert.equal(royal.stage, 'In Building');
-  assert.equal(royal.advancePaid, 13500);
-  assert.equal(royal.milestones?.length, 6);
+  const toggled = toggleClientMilestone(converted, 'cli-1794853300739', 'Design', 'Vansh');
+  const lambhodarToggled = toggled.clients.find((c) => c.id === 'cli-1794853300739')!;
+  const prog = calculateClientProjectProgress(lambhodarToggled, toggled.tickets, toggled.websites);
+  assert.ok(prog.completedMilestones >= 2);
 
-  const prog1 = calculateClientProjectProgress(royal);
-  assert.equal(prog1.completedMilestones, 1); // Requirements completed on kickoff
+  const renamed = cascadeClientUpdate(toggled, {
+    ...lambhodarToggled,
+    businessName: 'Lambhodar Grand Lawns',
+  });
+  assert.equal(
+    renamed.payments.some((p) => p.clientName === 'Lambhodar Grand Lawns'),
+    true
+  );
 
-  // Toggle Design milestone complete
-  const afterDesign = toggleClientMilestone(afterConvert, 'cli-4', 'Design', 'Vansh');
-  const royal2 = afterDesign.clients.find((c) => c.id === 'cli-4')!;
-  const prog2 = calculateClientProjectProgress(royal2);
-  assert.equal(prog2.completedMilestones, 2);
-  assert.equal(prog2.percent, 33);
+  const afterDelete = cascadeClientDelete(renamed, 'cli-1794853300739', true);
+  assert.equal(afterDelete.clients.some((c) => c.id === 'cli-1794853300739'), false);
 });

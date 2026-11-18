@@ -275,11 +275,21 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
               {filteredClients.length} total in CRM →
             </span>
           </div>
-          <div className="mt-2 pt-2 border-t border-[#F1F5F9] text-xs text-[#64748B] flex items-center justify-between">
-            <span>Contracted Volume</span>
-            <span className="font-mono font-bold text-[#0B0F19]">
-              {formatINR(finances.totalContractedVolume)}
-            </span>
+          <div className="mt-2 pt-2 border-t border-[#F1F5F9] text-xs text-[#64748B] space-y-1">
+            <div className="flex items-center justify-between">
+              <span>Confirmed Deal Volume</span>
+              <span className="font-mono font-bold text-[#0B0F19]">
+                {formatINR(finances.totalContractedVolume)}
+              </span>
+            </div>
+            {finances.unclosedLeadsCount > 0 && (
+              <div className="flex items-center justify-between text-[11px] text-[#64748B]">
+                <span>Unclosed Leads ({finances.unclosedLeadsCount})</span>
+                <span className="font-mono font-semibold text-[#475569]">
+                  {formatINR(finances.unclosedPipelineVolume)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 

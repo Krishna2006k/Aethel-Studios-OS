@@ -13,9 +13,15 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = path.join(__dirname, 'data');
 const DB_FILE_PATH = path.join(DATA_DIR, 'aethel-db.json');
 
+interface PersistedSupabaseConfig {
+  url: string;
+  anonKey: string;
+}
+
 interface PersistedDiskEnvelope {
   updatedAt: string;
   state: AethelDatabaseState;
+  supabaseConfig?: PersistedSupabaseConfig;
 }
 
 function ensureDataDir(): void {
@@ -46,7 +52,7 @@ async function loadOrInitializeDiskDb(): Promise<PersistedDiskEnvelope> {
         return parsed;
       }
     } catch {
-      // Fall through to re-seed if file is corrupted
+      // Fall through to initialize empty workspace if file is corrupted
     }
   }
 
@@ -84,6 +90,9 @@ async function startServer() {
       status: 'ok',
       engine: 'Aethel OS Persistent Backend Engine',
       updatedAt: currentEnvelope.updatedAt,
+      hasSupabaseConfig: Boolean(
+        currentEnvelope.supabaseConfig?.url && currentEnvelope.supabaseConfig?.anonKey
+      ),
       counts: {
         clients: currentEnvelope.state.clients.length,
         metaCampaigns: currentEnvelope.state.metaCampaigns.length,
@@ -115,9 +124,11 @@ async function startServer() {
       return;
     }
 
+    const reconciled = reconcileDatabaseIntegrity(incomingState);
     const nextEnvelope: PersistedDiskEnvelope = {
-      updatedAt: new Date().toISOString(),
-      state: reconcileDatabaseIntegrity(incomingState),
+      updatedAt: reconciled.lastUpdated || new Date().toISOString(),
+      state: reconciled,
+      supabaseConfig: req.body?.supabaseConfig ?? currentEnvelope.supabaseConfig,
     };
     writeEnvelopeAtomically(nextEnvelope);
     currentEnvelope = nextEnvelope;
@@ -128,11 +139,23 @@ async function startServer() {
     });
   });
 
+  app.post('/api/config/supabase', (req, res) => {
+    const url = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
+    const anonKey = typeof req.body?.anonKey === 'string' ? req.body.anonKey.trim() : '';
+    currentEnvelope = {
+      ...currentEnvelope,
+      supabaseConfig: url && anonKey ? { url, anonKey } : undefined,
+    };
+    writeEnvelopeAtomically(currentEnvelope);
+    res.json({ ok: true, supabaseConfig: currentEnvelope.supabaseConfig });
+  });
+
   app.post('/api/db/reset', async (_req, res) => {
     try {
       const freshEnvelope: PersistedDiskEnvelope = {
         updatedAt: new Date().toISOString(),
         state: reconcileDatabaseIntegrity(SEED_DATA),
+        supabaseConfig: currentEnvelope.supabaseConfig,
       };
       writeEnvelopeAtomically(freshEnvelope);
       currentEnvelope = freshEnvelope;

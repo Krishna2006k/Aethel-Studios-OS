@@ -14,11 +14,77 @@ function normalizeName(name: string): string {
   return (name || '').trim().toLowerCase();
 }
 
+/**
+ * Legacy demo seed IDs that must be automatically purged if present in
+ * older browser localStorage or older database snapshots.
+ */
+const DEMO_SEED_IDS = new Set([
+  'cli-1',
+  'cli-2',
+  'cli-3',
+  'cli-4',
+  'cli-5',
+  'cli-6',
+  'cli-7',
+  'cli-8',
+  'cli-9',
+  'meta-1',
+  'meta-2',
+  'meta-3',
+  'web-1',
+  'web-2',
+  'web-3',
+  'web-4',
+  'web-5',
+  'tkt-1',
+  'tkt-2',
+  'tkt-3',
+  'rnd-1',
+  'rnd-2',
+  'rnd-3',
+  'exp-1',
+  'exp-2',
+  'exp-3',
+  'exp-4',
+  'pay-1',
+  'pay-2',
+  'pay-3',
+  'pay-4',
+  'pay-5',
+  'pay-6',
+  'vlt-1',
+  'vlt-2',
+  'vlt-3',
+  'tsk-1',
+  'tsk-2',
+  'tsk-3',
+  'tsk-4',
+  'tsk-5',
+  'act-1',
+  'act-2',
+  'act-3',
+  'act-4',
+  'act-init-1',
+  'act-init-2',
+  'act-init-3',
+  'act-init-4',
+]);
+
+function isDemoId(id?: string): boolean {
+  if (!id) return false;
+  if (DEMO_SEED_IDS.has(id)) return true;
+  if (id.startsWith('task-seed-')) return true;
+  if (id.startsWith('pay-init-cli-') && DEMO_SEED_IDS.has(id.replace('pay-init-', ''))) {
+    return true;
+  }
+  return false;
+}
+
 export function appendActivityLog(
   state: AethelDatabaseState,
   entry: Omit<ActivityLogEntry, 'id' | 'timestamp'>
 ): ActivityLogEntry[] {
-  const existing = state.activityLogs || [];
+  const existing = (state.activityLogs || []).filter((a) => !isDemoId(a.id));
   const newItem: ActivityLogEntry = {
     id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     timestamp: new Date().toISOString(),
@@ -29,16 +95,18 @@ export function appendActivityLog(
 
 /**
  * Reconciles relational links across all modules in AethelDatabaseState:
- * 1. Links payments, websites, tickets, and Meta campaigns to clients by ID or case-insensitive businessName.
- * 2. Ensures every non-rejected client whose `advancePaid > 0` has corresponding verified payment ledger records
- *    so that CRM Pipeline `Paid` and Studio Finance `Revenue Collected` NEVER diverge.
- * 3. Backfills 6-stage `milestones`, `tasks`, and `activityLogs` on existing saved states.
+ * 1. Strips out any legacy demo seed records so only real studio records remain.
+ * 2. Normalizes legacy property names (location -> city, assignedLead -> assignedTo, planSelected -> packageTier).
+ * 3. Enforces 100% 1-to-1 consistency between `client.advancePaid` and `state.payments`
+ *    so CRM Pipeline, Overview, and Studio Finance NEVER diverge by even ₹1.
  */
 export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDatabaseState {
   const clientByName = new Map<string, ClientLead>();
   const clientById = new Map<string, ClientLead>();
 
-  const normalizedClients = (state.clients || []).map((rawClient) => {
+  const rawClients = (state.clients || []).filter((c) => !isDemoId(c.id));
+
+  const normalizedClients = rawClients.map((rawClient) => {
     const anyClient = rawClient as unknown as Record<string, unknown>;
     const cleanPrice = Math.max(0, Number(rawClient.finalAgreedPrice) || 0);
     const cleanQuoted = Math.max(0, Number(rawClient.quotedPrice) || cleanPrice);
@@ -48,8 +116,7 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
       (rawClient.assignedTo as FounderName) ||
       (anyClient.assignedLead as FounderName) ||
       'Both';
-    const resolvedCity =
-      rawClient.city || (anyClient.location as string) || 'Pune';
+    const resolvedCity = rawClient.city || (anyClient.location as string) || 'Pune';
     const resolvedPackageTier =
       rawClient.packageTier ||
       (anyClient.planSelected as string) ||
@@ -94,10 +161,11 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
     return updated;
   });
 
-  // Link and sum non-retainer payments per client
+  // Filter out demo payments and link real payments to clients
   const projectPaymentSumsByClientId = new Map<string, number>();
+  const rawPayments = (state.payments || []).filter((p) => !isDemoId(p.id));
 
-  const linkedPayments: ClientPayment[] = (state.payments || []).map((rawPay) => {
+  const linkedPayments: ClientPayment[] = rawPayments.map((rawPay) => {
     const anyPay = rawPay as unknown as Record<string, unknown>;
     const matchedClient =
       (rawPay.clientId && clientById.get(rawPay.clientId)) ||
@@ -150,38 +218,20 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
     };
   });
 
-  // Backfill missing payment ledger entries if a client has `advancePaid > recordedPayments`
-  // OR update client.advancePaid if recordedPayments > advancePaid.
-  // This guarantees 100% financial consistency between CRM Pipeline and Finance Ledger!
+  // Enforce strict 1-to-1 equality between `payments` ledger and `client.advancePaid`:
+  // - If a client has payment rows in `payments`, `client.advancePaid` = exact sum of those payments.
+  // - If a client was created with `advancePaid > 0` and has NO payment rows yet, create one verified payment row.
   const today = new Date().toISOString().slice(0, 10);
   const autoSyncedPayments: ClientPayment[] = [...linkedPayments];
 
   const finalClients = normalizedClients.map((c) => {
     const ledgerSum = projectPaymentSumsByClientId.get(c.id);
     if (ledgerSum !== undefined) {
-      if (c.advancePaid > ledgerSum) {
-        // Client has additional advancePaid not yet in payment log -> create verified ledger entry
-        const diff = c.advancePaid - ledgerSum;
-        autoSyncedPayments.unshift({
-          id: `pay-reconcile-${c.id}-${Date.now()}`,
-          clientId: c.id,
-          clientName: c.businessName,
-          projectTitle: `${c.packageTier} — Advance / Milestone Sync`,
-          totalProjectValue: c.finalAgreedPrice,
-          amountReceived: diff,
-          paymentDate: c.createdAt || today,
-          paymentMode: 'UPI',
-          receivedInAccount: c.assignedTo === 'Both' ? 'Studio Account' : c.assignedTo,
-          milestone: c.advancePaid >= c.finalAgreedPrice ? 'Full Upfront' : 'Advance (50%)',
-        });
-        return c;
-      }
       return {
         ...c,
         advancePaid: ledgerSum,
       };
     } else if (c.advancePaid > 0 && c.stage !== 'Rejected / Dropped') {
-      // Client has advancePaid in Pipeline but no payment row in Finance -> create verified ledger entry
       autoSyncedPayments.unshift({
         id: `pay-init-${c.id}`,
         clientId: c.id,
@@ -206,121 +256,68 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
     clientByName.set(normalizeName(c.businessName), c);
   });
 
-  const linkedCampaigns = (state.metaCampaigns || []).map((m) => {
-    const matched =
-      (m.clientId && clientById.get(m.clientId)) ||
-      clientByName.get(normalizeName(m.clientName));
-    return matched
-      ? { ...m, clientId: matched.id, clientName: matched.businessName }
-      : m;
-  });
+  const linkedCampaigns = (state.metaCampaigns || [])
+    .filter((m) => !isDemoId(m.id))
+    .map((m) => {
+      const matched =
+        (m.clientId && clientById.get(m.clientId)) ||
+        clientByName.get(normalizeName(m.clientName));
+      return matched
+        ? { ...m, clientId: matched.id, clientName: matched.businessName }
+        : m;
+    });
 
-  const linkedWebsites = (state.websites || []).map((w) => {
-    const matched =
-      (w.clientId && clientById.get(w.clientId)) ||
-      clientByName.get(normalizeName(w.clientName));
-    return matched
-      ? { ...w, clientId: matched.id, clientName: matched.businessName }
-      : w;
-  });
+  const linkedWebsites = (state.websites || [])
+    .filter((w) => !isDemoId(w.id))
+    .map((w) => {
+      const matched =
+        (w.clientId && clientById.get(w.clientId)) ||
+        clientByName.get(normalizeName(w.clientName));
+      return matched
+        ? { ...w, clientId: matched.id, clientName: matched.businessName }
+        : w;
+    });
 
-  const linkedTickets = (state.tickets || []).map((t) => {
-    const matched =
-      (t.clientId && clientById.get(t.clientId)) ||
-      clientByName.get(normalizeName(t.clientName));
-    return matched
-      ? { ...t, clientId: matched.id, clientName: matched.businessName }
-      : t;
-  });
+  const linkedTickets = (state.tickets || [])
+    .filter((t) => !isDemoId(t.id))
+    .map((t) => {
+      const matched =
+        (t.clientId && clientById.get(t.clientId)) ||
+        clientByName.get(normalizeName(t.clientName));
+      return matched
+        ? { ...t, clientId: matched.id, clientName: matched.businessName }
+        : t;
+    });
 
-  // Backfill tasks from follow-ups, filtering out any orphaned seed tasks whose clientId is not in finalClients
-  let tasks: StudioTask[] = (state.tasks || [])
-    .filter((task) => {
-      if (task.id.startsWith('tsk-') && task.clientId && !clientById.has(task.clientId)) {
-        return false;
-      }
-      return true;
-    })
+  const cleanRnDProjects = (state.rndProjects || []).filter((r) => !isDemoId(r.id));
+  const cleanExpenses = (state.expenses || []).filter((e) => !isDemoId(e.id));
+  const cleanVaultItems = (state.vaultItems || []).filter((v) => !isDemoId(v.id));
+
+  // Only keep real user tasks (never auto-generate fake seed tasks)
+  const tasks: StudioTask[] = (state.tasks || [])
+    .filter((task) => !isDemoId(task.id))
     .map((task) => {
       const matched =
         (task.clientId && clientById.get(task.clientId)) ||
         clientByName.get(normalizeName(task.clientName));
-      return matched
-        ? { ...task, clientId: matched.id, clientName: matched.businessName }
-        : task;
+      if (matched) {
+        // Auto-complete Payment Collection tasks if the client's balance is now 0
+        const pending = Math.max(0, matched.finalAgreedPrice - matched.advancePaid);
+        const autoCompleted =
+          task.type === 'Payment Collection' && pending === 0 ? 'Completed' : task.status;
+        return {
+          ...task,
+          clientId: matched.id,
+          clientName: matched.businessName,
+          status: autoCompleted,
+        };
+      }
+      return task;
     });
 
-  if (tasks.length === 0) {
-    tasks = finalClients
-      .filter((c) => c.stage !== 'Rejected / Dropped' && c.stage !== 'Delivered / Live')
-      .slice(0, 6)
-      .map((c, idx) => ({
-        id: `task-seed-${c.id}`,
-        clientId: c.id,
-        clientName: c.businessName,
-        title:
-          c.stage === 'Live / Payment Pending'
-            ? `Collect pending balance (₹${Math.max(0, c.finalAgreedPrice - c.advancePaid).toLocaleString('en-IN')})`
-            : c.stage === 'In Building'
-            ? `Complete next build milestone & share preview link`
-            : `Follow up with ${c.contactPerson} on proposal & demo`,
-        type:
-          c.stage === 'Live / Payment Pending'
-            ? 'Payment Collection'
-            : c.stage === 'In Building'
-            ? 'Delivery'
-            : 'Follow-up',
-        priority:
-          c.stage === 'Live / Payment Pending' || idx === 0
-            ? 'Urgent'
-            : idx < 3
-            ? 'High'
-            : 'Normal',
-        status: 'Pending',
-        assignedTo: c.assignedTo,
-        dueDate: c.followUpDate || today,
-        notes: c.notes || '',
-        createdAt: c.createdAt || today,
-      }));
-  }
-
-  let activityLogs: ActivityLogEntry[] = state.activityLogs || [];
-  if (activityLogs.length === 0) {
-    activityLogs = [
-      {
-        id: 'act-init-1',
-        actor: 'Krishna',
-        action: 'Verified unified financial ledger & CRM pipeline sync',
-        targetName: 'Aethel Studio Treasury',
-        category: 'Finance',
-        timestamp: new Date(Date.now() - 1000 * 60 * 18).toISOString(),
-      },
-      {
-        id: 'act-init-2',
-        actor: 'Vansh',
-        action: 'Updated active project milestones & deployment checklist',
-        targetName: finalClients[0]?.businessName || 'Client Portfolio',
-        category: 'Project',
-        timestamp: new Date(Date.now() - 1000 * 60 * 55).toISOString(),
-      },
-      {
-        id: 'act-init-3',
-        actor: 'Krishna',
-        action: 'Monitored active Meta Ads lead generation CPL metrics',
-        targetName: linkedCampaigns[0]?.clientName || 'Meta Ads Growth',
-        category: 'Growth',
-        timestamp: new Date(Date.now() - 1000 * 60 * 130).toISOString(),
-      },
-      {
-        id: 'act-init-4',
-        actor: 'Vansh',
-        action: 'Audited SSL certificates & domain renewal schedule',
-        targetName: linkedWebsites[0]?.domainName || 'Production Domains',
-        category: 'Domain',
-        timestamp: new Date(Date.now() - 1000 * 60 * 240).toISOString(),
-      },
-    ];
-  }
+  const activityLogs: ActivityLogEntry[] = (state.activityLogs || []).filter(
+    (a) => !isDemoId(a.id)
+  );
 
   return {
     ...state,
@@ -329,6 +326,9 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
     metaCampaigns: linkedCampaigns,
     websites: linkedWebsites,
     tickets: linkedTickets,
+    rndProjects: cleanRnDProjects,
+    expenses: cleanExpenses,
+    vaultItems: cleanVaultItems,
     tasks,
     activityLogs,
     lastUpdated: new Date().toISOString(),
@@ -361,16 +361,30 @@ export function cascadeClientUpdate(
     nextStage = 'Delivered / Live';
   }
 
+  // Sync milestones if stage changed (e.g. moved to Delivered / Live or In Building)
+  let nextMilestones =
+    updatedClient.milestones && updatedClient.milestones.length === 6
+      ? updatedClient.milestones
+      : getDefaultMilestonesForStage(nextStage, updatedClient.assignedTo);
+
+  if (existingClient && existingClient.stage !== nextStage) {
+    if (nextStage === 'Delivered / Live') {
+      const todayStr = new Date().toISOString().slice(0, 10);
+      nextMilestones = nextMilestones.map((m) => ({
+        ...m,
+        completed: true,
+        completedDate: m.completedDate || todayStr,
+      }));
+    }
+  }
+
   const normalizedUpdatedClient: ClientLead = {
     ...updatedClient,
     businessName: newName,
     finalAgreedPrice: cleanAgreed,
     advancePaid: cleanAdvance,
     stage: nextStage,
-    milestones:
-      updatedClient.milestones && updatedClient.milestones.length === 6
-        ? updatedClient.milestones
-        : getDefaultMilestonesForStage(nextStage, updatedClient.assignedTo),
+    milestones: nextMilestones,
   };
 
   const nextClients = state.clients.map((c) =>
@@ -392,7 +406,8 @@ export function cascadeClientUpdate(
 
   const existingProjectPayments = nextPayments.filter(
     (p) =>
-      (p.clientId === normalizedUpdatedClient.id || normalizeName(p.clientName) === normalizeName(newName)) &&
+      (p.clientId === normalizedUpdatedClient.id ||
+        normalizeName(p.clientName) === normalizeName(newName)) &&
       p.milestone !== 'Meta Ads Retainer' &&
       p.milestone !== 'Domain Renewal'
   );
@@ -481,7 +496,10 @@ export function cascadeClientUpdate(
   });
 
   const nextLogs = appendActivityLog(state, {
-    actor: normalizedUpdatedClient.assignedTo === 'Both' ? 'Krishna' : normalizedUpdatedClient.assignedTo,
+    actor:
+      normalizedUpdatedClient.assignedTo === 'Both'
+        ? 'Krishna'
+        : normalizedUpdatedClient.assignedTo,
     action:
       delta > 0
         ? `Recorded ₹${delta.toLocaleString('en-IN')} payment & updated ${newName}`
@@ -490,7 +508,7 @@ export function cascadeClientUpdate(
     category: delta > 0 ? 'Finance' : 'CRM',
   });
 
-  return {
+  return reconcileDatabaseIntegrity({
     ...state,
     clients: nextClients,
     payments: nextPayments,
@@ -500,11 +518,11 @@ export function cascadeClientUpdate(
     tasks: nextTasks,
     activityLogs: nextLogs,
     lastUpdated: new Date().toISOString(),
-  };
+  });
 }
 
 /**
- * 1-Click Deal Conversion (Part 3 & Part 8):
+ * 1-Click Deal Conversion:
  * Converts a sales lead into an Active Project ('In Building'), initializes
  * the 6 delivery milestones, creates a kick-off delivery task, and logs activity.
  */
@@ -525,7 +543,7 @@ export function convertLeadToActiveProject(
 
   const milestones = STANDARD_MILESTONE_STAGES.map((stage, idx) => ({
     stage,
-    completed: idx === 0, // Requirements marked complete on kick-off
+    completed: idx === 0,
     completedDate: idx === 0 ? today : undefined,
     owner: client.assignedTo,
   }));
@@ -539,7 +557,6 @@ export function convertLeadToActiveProject(
 
   let nextState = cascadeClientUpdate(state, updatedClient);
 
-  // If receivedBy was specified and advanceReceivedNow > 0, tag the latest payment
   if (advanceReceivedNow && advanceReceivedNow > 0 && nextState.payments.length > 0) {
     nextState = {
       ...nextState,
@@ -551,7 +568,6 @@ export function convertLeadToActiveProject(
     };
   }
 
-  // Create an initial kick-off delivery task if none exists
   const kickoffTask: StudioTask = {
     id: `task-kickoff-${Date.now()}`,
     clientId: client.id,
@@ -573,12 +589,12 @@ export function convertLeadToActiveProject(
     category: 'Project',
   });
 
-  return {
+  return reconcileDatabaseIntegrity({
     ...nextState,
     tasks: [kickoffTask, ...(nextState.tasks || [])],
     activityLogs: nextLogs,
     lastUpdated: new Date().toISOString(),
-  };
+  });
 }
 
 /**
@@ -615,14 +631,17 @@ export function toggleClientMilestone(
   if (completedCount === 6) {
     const pending = Math.max(0, client.finalAgreedPrice - client.advancePaid);
     nextStage = pending > 0 ? 'Live / Payment Pending' : 'Delivered / Live';
-  } else if (completedCount >= 1 && (client.stage === 'Cold Lead' || client.stage === 'Sample Sent / WhatsApp' || client.stage === 'In Talks / Demo Shown')) {
+  } else if (
+    completedCount >= 1 &&
+    (client.stage === 'Cold Lead' ||
+      client.stage === 'Sample Sent / WhatsApp' ||
+      client.stage === 'In Talks / Demo Shown')
+  ) {
     nextStage = 'In Building';
   }
 
   const nextClients = state.clients.map((c) =>
-    c.id === clientId
-      ? { ...c, stage: nextStage, milestones: updatedMilestones }
-      : c
+    c.id === clientId ? { ...c, stage: nextStage, milestones: updatedMilestones } : c
   );
 
   const toggledItem = updatedMilestones.find((m) => m.stage === milestoneStage);
@@ -633,16 +652,16 @@ export function toggleClientMilestone(
     category: 'Project',
   });
 
-  return {
+  return reconcileDatabaseIntegrity({
     ...state,
     clients: nextClients,
     activityLogs: nextLogs,
     lastUpdated: new Date().toISOString(),
-  };
+  });
 }
 
 /**
- * Deletes a client from the pipeline and optionally removes or unlinks associated records.
+ * Deletes a client from the pipeline and removes associated records.
  */
 export function cascadeClientDelete(
   state: AethelDatabaseState,
@@ -662,15 +681,15 @@ export function cascadeClientDelete(
   });
 
   if (!deleteLinkedRecords) {
-    return {
+    return reconcileDatabaseIntegrity({
       ...state,
       clients: nextClients,
       activityLogs: nextLogs,
       lastUpdated: new Date().toISOString(),
-    };
+    });
   }
 
-  return {
+  return reconcileDatabaseIntegrity({
     ...state,
     clients: nextClients,
     payments: state.payments.filter(
@@ -690,7 +709,7 @@ export function cascadeClientDelete(
     ),
     activityLogs: nextLogs,
     lastUpdated: new Date().toISOString(),
-  };
+  });
 }
 
 /**
@@ -762,13 +781,13 @@ export function recordPaymentAndSyncClient(
     category: 'Finance',
   });
 
-  return {
+  return reconcileDatabaseIntegrity({
     ...state,
     clients: nextClients,
     payments: nextPayments,
     activityLogs: nextLogs,
     lastUpdated: new Date().toISOString(),
-  };
+  });
 }
 
 /**
@@ -817,11 +836,11 @@ export function deletePaymentAndSyncClient(
     category: 'Finance',
   });
 
-  return {
+  return reconcileDatabaseIntegrity({
     ...state,
     clients: nextClients,
     payments: nextPayments,
     activityLogs: nextLogs,
     lastUpdated: new Date().toISOString(),
-  };
+  });
 }

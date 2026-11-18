@@ -18,6 +18,18 @@ export const STANDARD_MILESTONE_STAGES: ProjectMilestoneStage[] = [
   'Handover',
 ];
 
+export const CONFIRMED_DEAL_STAGES: ClientLead['stage'][] = [
+  'In Building',
+  'Live / Payment Pending',
+  'Delivered / Live',
+];
+
+export const UNCLOSED_LEAD_STAGES: ClientLead['stage'][] = [
+  'Cold Lead',
+  'Sample Sent / WhatsApp',
+  'In Talks / Demo Shown',
+];
+
 export function formatINR(amount: number): string {
   const safe = Number.isFinite(amount) ? Math.round(amount) : 0;
   return new Intl.NumberFormat('en-IN', {
@@ -127,6 +139,8 @@ export interface StudioFinanceSummary {
   netProfit: number;
   pendingReceivables: number;
   totalContractedVolume: number;
+  unclosedPipelineVolume: number;
+  totalAllPipelineVolume: number;
   totalAdBudgetManaged: number;
   totalClientAdSpendPassThrough: number;
   totalMetaAgencyFees: number;
@@ -142,15 +156,16 @@ export interface StudioFinanceSummary {
   krishnaProfitShare50: number;
   settlementSummary: string;
   activeClientsCount: number;
+  unclosedLeadsCount: number;
   activeProjectsCount: number;
   livePaymentPendingCount: number;
   outstandingTasksCount: number;
 }
 
 /**
- * SINGLE CANONICAL FINANCIAL ENGINE (Part 5 & Part 13)
- * Used across Command Center, CRM Pipeline, and Studio Finance & Ledger so
- * Revenue Collected, Pending Receivables, Expenses, and Ad Spend never diverge.
+ * SINGLE CANONICAL FINANCIAL ENGINE
+ * Guarantees 100% mathematical consistency across Overview, CRM Pipeline, and Finance:
+ * Confirmed Contracted Volume === Project Revenue Collected + Pending Receivables
  */
 export function calculateStudioFinances(
   expenses: StudioExpense[],
@@ -160,63 +175,70 @@ export function calculateStudioFinances(
   tickets: ClientTicket[] = [],
   tasks: StudioTask[] = []
 ): StudioFinanceSummary {
-  // 1. Canonical Revenue Collected:
-  // If payments exist for a client, sum their verified payment entries;
-  // also ensure any client with advancePaid > sum(payments for that client) is reconciled so
-  // Pipeline Paid and Finance Collected match 100% to the rupee.
-  const paymentSumByClient = new Map<string, number>();
+  // 1. Canonical Revenue Collected from verified payments
   let rawPaymentsTotal = 0;
   let agencyRetainerRevenue = 0;
 
   for (const p of payments) {
-    const amt = Number(p.amountReceived) || 0;
+    const amt = Math.max(0, Number(p.amountReceived) || 0);
     rawPaymentsTotal += amt;
     if (p.milestone === 'Meta Ads Retainer') {
       agencyRetainerRevenue += amt;
     }
-    const key = p.clientId || p.clientName.toLowerCase().trim();
-    paymentSumByClient.set(key, (paymentSumByClient.get(key) || 0) + amt);
   }
 
-  // Check if any non-rejected client has advancePaid exceeding recorded client project payments
-  let unloggedAdvanceDelta = 0;
-  for (const c of clients) {
-    if (c.stage === 'Rejected / Dropped') continue;
-    const byId = paymentSumByClient.get(c.id) || 0;
-    const byName = paymentSumByClient.get(c.businessName.toLowerCase().trim()) || 0;
-    const recordedForClient = Math.max(byId, byName);
-    const clientAdvance = Number(c.advancePaid) || 0;
-    if (clientAdvance > recordedForClient) {
-      unloggedAdvanceDelta += clientAdvance - recordedForClient;
-    }
-  }
-
-  const totalRevenueCollected = rawPaymentsTotal + unloggedAdvanceDelta;
+  const totalRevenueCollected = rawPaymentsTotal;
   const clientProjectRevenue = Math.max(0, totalRevenueCollected - agencyRetainerRevenue);
 
-  // 2. Studio Operational Expenses (Strictly excluding client pass-through ad spend unless paid by studio)
+  // 2. Studio Operational Expenses & Net Profit
   const totalStudioExpenses = expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
   const netProfit = totalRevenueCollected - totalStudioExpenses;
 
-  // 3. Canonical Pending Receivables & Contracted Volume (Active/Delivered/Building deals)
-  const billableStages: ClientLead['stage'][] = [
-    'In Building',
-    'Live / Payment Pending',
-    'Delivered / Live',
-  ];
+  // 3. Confirmed Deals vs Unclosed Sales Pipeline
+  // Confirmed Deals: 'In Building', 'Live / Payment Pending', 'Delivered / Live' (or any lead where advancePaid > 0)
+  const confirmedClients = clients.filter(
+    (c) =>
+      c.stage !== 'Rejected / Dropped' &&
+      (CONFIRMED_DEAL_STAGES.includes(c.stage) || (Number(c.advancePaid) || 0) > 0)
+  );
 
-  const pendingReceivables = clients
-    .filter((c) => billableStages.includes(c.stage))
-    .reduce((sum, c) => sum + calculatePendingBalance(c.finalAgreedPrice, c.advancePaid), 0);
+  const unclosedLeads = clients.filter(
+    (c) =>
+      c.stage !== 'Rejected / Dropped' &&
+      !CONFIRMED_DEAL_STAGES.includes(c.stage) &&
+      (Number(c.advancePaid) || 0) === 0
+  );
 
-  const totalContractedVolume = clients
-    .filter((c) => c.stage !== 'Rejected / Dropped')
-    .reduce((sum, c) => sum + (Number(c.finalAgreedPrice) || 0), 0);
+  const totalContractedVolume = confirmedClients.reduce(
+    (sum, c) => sum + (Number(c.finalAgreedPrice) || 0),
+    0
+  );
+
+  const pendingReceivables = confirmedClients.reduce(
+    (sum, c) => sum + calculatePendingBalance(c.finalAgreedPrice, c.advancePaid),
+    0
+  );
+
+  const unclosedPipelineVolume = unclosedLeads.reduce(
+    (sum, c) => sum + (Number(c.finalAgreedPrice) || 0),
+    0
+  );
+
+  const totalAllPipelineVolume = totalContractedVolume + unclosedPipelineVolume;
 
   // 4. Meta Ads Separation: Client Ad Spend (Pass-through) vs Agency Retainer Fees
-  const totalAdBudgetManaged = metaCampaigns.reduce((sum, m) => sum + (Number(m.totalBudget) || 0), 0);
-  const totalClientAdSpendPassThrough = metaCampaigns.reduce((sum, m) => sum + (Number(m.amountSpent) || 0), 0);
-  const totalMetaAgencyFees = metaCampaigns.reduce((sum, m) => sum + (Number(m.agencyFee) || 0), 0);
+  const totalAdBudgetManaged = metaCampaigns.reduce(
+    (sum, m) => sum + (Number(m.totalBudget) || 0),
+    0
+  );
+  const totalClientAdSpendPassThrough = metaCampaigns.reduce(
+    (sum, m) => sum + (Number(m.amountSpent) || 0),
+    0
+  );
+  const totalMetaAgencyFees = metaCampaigns.reduce(
+    (sum, m) => sum + (Number(m.agencyFee) || 0),
+    0
+  );
 
   // 5. Founder Out-of-Pocket & Settlement Math
   const vanshOutOfPocketUnreimbursed = expenses
@@ -251,29 +273,37 @@ export function calculateStudioFinances(
     .filter((p) => p.receivedInAccount === 'Studio Account')
     .reduce((sum, p) => sum + (Number(p.amountReceived) || 0), 0);
 
-  const equalOutOfPocketTarget = (vanshOutOfPocketUnreimbursed + krishnaOutOfPocketUnreimbursed) / 2;
-  let settlementSummary = 'Both founders have equal personal out-of-pocket spend (₹0 net difference).';
+  const equalOutOfPocketTarget =
+    (vanshOutOfPocketUnreimbursed + krishnaOutOfPocketUnreimbursed) / 2;
+  let settlementSummary =
+    'Both founders have equal personal out-of-pocket spend (₹0 net difference).';
   if (vanshOutOfPocketUnreimbursed > krishnaOutOfPocketUnreimbursed) {
     const diff = Math.round(vanshOutOfPocketUnreimbursed - equalOutOfPocketTarget);
-    settlementSummary = `Vansh has paid ${formatINR(vanshOutOfPocketUnreimbursed - krishnaOutOfPocketUnreimbursed)} more out-of-pocket than Krishna. Studio owes Vansh ${formatINR(vanshOutOfPocketUnreimbursed)} (or Krishna pays Vansh ${formatINR(diff)} to equalize).`;
+    settlementSummary = `Vansh has paid ${formatINR(
+      vanshOutOfPocketUnreimbursed - krishnaOutOfPocketUnreimbursed
+    )} more out-of-pocket than Krishna. Studio owes Vansh ${formatINR(
+      vanshOutOfPocketUnreimbursed
+    )} (or Krishna pays Vansh ${formatINR(diff)} to equalize).`;
   } else if (krishnaOutOfPocketUnreimbursed > vanshOutOfPocketUnreimbursed) {
     const diff = Math.round(krishnaOutOfPocketUnreimbursed - equalOutOfPocketTarget);
-    settlementSummary = `Krishna has paid ${formatINR(krishnaOutOfPocketUnreimbursed - vanshOutOfPocketUnreimbursed)} more out-of-pocket than Vansh. Studio owes Krishna ${formatINR(krishnaOutOfPocketUnreimbursed)} (or Vansh pays Krishna ${formatINR(diff)} to equalize).`;
+    settlementSummary = `Krishna has paid ${formatINR(
+      krishnaOutOfPocketUnreimbursed - vanshOutOfPocketUnreimbursed
+    )} more out-of-pocket than Vansh. Studio owes Krishna ${formatINR(
+      krishnaOutOfPocketUnreimbursed
+    )} (or Vansh pays Krishna ${formatINR(diff)} to equalize).`;
   }
 
-  const activeClientsCount = clients.filter(
-    (c) =>
-      c.stage === 'In Building' ||
-      c.stage === 'Live / Payment Pending' ||
-      c.stage === 'Delivered / Live'
-  ).length;
+  const activeClientsCount = confirmedClients.length;
+  const unclosedLeadsCount = unclosedLeads.length;
 
   const activeProjectsCount = clients.filter(
     (c) => c.stage === 'In Building' || c.stage === 'Live / Payment Pending'
   ).length;
 
   const livePaymentPendingCount = clients.filter(
-    (c) => c.stage === 'Live / Payment Pending' && calculatePendingBalance(c.finalAgreedPrice, c.advancePaid) > 0
+    (c) =>
+      c.stage === 'Live / Payment Pending' &&
+      calculatePendingBalance(c.finalAgreedPrice, c.advancePaid) > 0
   ).length;
 
   const openTicketsCount = tickets.filter((t) => t.status !== 'Resolved').length;
@@ -288,6 +318,8 @@ export function calculateStudioFinances(
     netProfit,
     pendingReceivables,
     totalContractedVolume,
+    unclosedPipelineVolume,
+    totalAllPipelineVolume,
     totalAdBudgetManaged,
     totalClientAdSpendPassThrough,
     totalMetaAgencyFees,
@@ -303,6 +335,7 @@ export function calculateStudioFinances(
     krishnaProfitShare50: Math.round(netProfit / 2),
     settlementSummary,
     activeClientsCount,
+    unclosedLeadsCount,
     activeProjectsCount,
     livePaymentPendingCount,
     outstandingTasksCount,

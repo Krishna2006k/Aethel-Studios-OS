@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   Plus,
@@ -127,6 +127,8 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
   const [quickCampaignBudget, setQuickCampaignBudget] = useState(12000);
   const [quickCampaignFee, setQuickCampaignFee] = useState(4000);
   const [quickDomainName, setQuickDomainName] = useState('');
+  const [draftOverview, setDraftOverview] = useState<ClientLead | null>(null);
+  const [overviewSavedNotice, setOverviewSavedNotice] = useState(false);
 
   // New Client Lead Form State
   const [businessName, setBusinessName] = useState('');
@@ -221,6 +223,15 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
     ? clients.find((c) => c.id === selectedClient360Id) || null
     : null;
 
+  useEffect(() => {
+    if (activeClient360) {
+      setDraftOverview(activeClient360);
+      setOverviewSavedNotice(false);
+    } else {
+      setDraftOverview(null);
+    }
+  }, [activeClient360?.id]);
+
   const generateWhatsAppPitch = (client: ClientLead) => {
     const cleanPhone = client.phone.replace(/[^0-9]/g, '');
     const balance = calculatePendingBalance(client.finalAgreedPrice, client.advancePaid);
@@ -312,13 +323,13 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-[#F1F5F9]">
           <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
             <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
-              Contracted Deal Volume
+              Confirmed Deal Volume
             </div>
             <div className="text-xl font-extrabold font-mono text-[#0B0F19] mt-0.5">
               {formatINR(canonicalFinances.totalContractedVolume)}
             </div>
             <div className="text-[11px] text-[#64748B] mt-0.5">
-              Across {clients.filter((c) => c.stage !== 'Rejected / Dropped').length} active/pitched deals
+              {canonicalFinances.activeClientsCount} active/delivered (= Collected + Pending)
             </div>
           </div>
 
@@ -336,25 +347,25 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
 
           <div className="p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200">
             <div className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
-              Pending Receivables
+              Pending Receivables (Active)
             </div>
             <div className="text-xl font-extrabold font-mono text-amber-700 mt-0.5">
               {formatINR(canonicalFinances.pendingReceivables)}
             </div>
             <div className="text-[11px] text-amber-800 mt-0.5">
-              {canonicalFinances.livePaymentPendingCount} live sites awaiting final balance
+              {canonicalFinances.livePaymentPendingCount} live sites · {canonicalFinances.activeProjectsCount} total active builds
             </div>
           </div>
 
           <div className="p-3.5 rounded-2xl bg-[#EFF6FF]/60 border border-[#BFDBFE]">
             <div className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB]">
-              Projects In Building / Live
+              Unclosed Sales Pipeline
             </div>
             <div className="text-xl font-extrabold font-mono text-[#1E40AF] mt-0.5">
-              {canonicalFinances.activeProjectsCount} Active · {canonicalFinances.activeClientsCount} Total
+              {formatINR(canonicalFinances.unclosedPipelineVolume)}
             </div>
             <div className="text-[11px] text-[#2563EB] mt-0.5">
-              6-stage delivery milestone tracking
+              {canonicalFinances.unclosedLeadsCount} leads in talks/sample stage
             </div>
           </div>
         </div>
@@ -735,8 +746,12 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
 
                       {/* Pending */}
                       <td className="py-3 px-3 text-right font-mono font-bold whitespace-nowrap">
-                        {pending > 0 ? (
-                          <span className="text-amber-700">{formatINR(pending)}</span>
+                        {isLeadStage && client.advancePaid === 0 ? (
+                          <span className="text-[#64748B] font-medium">
+                            Quote: {formatINR(client.finalAgreedPrice)}
+                          </span>
+                        ) : pending > 0 ? (
+                          <span className="text-amber-700">{formatINR(pending)} Due</span>
                         ) : (
                           <span className="text-[#059669]">₹0 Settled</span>
                         )}
@@ -1100,9 +1115,17 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
 
               {/* TAB CONTENT AREA */}
               <div className="flex-1 overflow-y-auto p-5 sm:p-7 space-y-6">
-                {/* TAB 1: OVERVIEW */}
-                {active360Tab === 'overview' && (
-                  <div className="space-y-5">
+                {/* TAB 1: OVERVIEW (Buffered editing so typing never fires partial updates) */}
+                {active360Tab === 'overview' && draftOverview && (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      onUpdateClient(draftOverview);
+                      setOverviewSavedNotice(true);
+                      setTimeout(() => setOverviewSavedNotice(false), 2500);
+                    }}
+                    className="space-y-5"
+                  >
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
@@ -1110,9 +1133,9 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                         </label>
                         <input
                           type="text"
-                          value={client.businessName}
+                          value={draftOverview.businessName}
                           onChange={(e) =>
-                            onUpdateClient({ ...client, businessName: e.target.value })
+                            setDraftOverview({ ...draftOverview, businessName: e.target.value })
                           }
                           className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-bold"
                         />
@@ -1122,9 +1145,12 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                           Pipeline Stage
                         </label>
                         <select
-                          value={client.stage}
+                          value={draftOverview.stage}
                           onChange={(e) =>
-                            onUpdateClient({ ...client, stage: e.target.value as LeadStage })
+                            setDraftOverview({
+                              ...draftOverview,
+                              stage: e.target.value as LeadStage,
+                            })
                           }
                           className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-bold bg-white"
                         >
@@ -1141,9 +1167,12 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                         </label>
                         <input
                           type="text"
-                          value={client.contactPerson}
+                          value={draftOverview.contactPerson}
                           onChange={(e) =>
-                            onUpdateClient({ ...client, contactPerson: e.target.value })
+                            setDraftOverview({
+                              ...draftOverview,
+                              contactPerson: e.target.value,
+                            })
                           }
                           className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
                         />
@@ -1154,9 +1183,9 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                         </label>
                         <input
                           type="text"
-                          value={client.phone}
+                          value={draftOverview.phone}
                           onChange={(e) =>
-                            onUpdateClient({ ...client, phone: e.target.value })
+                            setDraftOverview({ ...draftOverview, phone: e.target.value })
                           }
                           className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
                         />
@@ -1167,9 +1196,9 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                         </label>
                         <input
                           type="text"
-                          value={client.packageTier}
+                          value={draftOverview.packageTier}
                           onChange={(e) =>
-                            onUpdateClient({ ...client, packageTier: e.target.value })
+                            setDraftOverview({ ...draftOverview, packageTier: e.target.value })
                           }
                           className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-semibold"
                         />
@@ -1180,10 +1209,10 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                         </label>
                         <input
                           type="number"
-                          value={client.finalAgreedPrice}
+                          value={draftOverview.finalAgreedPrice}
                           onChange={(e) =>
-                            onUpdateClient({
-                              ...client,
+                            setDraftOverview({
+                              ...draftOverview,
                               finalAgreedPrice: Number(e.target.value),
                             })
                           }
@@ -1195,10 +1224,10 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                           Assigned Co-Founder
                         </label>
                         <select
-                          value={client.assignedTo}
+                          value={draftOverview.assignedTo}
                           onChange={(e) =>
-                            onUpdateClient({
-                              ...client,
+                            setDraftOverview({
+                              ...draftOverview,
                               assignedTo: e.target.value as FounderName,
                             })
                           }
@@ -1217,14 +1246,30 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                       </label>
                       <textarea
                         rows={3}
-                        value={client.notes}
+                        value={draftOverview.notes}
                         onChange={(e) =>
-                          onUpdateClient({ ...client, notes: e.target.value })
+                          setDraftOverview({ ...draftOverview, notes: e.target.value })
                         }
                         className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm"
                       />
                     </div>
-                  </div>
+
+                    <div className="flex items-center justify-between pt-2">
+                      <div>
+                        {overviewSavedNotice && (
+                          <span className="text-xs font-bold text-[#059669] flex items-center gap-1">
+                            <CheckCircle2 className="w-4 h-4" /> Client details saved & synced across all modules.
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="submit"
+                        className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-xs cursor-pointer"
+                      >
+                        <Save className="w-3.5 h-3.5" /> Save Client Details
+                      </button>
+                    </div>
+                  </form>
                 )}
 
                 {/* TAB 2: PROJECTS & 6-STAGE MILESTONES */}
