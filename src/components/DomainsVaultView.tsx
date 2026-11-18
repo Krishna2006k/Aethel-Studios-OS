@@ -9,21 +9,27 @@ import {
   GitBranch,
   Calendar,
   ArrowUpRight,
+  Trash2,
+  CheckCircle2,
 } from 'lucide-react';
-import { HostedWebsite } from '../types';
+import { ClientLead, ExpensePaidBy, HostedWebsite } from '../types';
 import { calculateDaysUntilExpiry, formatINR } from '../utils/calculations';
 
 interface DomainsVaultViewProps {
   websites: HostedWebsite[];
+  clients?: ClientLead[];
   onUpdateWebsite: (updated: HostedWebsite) => void;
   onAddWebsite: (newSite: HostedWebsite) => void;
+  onDeleteWebsite?: (websiteId: string) => void;
   onOpenClient360?: (clientId: string) => void;
 }
 
 export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
   websites,
+  clients = [],
   onUpdateWebsite,
   onAddWebsite,
+  onDeleteWebsite,
   onOpenClient360,
 }) => {
   const [showAdd, setShowAdd] = useState(false);
@@ -35,16 +41,23 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
   const [expiryDate, setExpiryDate] = useState(
     new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10)
   );
-  const [renewalCostINR, setRenewalCostINR] = useState(1499);
+  const [renewalCostINR, setRenewalCostINR] = useState(1081);
+  const [paidBy, setPaidBy] = useState<ExpensePaidBy>('Vansh');
   const [githubRepo, setGithubRepo] = useState('');
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!domainName.trim()) return;
     const cleanDomain = domainName.trim().replace(/^https?:\/\//, '');
+    const matched = clients.find(
+      (c) =>
+        c.businessName.toLowerCase() === clientName.trim().toLowerCase() ||
+        c.businessName.toLowerCase().includes(clientName.trim().toLowerCase())
+    );
     onAddWebsite({
       id: `web-${Date.now()}`,
-      clientName: clientName.trim() || 'Aethel Client',
+      clientId: matched?.id,
+      clientName: matched ? matched.businessName : clientName.trim() || 'Aethel Client',
       domainName: cleanDomain,
       liveUrl: `https://${cleanDomain}`,
       registrar,
@@ -56,6 +69,7 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
       siteStatus: 'Online',
       githubRepo: githubRepo.trim() || `aethel-studios/${cleanDomain.split('.')[0]}`,
       notes: 'Configured with edge caching & SSL.',
+      paidBy,
     });
     setClientName('');
     setDomainName('');
@@ -74,13 +88,13 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
       <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] mb-1">
-            GROWTH & INFRASTRUCTURE · DOMAINS, SSL & HOSTING
+            GROWTH &amp; INFRASTRUCTURE · DOMAINS, SSL &amp; HOSTING (AUTO-SYNCED TO FINANCE)
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
-            Live Websites & Renewal Calendar
+            Live Websites &amp; Renewal Calendar
           </h1>
           <p className="text-xs sm:text-sm text-[#64748B] mt-0.5">
-            Track registrar renewals, SSL health, Vercel/Hostinger deployments, and client ownership.
+            Every domain cost and payer (<strong>Vansh</strong>, <strong>Krishna</strong>, or <strong>Studio Account</strong>) automatically syncs 1-to-1 with <strong>Studio Finance &amp; Expenses</strong>.
           </p>
         </div>
         <button
@@ -92,15 +106,15 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
         </button>
       </div>
 
-      {/* PART 5: DOMAIN RENEWAL TIMELINE & CALENDAR STRIP */}
+      {/* DOMAIN RENEWAL TIMELINE & CALENDAR STRIP */}
       <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs font-extrabold text-[#0B0F19]">
             <Calendar className="w-4 h-4 text-[#2563EB]" /> Upcoming Domain Renewal Schedule
           </div>
           <span className="text-[11px] font-mono text-[#64748B]">
-            Annual Renewal Liability:{' '}
-            <strong className="text-[#0B0F19]">
+            Total Domain Cost Synced to Finance:{' '}
+            <strong className="text-[#059669]">
               {formatINR(websites.reduce((s, w) => s + w.renewalCostINR, 0))}/yr
             </strong>
           </span>
@@ -130,7 +144,12 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
                 <div className="font-mono font-bold text-[#0B0F19] truncate mt-1">
                   {site.domainName}
                 </div>
-                <div className="text-[11px] text-[#64748B] truncate">{site.clientName}</div>
+                <div className="text-[11px] text-[#64748B] truncate flex items-center justify-between mt-0.5">
+                  <span className="truncate">{site.clientName}</span>
+                  <span className="text-[10px] font-bold text-[#059669]">
+                    {site.paidBy || 'Vansh'}
+                  </span>
+                </div>
               </div>
             );
           })}
@@ -142,7 +161,7 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
           onSubmit={handleCreate}
           className="bg-white rounded-3xl p-6 border-2 border-[#2563EB]/20 shadow-lg space-y-4"
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
                 Domain Name *
@@ -152,7 +171,7 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
                 required
                 value={domainName}
                 onChange={(e) => setDomainName(e.target.value)}
-                placeholder="imperialpavilion.in"
+                placeholder="kabramobiles.com"
                 className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
               />
             </div>
@@ -162,11 +181,17 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
               </label>
               <input
                 type="text"
+                list="domain-client-list"
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
-                placeholder="The Imperial Pavilion"
+                placeholder="Kabra Mobiles"
                 className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
               />
+              <datalist id="domain-client-list">
+                {clients.map((c) => (
+                  <option key={c.id} value={c.businessName} />
+                ))}
+              </datalist>
             </div>
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
@@ -183,7 +208,7 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
                 <option value="GoDaddy">GoDaddy</option>
                 <option value="Namecheap">Namecheap</option>
                 <option value="Cloudflare">Cloudflare</option>
-                <option value="Client Owned">Client Owned</option>
+                <option value="Client Owned">Client Owned (₹0 Expense)</option>
               </select>
             </div>
             <div>
@@ -198,9 +223,9 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
                 className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm bg-white"
               >
                 <option value="Vercel">Vercel</option>
+                <option value="Cloudflare Pages">Cloudflare Pages</option>
                 <option value="Hostinger VPS">Hostinger VPS</option>
                 <option value="Netlify">Netlify</option>
-                <option value="Cloudflare Pages">Cloudflare Pages</option>
               </select>
             </div>
             <div>
@@ -216,23 +241,37 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
             </div>
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
-                Annual Renewal (₹)
+                Purchase / Renewal Cost (₹)
               </label>
               <input
                 type="number"
                 value={renewalCostINR}
                 onChange={(e) => setRenewalCostINR(Number(e.target.value))}
-                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono font-bold"
               />
             </div>
-          </div>
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              className="px-6 py-2.5 rounded-full bg-[#2563EB] text-white text-xs font-bold cursor-pointer"
-            >
-              Add Domain Record
-            </button>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Paid By (Syncs to Finance)
+              </label>
+              <select
+                value={paidBy}
+                onChange={(e) => setPaidBy(e.target.value as ExpensePaidBy)}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-bold bg-white"
+              >
+                <option value="Vansh">Vansh</option>
+                <option value="Krishna">Krishna</option>
+                <option value="Studio Account">Studio Account</option>
+              </select>
+            </div>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                className="w-full px-5 py-2.5 rounded-xl bg-[#2563EB] text-white text-xs font-bold cursor-pointer"
+              >
+                Add &amp; Sync Domain to Finance
+              </button>
+            </div>
           </div>
         </form>
       )}
@@ -243,12 +282,14 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-[#F8F9FA] border-b border-[#EAECEF] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
-                <th className="py-4 px-6">Domain & Live URL</th>
+                <th className="py-4 px-5">Domain &amp; Live URL</th>
                 <th className="py-4 px-4">Client</th>
-                <th className="py-4 px-4">Registrar & Edge Host</th>
-                <th className="py-4 px-4">SSL & Status</th>
+                <th className="py-4 px-4">Registrar &amp; Edge Host</th>
+                <th className="py-4 px-4">SSL &amp; Status</th>
                 <th className="py-4 px-4">Expiry Countdown</th>
-                <th className="py-4 px-6 text-right">Renewal Cost</th>
+                <th className="py-4 px-4">Paid By (Finance Sync)</th>
+                <th className="py-4 px-4 text-right">Domain Cost (₹)</th>
+                <th className="py-4 px-5 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#EAECEF] text-xs">
@@ -258,7 +299,7 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
 
                 return (
                   <tr key={site.id} className="hover:bg-[#F8F9FA]/60 transition-colors">
-                    <td className="py-4 px-6">
+                    <td className="py-4 px-5">
                       <div className="flex items-center gap-2">
                         <Globe className="w-4 h-4 text-[#2563EB] shrink-0" />
                         <div>
@@ -324,8 +365,56 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
                         {daysLeft} days ({site.expiryDate})
                       </div>
                     </td>
-                    <td className="py-4 px-6 text-right font-mono font-bold text-[#0B0F19]">
-                      {formatINR(site.renewalCostINR)}/yr
+                    <td className="py-4 px-4">
+                      <div className="flex items-center gap-1.5">
+                        <select
+                          value={site.paidBy || 'Vansh'}
+                          onChange={(e) =>
+                            onUpdateWebsite({
+                              ...site,
+                              paidBy: e.target.value as ExpensePaidBy,
+                            })
+                          }
+                          aria-label={`Paid by for ${site.domainName}`}
+                          className="px-2 py-1 rounded-lg bg-[#F8F9FA] border border-[#EAECEF] text-xs font-bold text-[#0B0F19] cursor-pointer"
+                        >
+                          <option value="Vansh">Vansh</option>
+                          <option value="Krishna">Krishna</option>
+                          <option value="Studio Account">Studio Account</option>
+                        </select>
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#059669] bg-[#ECFDF5] px-1.5 py-0.5 rounded border border-[#A7F3D0]">
+                          <CheckCircle2 className="w-2.5 h-2.5" /> Synced
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-4 text-right">
+                      <div className="inline-flex items-center justify-end gap-1">
+                        <span className="text-[#64748B] font-mono">₹</span>
+                        <input
+                          type="number"
+                          value={site.renewalCostINR}
+                          onChange={(e) =>
+                            onUpdateWebsite({
+                              ...site,
+                              renewalCostINR: Math.max(0, Number(e.target.value) || 0),
+                            })
+                          }
+                          aria-label={`Renewal cost for ${site.domainName}`}
+                          className="w-20 px-2 py-1 rounded-lg bg-[#F8F9FA] border border-[#EAECEF] text-right font-mono font-bold text-xs text-[#0B0F19]"
+                        />
+                        <span className="text-[10px] font-mono text-[#64748B]">/yr</span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-5 text-right">
+                      {onDeleteWebsite && (
+                        <button
+                          onClick={() => onDeleteWebsite(site.id)}
+                          aria-label={`Delete domain ${site.domainName}`}
+                          className="p-1.5 rounded-lg text-[#94A3B8] hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

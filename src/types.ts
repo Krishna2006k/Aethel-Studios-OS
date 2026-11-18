@@ -74,6 +74,7 @@ export interface MetaAdCampaign {
   startDate: string;
   endDate: string;
   notes: string;
+  paidBy?: ExpensePaidBy;
 }
 
 export interface HostedWebsite {
@@ -91,6 +92,7 @@ export interface HostedWebsite {
   siteStatus: 'Online' | 'Maintenance' | 'Development';
   githubRepo: string;
   notes: string;
+  paidBy?: ExpensePaidBy;
 }
 
 export interface ClientTicket {
@@ -155,6 +157,8 @@ export interface StudioExpense {
   clientRelated?: string;
   reimbursed: boolean;
   notes: string;
+  linkedDomainId?: string;
+  linkedCampaignId?: string;
 }
 
 export interface ClientPayment {

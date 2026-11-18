@@ -636,40 +636,120 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EAECEF] text-xs">
-                  {expenses.map((exp) => (
-                    <tr key={exp.id} className="hover:bg-[#F8F9FA]/60">
-                      <td className="py-3.5 px-5 font-mono text-[#64748B]">{exp.date}</td>
-                      <td className="py-3.5 px-4 font-bold text-[#0B0F19]">{exp.title}</td>
-                      <td className="py-3.5 px-4 text-[#475569]">{exp.category}</td>
-                      <td className="py-3.5 px-4 font-bold text-[#0B0F19]">{exp.paidBy}</td>
-                      <td className="py-3.5 px-4 text-right font-mono font-bold text-rose-600">
-                        -{formatINR(exp.amount)}
-                      </td>
-                      <td className="py-3.5 px-5 text-right">
-                        <div className="inline-flex items-center gap-2">
-                          <button
-                            onClick={() =>
-                              onUpdateExpense({ ...exp, reimbursed: !exp.reimbursed })
-                            }
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer ${
-                              exp.reimbursed
-                                ? 'bg-[#D1FAE5] text-[#059669]'
-                                : 'bg-amber-50 text-amber-800 border border-amber-200'
-                            }`}
+                  {expenses.map((exp) => {
+                    const isDomainSync = Boolean(
+                      exp.linkedDomainId || exp.id.startsWith('exp-dom-')
+                    );
+                    const isMetaSync = Boolean(
+                      exp.linkedCampaignId || exp.id.startsWith('exp-meta-')
+                    );
+                    const matchedClient = clients.find(
+                      (c) =>
+                        exp.clientRelated &&
+                        c.businessName.toLowerCase() === exp.clientRelated.toLowerCase()
+                    );
+
+                    return (
+                      <tr key={exp.id} className="hover:bg-[#F8F9FA]/60">
+                        <td className="py-3.5 px-5 font-mono text-[#64748B]">{exp.date}</td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-[#0B0F19] flex items-center gap-1.5 flex-wrap">
+                            <span>{exp.title}</span>
+                            {isDomainSync && (
+                              <span className="px-2 py-0.5 rounded-md bg-[#EFF6FF] text-[#2563EB] text-[10px] font-bold">
+                                Domain Sync
+                              </span>
+                            )}
+                            {isMetaSync && (
+                              <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-[10px] font-bold">
+                                Meta Ads Sync
+                              </span>
+                            )}
+                          </div>
+                          {exp.clientRelated && (
+                            <div className="text-[11px] text-[#64748B] mt-0.5">
+                              Client:{' '}
+                              {matchedClient && onOpenClient360 ? (
+                                <button
+                                  onClick={() => onOpenClient360(matchedClient.id)}
+                                  className="font-semibold text-[#2563EB] hover:underline cursor-pointer"
+                                >
+                                  {matchedClient.businessName} ↗
+                                </button>
+                              ) : (
+                                <span className="font-semibold text-[#475569]">
+                                  {exp.clientRelated}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 text-[#475569] font-semibold">
+                          {exp.category}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <select
+                            value={exp.paidBy}
+                            onChange={(e) => {
+                              const nextPaidBy = e.target.value as ExpensePaidBy;
+                              onUpdateExpense({
+                                ...exp,
+                                paidBy: nextPaidBy,
+                                reimbursed:
+                                  nextPaidBy === 'Studio Account' ? true : exp.reimbursed,
+                              });
+                            }}
+                            aria-label={`Paid by for ${exp.title}`}
+                            className="px-2.5 py-1 rounded-lg bg-[#F8F9FA] border border-[#EAECEF] font-bold text-[#0B0F19] text-xs cursor-pointer"
                           >
-                            {exp.reimbursed ? '✓ Reimbursed' : 'Mark Reimbursed'}
-                          </button>
-                          <button
-                            onClick={() => onDeleteExpense(exp.id)}
-                            aria-label={`Delete expense ${exp.title}`}
-                            className="p-1.5 rounded-lg text-[#94A3B8] hover:text-rose-600 cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                            <option value="Vansh">Vansh</option>
+                            <option value="Krishna">Krishna</option>
+                            <option value="Studio Account">Studio Account</option>
+                          </select>
+                        </td>
+                        <td className="py-3.5 px-4 text-right font-mono font-bold text-rose-600">
+                          <div className="inline-flex items-center justify-end gap-1">
+                            <span>-₹</span>
+                            <input
+                              type="number"
+                              value={exp.amount}
+                              onChange={(e) =>
+                                onUpdateExpense({
+                                  ...exp,
+                                  amount: Math.max(0, Number(e.target.value) || 0),
+                                })
+                              }
+                              aria-label={`Amount for ${exp.title}`}
+                              className="w-20 px-2 py-1 rounded-lg bg-[#F8F9FA] border border-[#EAECEF] text-right font-mono font-bold text-xs text-rose-600"
+                            />
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-5 text-right">
+                          <div className="inline-flex items-center gap-2">
+                            <button
+                              onClick={() =>
+                                onUpdateExpense({ ...exp, reimbursed: !exp.reimbursed })
+                              }
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer ${
+                                exp.reimbursed
+                                  ? 'bg-[#D1FAE5] text-[#059669]'
+                                  : 'bg-amber-50 text-amber-800 border border-amber-200'
+                              }`}
+                            >
+                              {exp.reimbursed ? '✓ Reimbursed' : 'Mark Reimbursed'}
+                            </button>
+                            <button
+                              onClick={() => onDeleteExpense(exp.id)}
+                              aria-label={`Delete expense ${exp.title}`}
+                              className="p-1.5 rounded-lg text-[#94A3B8] hover:text-rose-600 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

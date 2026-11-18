@@ -278,3 +278,97 @@ test('convertLeadToActiveProject, toggleClientMilestone, and cascadeClientUpdate
   const afterDelete = cascadeClientDelete(renamed, 'cli-1794853300739', true);
   assert.equal(afterDelete.clients.some((c) => c.id === 'cli-1794853300739'), false);
 });
+
+test('Domains and Meta Ads automatically sync 1-to-1 into Studio Finance Expenses and Net Profit', () => {
+  const withDomainsAndAds: AethelDatabaseState = {
+    ...REAL_STUDIO_FIXTURE,
+    websites: [
+      {
+        id: 'web-kabra',
+        clientName: 'Kabra Mobiles',
+        domainName: 'kabramobiles.com',
+        liveUrl: 'https://kabramobiles.com',
+        registrar: 'Hostinger',
+        hostingPlatform: 'Cloudflare Pages',
+        purchaseDate: '2026-11-18',
+        expiryDate: '2027-11-18',
+        renewalCostINR: 1081,
+        sslStatus: 'Active',
+        siteStatus: 'Online',
+        githubRepo: 'aethel-studios/kabramobiles',
+        notes: '',
+      },
+      {
+        id: 'web-sagar',
+        clientName: 'New Sagar Mobiles',
+        domainName: 'newsagarmobiles.in',
+        liveUrl: 'https://newsagarmobiles.in',
+        registrar: 'Hostinger',
+        hostingPlatform: 'Vercel',
+        purchaseDate: '2026-11-18',
+        expiryDate: '2027-11-18',
+        renewalCostINR: 589,
+        sslStatus: 'Active',
+        siteStatus: 'Online',
+        githubRepo: 'aethel-studios/newsagarmobiles',
+        notes: '',
+      },
+    ],
+    metaCampaigns: [
+      {
+        id: 'meta-kabra',
+        clientName: 'Kabra Mobiles',
+        campaignName: 'Offer',
+        objective: 'Website Traffic',
+        status: 'Paused',
+        totalBudget: 1652,
+        amountSpent: 0, // Should auto-resolve to 1652
+        agencyFee: 0,
+        leadsGenerated: 0,
+        startDate: '2026-11-18',
+        endDate: '2026-11-25',
+        notes: '',
+      },
+      {
+        id: 'meta-sagar',
+        clientName: 'New Sagar Mobiles Risod',
+        campaignName: 'Offer',
+        objective: 'Website Traffic',
+        status: 'Completed',
+        totalBudget: 1652,
+        amountSpent: 0, // Should auto-resolve to 1652
+        agencyFee: 0,
+        leadsGenerated: 0,
+        startDate: '2026-11-18',
+        endDate: '2026-11-25',
+        notes: '',
+      },
+    ],
+  };
+
+  const reconciled = reconcileDatabaseIntegrity(withDomainsAndAds);
+
+  // Smart client match should link 'New Sagar Mobiles' domain to 'New Sagar Mobiles Risod'
+  const sagarDomain = reconciled.websites.find((w) => w.id === 'web-sagar')!;
+  assert.equal(sagarDomain.clientName, 'New Sagar Mobiles Risod');
+  assert.equal(sagarDomain.clientId, 'cli-1794853179793');
+
+  // 4 expenses should be automatically synced (2 domains + 2 Meta Ad campaigns)
+  assert.equal(reconciled.expenses.length, 4);
+
+  const fin = calculateStudioFinances(
+    reconciled.expenses,
+    reconciled.payments,
+    reconciled.clients,
+    reconciled.metaCampaigns,
+    reconciled.tickets,
+    reconciled.tasks || []
+  );
+
+  // 1081 + 589 + 1652 + 1652 = 4974
+  assert.equal(fin.totalStudioExpenses, 4974);
+  // 13000 - 4974 = 8026
+  assert.equal(fin.netProfit, 8026);
+  assert.equal(fin.totalClientAdSpendPassThrough, 3304);
+});
+

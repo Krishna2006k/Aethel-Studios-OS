@@ -139,12 +139,13 @@ export async function loadDatabaseState(): Promise<{
       }
 
       if (data && data.payload) {
+        const rawPayload = data.payload as AethelDatabaseState;
         const remoteState = reconcileDatabaseIntegrity({
           ...SEED_DATA,
-          ...(data.payload as AethelDatabaseState),
+          ...rawPayload,
         });
 
-        // If remote Supabase row was empty (e.g. just created) while our local server has real clients,
+        // If remote Supabase row was empty while our local server has real clients,
         // push our local server state up to Supabase so we never wipe out existing work.
         if (remoteState.clients.length === 0 && baseFallback.clients.length > 0) {
           await client.from('aethel_os_state').upsert({
@@ -155,6 +156,15 @@ export async function loadDatabaseState(): Promise<{
           saveToLocalStorage(baseFallback);
           await pushToServerMirror(baseFallback);
           return { state: baseFallback, mode: 'supabase' };
+        }
+
+        // Persist reconciled state (including newly synced Domain & Meta Ads expenses) back to Supabase
+        if ((rawPayload.expenses || []).length !== remoteState.expenses.length) {
+          await client.from('aethel_os_state').upsert({
+            id: 'studio-primary',
+            payload: remoteState,
+            updated_at: new Date().toISOString(),
+          });
         }
 
         saveToLocalStorage(remoteState);

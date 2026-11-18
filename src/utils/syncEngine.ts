@@ -5,13 +5,46 @@ import {
   ClientPayment,
   ExpensePaidBy,
   FounderName,
+  HostedWebsite,
+  MetaAdCampaign,
   ProjectMilestoneStage,
+  StudioExpense,
   StudioTask,
 } from '../types';
 import { getDefaultMilestonesForStage, STANDARD_MILESTONE_STAGES } from './calculations';
 
 function normalizeName(name: string): string {
   return (name || '').trim().toLowerCase();
+}
+
+/**
+ * Smart client matcher:
+ * 1. Exact ID match
+ * 2. Exact normalized businessName match
+ * 3. Prefix/substring match (e.g. "New Sagar Mobiles" -> "New Sagar Mobiles Risod")
+ */
+function findMatchingClient(
+  clients: ClientLead[],
+  clientById: Map<string, ClientLead>,
+  clientByName: Map<string, ClientLead>,
+  candidateId?: string,
+  candidateName?: string
+): ClientLead | undefined {
+  if (candidateId && clientById.has(candidateId)) {
+    return clientById.get(candidateId);
+  }
+  const norm = normalizeName(candidateName || '');
+  if (!norm) return undefined;
+  if (clientByName.has(norm)) {
+    return clientByName.get(norm);
+  }
+  if (norm.length >= 4) {
+    return clients.find((c) => {
+      const cNorm = normalizeName(c.businessName);
+      return cNorm.includes(norm) || norm.includes(cNorm);
+    });
+  }
+  return undefined;
 }
 
 /**
@@ -77,6 +110,12 @@ function isDemoId(id?: string): boolean {
   if (id.startsWith('pay-init-cli-') && DEMO_SEED_IDS.has(id.replace('pay-init-', ''))) {
     return true;
   }
+  if (id.startsWith('exp-dom-web-') && DEMO_SEED_IDS.has(id.replace('exp-dom-', ''))) {
+    return true;
+  }
+  if (id.startsWith('exp-meta-meta-') && DEMO_SEED_IDS.has(id.replace('exp-meta-', ''))) {
+    return true;
+  }
   return false;
 }
 
@@ -96,9 +135,10 @@ export function appendActivityLog(
 /**
  * Reconciles relational links across all modules in AethelDatabaseState:
  * 1. Strips out any legacy demo seed records so only real studio records remain.
- * 2. Normalizes legacy property names (location -> city, assignedLead -> assignedTo, planSelected -> packageTier).
- * 3. Enforces 100% 1-to-1 consistency between `client.advancePaid` and `state.payments`
- *    so CRM Pipeline, Overview, and Studio Finance NEVER diverge by even ₹1.
+ * 2. Enforces 100% 1-to-1 consistency between `client.advancePaid` and `state.payments`.
+ * 3. Automatically synchronizes every Domain in `websites` (with renewalCostINR > 0)
+ *    and every Campaign in `metaCampaigns` (with spend/budget > 0) into `state.expenses`
+ *    so Domains, Meta Ads, and Studio Finance Ledger NEVER diverge!
  */
 export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDatabaseState {
   const clientByName = new Map<string, ClientLead>();
@@ -167,9 +207,13 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
 
   const linkedPayments: ClientPayment[] = rawPayments.map((rawPay) => {
     const anyPay = rawPay as unknown as Record<string, unknown>;
-    const matchedClient =
-      (rawPay.clientId && clientById.get(rawPay.clientId)) ||
-      clientByName.get(normalizeName(rawPay.clientName));
+    const matchedClient = findMatchingClient(
+      normalizedClients,
+      clientById,
+      clientByName,
+      rawPay.clientId,
+      rawPay.clientName
+    );
 
     const cleanAmount = Math.max(0, Number(rawPay.amountReceived) || 0);
     const resolvedDate =
@@ -184,7 +228,22 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
       rawPay.projectTitle ||
       (anyPay.notes as string) ||
       (matchedClient ? matchedClient.packageTier : 'Client Milestone Payment');
-    const resolvedMilestone = rawPay.milestone || 'Advance (50%)';
+
+    const rawMilestoneStr = String(rawPay.milestone || '');
+    const validMilestones: ClientPayment['milestone'][] = [
+      'Advance (50%)',
+      'Final Delivery (50%)',
+      'Full Upfront',
+      'Meta Ads Retainer',
+      'Domain Renewal',
+    ];
+    const resolvedMilestone: ClientPayment['milestone'] = validMilestones.includes(
+      rawMilestoneStr as ClientPayment['milestone']
+    )
+      ? (rawMilestoneStr as ClientPayment['milestone'])
+      : rawMilestoneStr.toLowerCase().includes('full')
+      ? 'Full Upfront'
+      : 'Advance (50%)';
 
     if (matchedClient) {
       const isNonProjectMilestone =
@@ -218,9 +277,7 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
     };
   });
 
-  // Enforce strict 1-to-1 equality between `payments` ledger and `client.advancePaid`:
-  // - If a client has payment rows in `payments`, `client.advancePaid` = exact sum of those payments.
-  // - If a client was created with `advancePaid > 0` and has NO payment rows yet, create one verified payment row.
+  // Enforce strict 1-to-1 equality between `payments` ledger and `client.advancePaid`
   const today = new Date().toISOString().slice(0, 10);
   const autoSyncedPayments: ClientPayment[] = [...linkedPayments];
 
@@ -256,52 +313,174 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
     clientByName.set(normalizeName(c.businessName), c);
   });
 
-  const linkedCampaigns = (state.metaCampaigns || [])
+  // Existing non-demo expenses
+  const existingExpenses = (state.expenses || []).filter((e) => !isDemoId(e.id));
+
+  // --------------------------------------------------------------------------
+  // META ADS CAMPAIGNS -> Link to Clients & Auto-Sync Spend to Finance Expenses
+  // --------------------------------------------------------------------------
+  const linkedCampaigns: MetaAdCampaign[] = (state.metaCampaigns || [])
     .filter((m) => !isDemoId(m.id))
     .map((m) => {
-      const matched =
-        (m.clientId && clientById.get(m.clientId)) ||
-        clientByName.get(normalizeName(m.clientName));
-      return matched
-        ? { ...m, clientId: matched.id, clientName: matched.businessName }
-        : m;
+      const matched = findMatchingClient(
+        finalClients,
+        clientById,
+        clientByName,
+        m.clientId,
+        m.clientName
+      );
+      const cleanBudget = Math.max(0, Number(m.totalBudget) || 0);
+      const rawSpent = Math.max(0, Number(m.amountSpent) || 0);
+      // If a campaign was created with a budget (e.g. ₹1,652) and amountSpent was 0,
+      // sync amountSpent to totalBudget so Ad Spend Utilized & Finance reflect the actual campaign cost.
+      const resolvedSpent = rawSpent === 0 && cleanBudget > 0 ? cleanBudget : rawSpent;
+
+      const existingMetaExp = existingExpenses.find(
+        (e) => e.id === `exp-meta-${m.id}` || e.linkedCampaignId === m.id
+      );
+      const resolvedPaidBy: ExpensePaidBy =
+        m.paidBy || existingMetaExp?.paidBy || 'Vansh';
+
+      return {
+        ...m,
+        clientId: matched ? matched.id : m.clientId,
+        clientName: matched ? matched.businessName : m.clientName,
+        totalBudget: cleanBudget,
+        amountSpent: resolvedSpent,
+        agencyFee: Math.max(0, Number(m.agencyFee) || 0),
+        leadsGenerated: Math.max(0, Number(m.leadsGenerated) || 0),
+        paidBy: resolvedPaidBy,
+      };
     });
 
-  const linkedWebsites = (state.websites || [])
+  // --------------------------------------------------------------------------
+  // DOMAINS & WEBSITES -> Link to Clients & Auto-Sync Cost to Finance Expenses
+  // --------------------------------------------------------------------------
+  const linkedWebsites: HostedWebsite[] = (state.websites || [])
     .filter((w) => !isDemoId(w.id))
     .map((w) => {
-      const matched =
-        (w.clientId && clientById.get(w.clientId)) ||
-        clientByName.get(normalizeName(w.clientName));
-      return matched
-        ? { ...w, clientId: matched.id, clientName: matched.businessName }
-        : w;
+      const matched = findMatchingClient(
+        finalClients,
+        clientById,
+        clientByName,
+        w.clientId,
+        w.clientName
+      );
+      const existingDomExp = existingExpenses.find(
+        (e) => e.id === `exp-dom-${w.id}` || e.linkedDomainId === w.id
+      );
+      const resolvedPaidBy: ExpensePaidBy =
+        w.paidBy || existingDomExp?.paidBy || 'Vansh';
+
+      return {
+        ...w,
+        clientId: matched ? matched.id : w.clientId,
+        clientName: matched ? matched.businessName : w.clientName,
+        renewalCostINR: Math.max(0, Number(w.renewalCostINR) || 0),
+        paidBy: resolvedPaidBy,
+      };
     });
+
+  // --------------------------------------------------------------------------
+  // BUILD UNIFIED STUDIO EXPENSES (Manual Expenses + Domain Sync + Meta Ads Sync)
+  // --------------------------------------------------------------------------
+  const activeWebsiteIds = new Set(linkedWebsites.map((w) => w.id));
+  const activeCampaignIds = new Set(linkedCampaigns.map((m) => m.id));
+
+  // Keep manual expenses (and drop orphaned auto-synced domain/meta expenses whose source was deleted)
+  const manualExpenses = existingExpenses.filter((e) => {
+    const isDomAuto = Boolean(e.linkedDomainId || e.id.startsWith('exp-dom-'));
+    const isMetaAuto = Boolean(e.linkedCampaignId || e.id.startsWith('exp-meta-'));
+    if (isDomAuto) {
+      const domId = e.linkedDomainId || e.id.replace('exp-dom-', '');
+      return activeWebsiteIds.has(domId) ? false : false; // Re-generated below in canonical order
+    }
+    if (isMetaAuto) {
+      const campId = e.linkedCampaignId || e.id.replace('exp-meta-', '');
+      return activeCampaignIds.has(campId) ? false : false; // Re-generated below in canonical order
+    }
+    return true;
+  });
+
+  const syncedDomainExpenses: StudioExpense[] = linkedWebsites
+    .filter((w) => w.renewalCostINR > 0 && w.registrar !== 'Client Owned')
+    .map((w) => {
+      const prevExp = existingExpenses.find(
+        (e) => e.id === `exp-dom-${w.id}` || e.linkedDomainId === w.id
+      );
+      const paidBy: ExpensePaidBy = w.paidBy || prevExp?.paidBy || 'Vansh';
+      return {
+        id: `exp-dom-${w.id}`,
+        linkedDomainId: w.id,
+        title: `Domain & Hosting: ${w.domainName} (${w.registrar})`,
+        category: 'Domain & Hosting',
+        amount: w.renewalCostINR,
+        paidBy,
+        date: w.purchaseDate || prevExp?.date || today,
+        clientRelated: w.clientName,
+        reimbursed: prevExp ? prevExp.reimbursed : paidBy === 'Studio Account',
+        notes: `Auto-synced from Domains & Hosting (${w.hostingPlatform} · Expires ${w.expiryDate})`,
+      };
+    });
+
+  const syncedMetaExpenses: StudioExpense[] = linkedCampaigns
+    .filter((m) => (m.amountSpent > 0 || m.totalBudget > 0))
+    .map((m) => {
+      const prevExp = existingExpenses.find(
+        (e) => e.id === `exp-meta-${m.id}` || e.linkedCampaignId === m.id
+      );
+      const paidBy: ExpensePaidBy = m.paidBy || prevExp?.paidBy || 'Vansh';
+      const spendAmount = m.amountSpent > 0 ? m.amountSpent : m.totalBudget;
+      return {
+        id: `exp-meta-${m.id}`,
+        linkedCampaignId: m.id,
+        title: `Meta Ads Spend: ${m.campaignName} (${m.clientName})`,
+        category: 'Meta Ad Spend',
+        amount: spendAmount,
+        paidBy,
+        date: m.startDate || prevExp?.date || today,
+        clientRelated: m.clientName,
+        reimbursed: prevExp ? prevExp.reimbursed : paidBy === 'Studio Account',
+        notes: `Auto-synced from Meta Ads (${m.objective} · ${m.status})`,
+      };
+    });
+
+  const unifiedExpenses: StudioExpense[] = [
+    ...syncedDomainExpenses,
+    ...syncedMetaExpenses,
+    ...manualExpenses,
+  ];
 
   const linkedTickets = (state.tickets || [])
     .filter((t) => !isDemoId(t.id))
     .map((t) => {
-      const matched =
-        (t.clientId && clientById.get(t.clientId)) ||
-        clientByName.get(normalizeName(t.clientName));
+      const matched = findMatchingClient(
+        finalClients,
+        clientById,
+        clientByName,
+        t.clientId,
+        t.clientName
+      );
       return matched
         ? { ...t, clientId: matched.id, clientName: matched.businessName }
         : t;
     });
 
   const cleanRnDProjects = (state.rndProjects || []).filter((r) => !isDemoId(r.id));
-  const cleanExpenses = (state.expenses || []).filter((e) => !isDemoId(e.id));
   const cleanVaultItems = (state.vaultItems || []).filter((v) => !isDemoId(v.id));
 
   // Only keep real user tasks (never auto-generate fake seed tasks)
   const tasks: StudioTask[] = (state.tasks || [])
     .filter((task) => !isDemoId(task.id))
     .map((task) => {
-      const matched =
-        (task.clientId && clientById.get(task.clientId)) ||
-        clientByName.get(normalizeName(task.clientName));
+      const matched = findMatchingClient(
+        finalClients,
+        clientById,
+        clientByName,
+        task.clientId,
+        task.clientName
+      );
       if (matched) {
-        // Auto-complete Payment Collection tasks if the client's balance is now 0
         const pending = Math.max(0, matched.finalAgreedPrice - matched.advancePaid);
         const autoCompleted =
           task.type === 'Payment Collection' && pending === 0 ? 'Completed' : task.status;
@@ -327,12 +506,106 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
     websites: linkedWebsites,
     tickets: linkedTickets,
     rndProjects: cleanRnDProjects,
-    expenses: cleanExpenses,
+    expenses: unifiedExpenses,
     vaultItems: cleanVaultItems,
     tasks,
     activityLogs,
     lastUpdated: new Date().toISOString(),
   };
+}
+
+/**
+ * Updates a StudioExpense in Finance & Ledger and bidirectionally propagates
+ * changes (`amount`, `paidBy`, `reimbursed`) back to the linked Domain or Meta Ad Campaign!
+ */
+export function updateExpenseAndSyncSource(
+  state: AethelDatabaseState,
+  updatedExpense: StudioExpense
+): AethelDatabaseState {
+  const domId =
+    updatedExpense.linkedDomainId ||
+    (updatedExpense.id.startsWith('exp-dom-')
+      ? updatedExpense.id.replace('exp-dom-', '')
+      : undefined);
+
+  const campId =
+    updatedExpense.linkedCampaignId ||
+    (updatedExpense.id.startsWith('exp-meta-')
+      ? updatedExpense.id.replace('exp-meta-', '')
+      : undefined);
+
+  const nextExpenses = state.expenses.map((e) =>
+    e.id === updatedExpense.id ? updatedExpense : e
+  );
+
+  const nextWebsites = domId
+    ? state.websites.map((w) =>
+        w.id === domId
+          ? {
+              ...w,
+              renewalCostINR: Math.max(0, Number(updatedExpense.amount) || 0),
+              paidBy: updatedExpense.paidBy,
+            }
+          : w
+      )
+    : state.websites;
+
+  const nextCampaigns = campId
+    ? state.metaCampaigns.map((m) => {
+        if (m.id !== campId) return m;
+        const nextAmt = Math.max(0, Number(updatedExpense.amount) || 0);
+        return {
+          ...m,
+          amountSpent: nextAmt,
+          totalBudget: Math.max(m.totalBudget, nextAmt),
+          paidBy: updatedExpense.paidBy,
+        };
+      })
+    : state.metaCampaigns;
+
+  return reconcileDatabaseIntegrity({
+    ...state,
+    expenses: nextExpenses,
+    websites: nextWebsites,
+    metaCampaigns: nextCampaigns,
+    lastUpdated: new Date().toISOString(),
+  });
+}
+
+/**
+ * Deletes an expense from Finance & Ledger. If the expense was synced from a Domain
+ * or Meta Ad Campaign, also removes/zeroes the linked source record so it doesn't reappear.
+ */
+export function deleteExpenseAndSyncSource(
+  state: AethelDatabaseState,
+  expenseId: string
+): AethelDatabaseState {
+  const target = state.expenses.find((e) => e.id === expenseId);
+  if (!target) return state;
+
+  const domId =
+    target.linkedDomainId ||
+    (target.id.startsWith('exp-dom-') ? target.id.replace('exp-dom-', '') : undefined);
+
+  const campId =
+    target.linkedCampaignId ||
+    (target.id.startsWith('exp-meta-') ? target.id.replace('exp-meta-', '') : undefined);
+
+  const nextExpenses = state.expenses.filter((e) => e.id !== expenseId);
+  const nextWebsites = domId
+    ? state.websites.filter((w) => w.id !== domId)
+    : state.websites;
+  const nextCampaigns = campId
+    ? state.metaCampaigns.filter((m) => m.id !== campId)
+    : state.metaCampaigns;
+
+  return reconcileDatabaseIntegrity({
+    ...state,
+    expenses: nextExpenses,
+    websites: nextWebsites,
+    metaCampaigns: nextCampaigns,
+    lastUpdated: new Date().toISOString(),
+  });
 }
 
 /**
@@ -361,7 +634,6 @@ export function cascadeClientUpdate(
     nextStage = 'Delivered / Live';
   }
 
-  // Sync milestones if stage changed (e.g. moved to Delivered / Live or In Building)
   let nextMilestones =
     updatedClient.milestones && updatedClient.milestones.length === 6
       ? updatedClient.milestones

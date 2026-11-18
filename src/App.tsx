@@ -38,10 +38,12 @@ import {
   cascadeClientDelete,
   cascadeClientUpdate,
   convertLeadToActiveProject,
+  deleteExpenseAndSyncSource,
   deletePaymentAndSyncClient,
   reconcileDatabaseIntegrity,
   recordPaymentAndSyncClient,
   toggleClientMilestone,
+  updateExpenseAndSyncSource,
 } from './utils/syncEngine';
 
 export default function App() {
@@ -184,6 +186,13 @@ export default function App() {
     }));
   };
 
+  const handleDeleteCampaign = (campaignId: string) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      metaCampaigns: prev.metaCampaigns.filter((c) => c.id !== campaignId),
+    }));
+  };
+
   const handleUpdateWebsite = (updated: HostedWebsite) => {
     persistUpdate((prev) => ({
       ...prev,
@@ -201,6 +210,13 @@ export default function App() {
         targetName: newSite.clientName,
         category: 'Domain',
       }),
+    }));
+  };
+
+  const handleDeleteWebsite = (websiteId: string) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      websites: prev.websites.filter((w) => w.id !== websiteId),
     }));
   };
 
@@ -286,10 +302,7 @@ export default function App() {
   };
 
   const handleUpdateExpense = (updated: StudioExpense) => {
-    persistUpdate((prev) => ({
-      ...prev,
-      expenses: prev.expenses.map((e) => (e.id === updated.id ? updated : e)),
-    }));
+    persistUpdate((prev) => updateExpenseAndSyncSource(prev, updated));
   };
 
   const handleAddExpense = (newExp: StudioExpense) => {
@@ -306,10 +319,7 @@ export default function App() {
   };
 
   const handleDeleteExpense = (expenseId: string) => {
-    persistUpdate((prev) => ({
-      ...prev,
-      expenses: prev.expenses.filter((e) => e.id !== expenseId),
-    }));
+    persistUpdate((prev) => deleteExpenseAndSyncSource(prev, expenseId));
   };
 
   const handleAddPayment = (newPay: ClientPayment) => {
@@ -454,6 +464,7 @@ export default function App() {
               clients={dbState.clients}
               onUpdateCampaign={handleUpdateCampaign}
               onAddCampaign={handleAddCampaign}
+              onDeleteCampaign={handleDeleteCampaign}
               onOpenClient360={handleOpenClient360}
             />
           )}
@@ -461,8 +472,10 @@ export default function App() {
           {activeModule === 'domains' && (
             <DomainsVaultView
               websites={dbState.websites}
+              clients={dbState.clients}
               onUpdateWebsite={handleUpdateWebsite}
               onAddWebsite={handleAddWebsite}
+              onDeleteWebsite={handleDeleteWebsite}
               onOpenClient360={handleOpenClient360}
             />
           )}
