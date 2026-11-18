@@ -23,8 +23,23 @@ import {
   ArrowUpRight,
   Command,
   Sparkles,
+  Bell,
+  Zap,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
 } from 'lucide-react';
-import { ClientLead, FounderName, ModuleId } from '../types';
+import {
+  AethelDatabaseState,
+  ClientLead,
+  FounderName,
+  ModuleId,
+} from '../types';
+import {
+  formatINR,
+  generateStudioNotifications,
+} from '../utils/calculations';
+import { DEFAULT_AUTOMATION_RULES } from '../utils/syncEngine';
 import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
@@ -45,7 +60,9 @@ interface NavbarProps {
   activeFounderFilter: 'All' | FounderName;
   onChangeFounderFilter: (f: 'All' | FounderName) => void;
   clients?: ClientLead[];
+  dbState?: AethelDatabaseState;
   onOpenClient360?: (clientId: string) => void;
+  onToggleAutomationRule?: (ruleId: string) => void;
 }
 
 interface NavGroup {
@@ -164,12 +181,16 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeFounderFilter,
   onChangeFounderFilter,
   clients = [],
+  dbState,
   onOpenClient360,
+  onToggleAutomationRule,
 }) => {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showAutomationsModal, setShowAutomationsModal] = useState(false);
 
   const getBadgeValue = (key?: 'followUps' | 'openTickets' | 'expiringDomains' | 'pendingTasks') => {
     if (!key) return 0;
@@ -185,18 +206,95 @@ export const Navbar: React.FC<NavbarProps> = ({
       category: 'WORKSPACE',
     };
 
+  // Universal Search across Clients, Campaigns, Domains, Payments, Tasks, Vault
+  const q = globalSearch.trim().toLowerCase();
   const matchingClients =
-    globalSearch.trim().length > 0
+    q.length > 0
       ? clients
           .filter(
             (c) =>
-              c.businessName.toLowerCase().includes(globalSearch.toLowerCase()) ||
-              c.contactPerson.toLowerCase().includes(globalSearch.toLowerCase()) ||
-              c.city.toLowerCase().includes(globalSearch.toLowerCase()) ||
-              c.packageTier.toLowerCase().includes(globalSearch.toLowerCase())
+              c.businessName.toLowerCase().includes(q) ||
+              c.contactPerson.toLowerCase().includes(q) ||
+              c.city.toLowerCase().includes(q) ||
+              c.packageTier.toLowerCase().includes(q) ||
+              (c.leadSource || '').toLowerCase().includes(q)
           )
-          .slice(0, 6)
+          .slice(0, 5)
       : [];
+
+  const matchingCampaigns =
+    q.length > 0 && dbState
+      ? dbState.metaCampaigns
+          .filter(
+            (m) =>
+              m.campaignName.toLowerCase().includes(q) ||
+              m.clientName.toLowerCase().includes(q) ||
+              m.objective.toLowerCase().includes(q)
+          )
+          .slice(0, 3)
+      : [];
+
+  const matchingDomains =
+    q.length > 0 && dbState
+      ? dbState.websites
+          .filter(
+            (w) =>
+              w.domainName.toLowerCase().includes(q) ||
+              w.clientName.toLowerCase().includes(q) ||
+              w.registrar.toLowerCase().includes(q)
+          )
+          .slice(0, 3)
+      : [];
+
+  const matchingPayments =
+    q.length > 0 && dbState
+      ? dbState.payments
+          .filter(
+            (p) =>
+              p.clientName.toLowerCase().includes(q) ||
+              p.projectTitle.toLowerCase().includes(q) ||
+              p.milestone.toLowerCase().includes(q)
+          )
+          .slice(0, 3)
+      : [];
+
+  const matchingTasks =
+    q.length > 0 && dbState
+      ? (dbState.tasks || [])
+          .filter(
+            (t) =>
+              t.title.toLowerCase().includes(q) ||
+              t.clientName.toLowerCase().includes(q)
+          )
+          .slice(0, 3)
+      : [];
+
+  const matchingVault =
+    q.length > 0 && dbState
+      ? dbState.vaultItems
+          .filter(
+            (v) =>
+              v.title.toLowerCase().includes(q) ||
+              v.clientAssociated.toLowerCase().includes(q) ||
+              v.category.toLowerCase().includes(q)
+          )
+          .slice(0, 3)
+      : [];
+
+  const totalSearchMatches =
+    matchingClients.length +
+    matchingCampaigns.length +
+    matchingDomains.length +
+    matchingPayments.length +
+    matchingTasks.length +
+    matchingVault.length;
+
+  const notifications = dbState ? generateStudioNotifications(dbState) : [];
+  const criticalNotifCount = notifications.filter((n) => n.severity === 'critical').length;
+  const automationRules =
+    dbState?.automationRules && dbState.automationRules.length > 0
+      ? dbState.automationRules
+      : DEFAULT_AUTOMATION_RULES;
 
   return (
     <>
@@ -326,9 +424,27 @@ export const Navbar: React.FC<NavbarProps> = ({
           ))}
         </nav>
 
-        {/* Bottom Section: Install App, Settings, Help & Support, Krishna / Vansh Profile */}
+        {/* Bottom Section: Automations, Install App, Settings, Help & Support, Krishna / Vansh Profile */}
         <div className="p-2.5 border-t border-[#EAECEF] space-y-1 bg-[#FAFBFC]">
           <PWAInstallButton variant="sidebar" collapsed={sidebarCollapsed} />
+
+          <button
+            onClick={() => setShowAutomationsModal(true)}
+            title="Studio Automation Engine"
+            className={`w-full flex items-center ${
+              sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-2.5'
+            } py-1.5 rounded-lg text-xs font-medium text-[#475569] hover:text-[#0B0F19] hover:bg-white transition-colors cursor-pointer`}
+          >
+            <span className="flex items-center gap-2 truncate">
+              <Zap className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
+              {!sidebarCollapsed && <span>Automations</span>}
+            </span>
+            {!sidebarCollapsed && (
+              <span className="text-[10px] font-mono font-bold text-[#059669] bg-[#D1FAE5] px-1.5 py-0.2 rounded">
+                {automationRules.filter((r) => r.enabled).length} ON
+              </span>
+            )}
+          </button>
 
           <button
             onClick={onOpenSupabaseModal}
@@ -361,7 +477,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {!sidebarCollapsed && <span>Help & Architecture</span>}
           </button>
 
-          {/* Founder Profile Selector */}
+          {/* Persistent Workspace Switcher */}
           <div
             className={`pt-1.5 mt-1 border-t border-[#EAECEF] ${
               sidebarCollapsed ? 'flex justify-center' : ''
@@ -391,11 +507,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="bg-white border border-[#EAECEF] rounded-xl p-2">
                 <div className="flex items-center gap-2 mb-1.5">
                   <div className="w-7 h-7 rounded-lg bg-[#0B0F19] text-white font-bold text-[11px] flex items-center justify-center shrink-0">
-                    KV
+                    {activeFounderFilter === 'All'
+                      ? 'KV'
+                      : activeFounderFilter === 'Krishna'
+                      ? 'KK'
+                      : 'VK'}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="text-[11px] font-bold text-[#0B0F19] truncate">
-                      Krishna & Vansh
+                      {activeFounderFilter === 'All'
+                        ? 'Krishna & Vansh'
+                        : `${activeFounderFilter}'s Workspace`}
                     </div>
                     <div className="text-[10px] text-[#64748B] truncate">
                       Co-Founders · Pune
@@ -425,7 +547,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* STICKY TOP CONTEXT BAR */}
       <header
-        className={`sticky top-0 z-30 h-15 bg-white/90 backdrop-blur-md border-b border-[#EAECEF] px-3 sm:px-6 flex items-center justify-between gap-3 transition-all duration-200 ${
+        className={`sticky top-0 z-30 h-15 bg-white/95 backdrop-blur-md border-b border-[#EAECEF] px-3 sm:px-6 flex items-center justify-between gap-3 transition-all duration-200 ${
           sidebarCollapsed ? 'lg:pl-[88px]' : 'lg:pl-[264px]'
         }`}
       >
@@ -439,29 +561,29 @@ export const Navbar: React.FC<NavbarProps> = ({
             <Menu className="w-4 h-4" />
           </button>
 
-          <div className="flex items-center gap-2 text-xs min-w-0">
-            <span className="hidden sm:inline font-bold uppercase tracking-wider text-[#94A3B8] text-[10px]">
+          <div className="hidden md:flex items-center gap-2 text-xs min-w-0">
+            <span className="font-bold uppercase tracking-wider text-[#94A3B8] text-[10px]">
               {activeNavMeta.category}
             </span>
-            <span className="hidden sm:inline text-[#CBD5E1]">/</span>
+            <span className="text-[#CBD5E1]">/</span>
             <span className="font-bold text-[#0B0F19] text-sm truncate">
               {activeNavMeta.label}
             </span>
           </div>
         </div>
 
-        {/* Center: Universal Client & Command Search Bar */}
-        <div className="relative flex-1 max-w-md">
+        {/* Center: Universal Global Search Bar across ALL Entities */}
+        <div className="relative flex-1 max-w-lg">
           <div className="relative flex items-center">
             <Search className="w-3.5 h-3.5 text-[#94A3B8] absolute left-3 pointer-events-none" />
             <input
               type="text"
               value={globalSearch}
               onFocus={() => setSearchFocused(true)}
-              onBlur={() => setTimeout(() => setSearchFocused(false), 180)}
+              onBlur={() => setTimeout(() => setSearchFocused(false), 200)}
               onChange={(e) => setGlobalSearch(e.target.value)}
-              placeholder="Jump to any client 360° profile, city, or scope..."
-              aria-label="Search clients across Aethel OS"
+              placeholder="Universal search: clients, projects, invoices, campaigns, domains..."
+              aria-label="Universal search across Aethel OS"
               className="w-full bg-[#F8F9FA] hover:bg-[#F1F5F9] focus:bg-white border border-[#EAECEF] focus:border-[#2563EB] rounded-xl pl-8 pr-16 py-1.5 text-xs text-[#0B0F19] placeholder-[#94A3B8] focus:outline-none transition-all"
             />
             {globalSearch ? (
@@ -481,16 +603,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
 
-          {/* Instant Client 360° Search Dropdown */}
-          {searchFocused && globalSearch.trim().length > 0 && (
-            <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-[#EAECEF] shadow-xl p-2 z-50">
-              <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#94A3B8] flex items-center justify-between">
-                <span>Client 360° Profiles ({matchingClients.length})</span>
-                <span>Click to inspect</span>
-              </div>
-              {matchingClients.length === 0 ? (
-                <div className="px-3 py-3 text-xs text-[#64748B]">
-                  No client matching "{globalSearch}". Press{' '}
+          {/* Universal Search Categorized Dropdown */}
+          {searchFocused && q.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-[#EAECEF] shadow-2xl p-2.5 z-50 max-h-[75vh] overflow-y-auto space-y-2.5">
+              {totalSearchMatches === 0 ? (
+                <div className="px-3 py-4 text-xs text-[#64748B] text-center">
+                  No studio records matching "{globalSearch}". Press{' '}
                   <button
                     onMouseDown={() => onOpenQuickAction()}
                     className="text-[#2563EB] font-bold underline"
@@ -500,41 +618,336 @@ export const Navbar: React.FC<NavbarProps> = ({
                   to create one.
                 </div>
               ) : (
-                <div className="space-y-1 mt-1">
-                  {matchingClients.map((client) => (
-                    <button
-                      key={client.id}
-                      onMouseDown={() => {
-                        if (onOpenClient360) {
-                          onOpenClient360(client.id);
-                        } else {
-                          onSelectModule('pipeline');
-                        }
-                        setGlobalSearch('');
-                      }}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-xl hover:bg-[#F8F9FA] text-left transition-colors cursor-pointer"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-[#0B0F19] truncate">
-                          {client.businessName}
-                        </div>
-                        <div className="text-[11px] text-[#64748B] truncate">
-                          {client.contactPerson} · {client.city} · {client.stage}
-                        </div>
+                <>
+                  {/* 1. Clients & Projects */}
+                  {matchingClients.length > 0 && (
+                    <div>
+                      <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#94A3B8] flex items-center justify-between">
+                        <span>Client 360° & Projects ({matchingClients.length})</span>
+                        <span>Open 360°</span>
                       </div>
-                      <span className="text-[11px] font-bold text-[#2563EB] flex items-center gap-0.5 shrink-0 ml-2">
-                        360° <ArrowUpRight className="w-3 h-3" />
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                      <div className="space-y-0.5 mt-0.5">
+                        {matchingClients.map((client) => (
+                          <button
+                            key={client.id}
+                            onMouseDown={() => {
+                              if (onOpenClient360) {
+                                onOpenClient360(client.id);
+                              } else {
+                                onSelectModule('pipeline');
+                              }
+                              setGlobalSearch('');
+                            }}
+                            className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-[#F8F9FA] text-left transition-colors cursor-pointer"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-[#0B0F19] truncate">
+                                {client.businessName}
+                              </div>
+                              <div className="text-[11px] text-[#64748B] truncate">
+                                {client.contactPerson} · {client.city} · {client.stage} ·{' '}
+                                <span className="font-mono">{formatINR(client.finalAgreedPrice)}</span>
+                              </div>
+                            </div>
+                            <span className="text-[11px] font-bold text-[#2563EB] flex items-center gap-0.5 shrink-0 ml-2">
+                              360° <ArrowUpRight className="w-3 h-3" />
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 2. Payments & Invoices */}
+                  {matchingPayments.length > 0 && (
+                    <div className="pt-1 border-t border-[#F1F3F5]">
+                      <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#94A3B8]">
+                        Payments & Invoices ({matchingPayments.length})
+                      </div>
+                      <div className="space-y-0.5">
+                        {matchingPayments.map((pay) => (
+                          <button
+                            key={pay.id}
+                            onMouseDown={() => {
+                              onSelectModule('finance');
+                              setGlobalSearch('');
+                            }}
+                            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-[#F8F9FA] text-left cursor-pointer"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-[#0B0F19] truncate">
+                                {pay.clientName} — {pay.milestone}
+                              </div>
+                              <div className="text-[11px] text-[#64748B] truncate">
+                                {pay.paymentDate} · {pay.paymentMode} ({pay.receivedInAccount})
+                              </div>
+                            </div>
+                            <span className="text-xs font-mono font-bold text-[#059669] ml-2">
+                              +{formatINR(pay.amountReceived)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 3. Meta Ad Campaigns */}
+                  {matchingCampaigns.length > 0 && (
+                    <div className="pt-1 border-t border-[#F1F3F5]">
+                      <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#94A3B8]">
+                        Meta Ad Campaigns ({matchingCampaigns.length})
+                      </div>
+                      <div className="space-y-0.5">
+                        {matchingCampaigns.map((camp) => (
+                          <button
+                            key={camp.id}
+                            onMouseDown={() => {
+                              onSelectModule('meta-ads');
+                              setGlobalSearch('');
+                            }}
+                            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-[#F8F9FA] text-left cursor-pointer"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-[#0B0F19] truncate">
+                                {camp.campaignName} ({camp.clientName})
+                              </div>
+                              <div className="text-[11px] text-[#64748B] truncate">
+                                {camp.objective} · {camp.status}
+                              </div>
+                            </div>
+                            <span className="text-xs font-mono font-bold text-[#0B0F19] ml-2">
+                              {formatINR(camp.amountSpent)}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 4. Domains & Hosting */}
+                  {matchingDomains.length > 0 && (
+                    <div className="pt-1 border-t border-[#F1F3F5]">
+                      <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#94A3B8]">
+                        Domains & Hosting ({matchingDomains.length})
+                      </div>
+                      <div className="space-y-0.5">
+                        {matchingDomains.map((dom) => (
+                          <button
+                            key={dom.id}
+                            onMouseDown={() => {
+                              onSelectModule('domains');
+                              setGlobalSearch('');
+                            }}
+                            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-[#F8F9FA] text-left cursor-pointer"
+                          >
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-[#0B0F19] font-mono truncate">
+                                {dom.domainName}
+                              </div>
+                              <div className="text-[11px] text-[#64748B] truncate">
+                                {dom.clientName} · {dom.hostingPlatform}
+                              </div>
+                            </div>
+                            <span className="text-[11px] font-bold text-[#059669] ml-2">
+                              {dom.siteStatus}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 5. Tasks & Vault */}
+                  {(matchingTasks.length > 0 || matchingVault.length > 0) && (
+                    <div className="pt-1 border-t border-[#F1F3F5]">
+                      <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#94A3B8]">
+                        Tasks & Vault ({matchingTasks.length + matchingVault.length})
+                      </div>
+                      <div className="space-y-0.5">
+                        {matchingTasks.map((t) => (
+                          <button
+                            key={t.id}
+                            onMouseDown={() => {
+                              onSelectModule('tasks');
+                              setGlobalSearch('');
+                            }}
+                            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-[#F8F9FA] text-left cursor-pointer"
+                          >
+                            <span className="text-xs font-semibold text-[#0B0F19] truncate">
+                              Task: {t.title} ({t.clientName})
+                            </span>
+                            <span className="text-[10px] font-mono text-[#64748B] ml-2">
+                              {t.dueDate}
+                            </span>
+                          </button>
+                        ))}
+                        {matchingVault.map((v) => (
+                          <button
+                            key={v.id}
+                            onMouseDown={() => {
+                              onSelectModule('vault');
+                              setGlobalSearch('');
+                            }}
+                            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-[#F8F9FA] text-left cursor-pointer"
+                          >
+                            <span className="text-xs font-semibold text-[#0B0F19] truncate">
+                              Vault: {v.title} ({v.clientAssociated})
+                            </span>
+                            <span className="text-[10px] text-[#2563EB] font-bold ml-2">
+                              Encrypted
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
         </div>
 
-        {/* Right: Install App + Sync Status + Command Palette Trigger */}
+        {/* Right: Workspace Pill + Notification Bell + Install App + Sync Status + Command Trigger */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Top-Bar Quick Workspace Filter Pill */}
+          <div className="hidden xl:flex items-center bg-[#F8F9FA] p-0.5 rounded-xl border border-[#EAECEF]">
+            {(['All', 'Krishna', 'Vansh'] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => onChangeFounderFilter(f)}
+                className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${
+                  activeFounderFilter === f
+                    ? 'bg-[#0B0F19] text-white shadow-2xs'
+                    : 'text-[#64748B] hover:text-[#0B0F19]'
+                }`}
+              >
+                {f === 'All' ? 'All Studio' : f}
+              </button>
+            ))}
+          </div>
+
+          {/* Notification Centre Trigger */}
+          <div className="relative">
+            <button
+              onClick={() => setShowNotifications((prev) => !prev)}
+              aria-label="Open Studio Notification Centre"
+              title="Studio Notification Centre"
+              className="relative w-9 h-9 rounded-xl bg-[#F8F9FA] hover:bg-[#F1F5F9] border border-[#EAECEF] flex items-center justify-center text-[#0B0F19] transition-colors cursor-pointer"
+            >
+              <Bell className="w-4 h-4" />
+              {notifications.length > 0 && (
+                <span
+                  className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-mono font-bold text-white flex items-center justify-center ${
+                    criticalNotifCount > 0 ? 'bg-[#E11D48]' : 'bg-[#2563EB]'
+                  }`}
+                >
+                  {notifications.length}
+                </span>
+              )}
+            </button>
+
+            {/* Notification Centre Dropdown Drawer */}
+            {showNotifications && (
+              <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white rounded-2xl border border-[#EAECEF] shadow-2xl z-50 overflow-hidden">
+                <div className="px-4 py-3 border-b border-[#EAECEF] bg-[#F8F9FA] flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-extrabold text-[#0B0F19] flex items-center gap-1.5">
+                      <Bell className="w-3.5 h-3.5 text-[#2563EB]" /> Studio Notification Centre
+                    </div>
+                    <div className="text-[10px] text-[#64748B]">
+                      Live alerts across Receivables, Domains, Tasks & Deliveries
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowNotifications(false)}
+                    className="w-6 h-6 rounded-lg text-[#64748B] hover:text-[#0B0F19] flex items-center justify-center cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div className="max-h-96 overflow-y-auto divide-y divide-[#F1F3F5]">
+                  {notifications.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-[#64748B]">
+                      <CheckCircle2 className="w-6 h-6 text-[#059669] mx-auto mb-1.5" />
+                      All clear! No overdue payments, expiring domains, or urgent tickets.
+                    </div>
+                  ) : (
+                    notifications.map((n) => (
+                      <button
+                        key={n.id}
+                        onClick={() => {
+                          if (n.clientId && onOpenClient360) {
+                            onOpenClient360(n.clientId);
+                          } else {
+                            onSelectModule(n.targetModule);
+                          }
+                          setShowNotifications(false);
+                        }}
+                        className="w-full p-3.5 text-left hover:bg-[#F8F9FA] transition-colors flex items-start gap-3 cursor-pointer"
+                      >
+                        <div
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                            n.severity === 'critical'
+                              ? 'bg-[#FFE4E6] text-[#E11D48]'
+                              : n.severity === 'warning'
+                              ? 'bg-[#FEF3C7] text-[#D97706]'
+                              : 'bg-[#EFF6FF] text-[#2563EB]'
+                          }`}
+                        >
+                          {n.severity === 'critical' ? (
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                          ) : (
+                            <Clock className="w-3.5 h-3.5" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                              {n.category}
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                                n.severity === 'critical'
+                                  ? 'bg-[#FFE4E6] text-[#E11D48]'
+                                  : n.severity === 'warning'
+                                  ? 'bg-[#FEF3C7] text-[#D97706]'
+                                  : 'bg-[#EFF6FF] text-[#2563EB]'
+                              }`}
+                            >
+                              {n.severity === 'critical' ? 'Action Required' : 'Reminder'}
+                            </span>
+                          </div>
+                          <div className="text-xs font-bold text-[#0B0F19] mt-0.5 truncate">
+                            {n.title}
+                          </div>
+                          <div className="text-[11px] text-[#64748B] mt-0.5 line-clamp-2">
+                            {n.description}
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <div className="px-4 py-2.5 bg-[#F8F9FA] border-t border-[#EAECEF] flex items-center justify-between">
+                  <button
+                    onClick={() => {
+                      setShowNotifications(false);
+                      setShowAutomationsModal(true);
+                    }}
+                    className="text-[11px] font-bold text-[#2563EB] hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Zap className="w-3 h-3" /> Configure Automation Rules
+                  </button>
+                  <span className="text-[10px] font-mono text-[#64748B]">
+                    {notifications.length} active alert{notifications.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
           <PWAInstallButton variant="header" />
 
           <button
@@ -650,22 +1063,104 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1.5">
                   Founder Workspace Filter
                 </div>
-              <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-xl border border-[#EAECEF]">
-                {(['All', 'Krishna', 'Vansh'] as const).map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => onChangeFounderFilter(f)}
-                    className={`py-1.5 rounded-lg text-xs font-bold ${
-                      activeFounderFilter === f
-                        ? 'bg-[#0B0F19] text-white'
-                        : 'text-[#64748B]'
-                    }`}
-                  >
-                    {f === 'All' ? 'All Studio' : f}
-                  </button>
-                ))}
+                <div className="grid grid-cols-3 gap-1 bg-white p-1 rounded-xl border border-[#EAECEF]">
+                  {(['All', 'Krishna', 'Vansh'] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => onChangeFounderFilter(f)}
+                      className={`py-1.5 rounded-lg text-xs font-bold ${
+                        activeFounderFilter === f
+                          ? 'bg-[#0B0F19] text-white'
+                          : 'text-[#64748B]'
+                      }`}
+                    >
+                      {f === 'All' ? 'All Studio' : f}
+                    </button>
+                  ))}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PART 11 — AUTOMATION ENGINE RULES MODAL */}
+      {showAutomationsModal && (
+        <div className="fixed inset-0 z-50 bg-[#0B0F19]/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-[#EAECEF] max-w-2xl w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5" /> Proactive Operations Engine
+                </div>
+                <h3 className="text-lg font-extrabold text-[#0B0F19] mt-0.5">
+                  Aethel OS — Automated Studio Workflows
+                </h3>
+                <p className="text-xs text-[#64748B] mt-0.5">
+                  Deterministic relational triggers that keep CRM, Deliveries, Domains, and Finance synchronized in real time.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowAutomationsModal(false)}
+                className="w-8 h-8 rounded-full bg-[#F8F9FA] flex items-center justify-center text-[#64748B] hover:text-[#0B0F19] cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              {automationRules.map((rule) => (
+                <div
+                  key={rule.id}
+                  className="p-4 rounded-2xl border border-[#EAECEF] bg-[#F8F9FA] flex items-start justify-between gap-4"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-extrabold text-[#0B0F19]">
+                        {rule.name}
+                      </span>
+                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white border border-[#EAECEF] text-[#475569]">
+                        {rule.category}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-[#475569]">
+                      <strong className="text-[#0B0F19]">IF:</strong> {rule.trigger}
+                    </div>
+                    <div className="text-[11px] text-[#2563EB] font-medium">
+                      <strong>THEN:</strong> {rule.action}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-2 shrink-0">
+                    <button
+                      onClick={() =>
+                        onToggleAutomationRule && onToggleAutomationRule(rule.id)
+                      }
+                      className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                        rule.enabled
+                          ? 'bg-[#059669] text-white'
+                          : 'bg-[#E2E8F0] text-[#64748B]'
+                      }`}
+                    >
+                      {rule.enabled ? 'Active' : 'Paused'}
+                    </button>
+                    <span className="text-[10px] font-mono text-[#64748B]">
+                      Active across studio
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="pt-2 flex items-center justify-between border-t border-[#EAECEF]">
+              <span className="text-[11px] text-[#64748B]">
+                All rules execute atomically inside the relational sync engine.
+              </span>
+              <button
+                onClick={() => setShowAutomationsModal(false)}
+                className="px-4 py-2 rounded-xl bg-[#0B0F19] text-white text-xs font-bold cursor-pointer"
+              >
+                Done
+              </button>
             </div>
           </div>
         </div>
@@ -678,7 +1173,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex items-start justify-between">
               <div>
                 <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" /> Aethel OS v3.0 — Unified Agency ERP
+                  <Sparkles className="w-3.5 h-3.5" /> Aethel OS v4.0 — Unified Agency ERP
                 </div>
                 <h3 className="text-lg font-extrabold text-[#0B0F19] mt-0.5">
                   One Client. One Central Source of Truth.
@@ -695,21 +1190,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="space-y-3 text-xs text-[#475569] leading-relaxed">
               <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
                 <div className="font-bold text-[#0B0F19] mb-1">
-                  1. Unified Client 360° Profile
+                  1. 9-Tab Unified Client 360° Workspace
                 </div>
-                Click any client row in <strong>CRM & Pipeline</strong> or search from the top bar to open their 7-tab Client 360° Profile (Overview, Projects & 6-Stage Milestones, Payments, Meta Ads, Domains, Tasks & Notes, and Credentials).
+                Click any client row in <strong>CRM & Pipeline</strong> or search from the top bar to open their 9-tab Client 360° Workspace (Overview, Projects & Approvals, Payments & Invoices, Tasks, Marketing, Domains, Documents & Vault, Communication Log, and Activity Timeline).
               </div>
               <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
                 <div className="font-bold text-[#0B0F19] mb-1">
-                  2. Single Financial Source of Truth
+                  2. Single Financial Source of Truth & Co-Founder Ledger
                 </div>
-                Every payment recorded in <strong>CRM Pipeline</strong>, <strong>Client 360°</strong>, or <strong>Finance & Ledger</strong> automatically reconciles through the canonical financial engine. Agency Revenue, Client Pass-Through Ad Spend, and Operational Expenses are strictly separated.
+                Every payment recorded in <strong>CRM Pipeline</strong>, <strong>Client 360°</strong>, or <strong>Finance & Ledger</strong> automatically reconciles through the canonical financial engine, updating Co-Founder 50/50 profit shares, personal reimbursements, and numbered client invoices.
               </div>
               <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
                 <div className="font-bold text-[#0B0F19] mb-1">
-                  3. Universal Command Palette (Ctrl+K)
+                  3. Universal Search & Command Palette (Ctrl+K)
                 </div>
-                Press <kbd className="px-1.5 py-0.5 bg-white border rounded font-mono">Ctrl+K</kbd> anywhere to search commands, convert leads into active projects, log payments, or create tasks.
+                Use the top search bar to query across all entities (clients, projects, invoices, Meta campaigns, domains, tasks, and vault credentials) or press <kbd className="px-1.5 py-0.5 bg-white border rounded font-mono">Ctrl+K</kbd> anywhere.
               </div>
             </div>
 

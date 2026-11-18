@@ -5,9 +5,7 @@ import {
   Search,
   ExternalLink,
   MessageSquare,
-  IndianRupee,
   CheckCircle2,
-  Edit3,
   Trash2,
   X,
   Save,
@@ -15,33 +13,42 @@ import {
   Table as TableIcon,
   Globe,
   Megaphone,
-  Wrench,
   CreditCard,
   Layers,
   CheckSquare,
   ShieldCheck,
-  Sparkles,
   Rocket,
   FileText,
   ArrowUpRight,
+  Download,
+  ArrowUpDown,
+  PhoneCall,
+  Activity,
+  Award,
 } from 'lucide-react';
 import {
   AethelDatabaseState,
+  ApprovalCheckpointStage,
+  ClientCommunicationLog,
   ClientLead,
   ClientPayment,
   ClientTicket,
   ExpensePaidBy,
   FounderName,
   HostedWebsite,
+  LeadSource,
   LeadStage,
   MetaAdCampaign,
   ProjectMilestoneStage,
+  ProjectTemplateName,
   StudioTask,
 } from '../types';
 import {
+  ALL_LEAD_SOURCES,
   calculateClientProjectProgress,
   calculateCPL,
   calculateDaysUntilExpiry,
+  calculateLeadConversionAnalytics,
   calculatePendingBalance,
   calculateStudioFinances,
   formatINR,
@@ -63,6 +70,17 @@ interface ClientPipelineViewProps {
   onToggleTaskStatus: (taskId: string) => void;
   selectedClient360Id: string | null;
   onSelectClient360: (clientId: string | null) => void;
+  onApplyProjectTemplate?: (clientId: string, templateName: ProjectTemplateName) => void;
+  onToggleApprovalCheckpoint?: (clientId: string, stage: ApprovalCheckpointStage) => void;
+  onToggleMilestoneSubtask?: (
+    clientId: string,
+    milestoneStage: ProjectMilestoneStage,
+    subtaskId: string
+  ) => void;
+  onAddCommunicationLog?: (
+    clientId: string,
+    entry: Omit<ClientCommunicationLog, 'id'>
+  ) => void;
 }
 
 const STAGES: LeadStage[] = [
@@ -75,15 +93,26 @@ const STAGES: LeadStage[] = [
   'Rejected / Dropped',
 ];
 
+const PROJECT_TEMPLATES: ProjectTemplateName[] = [
+  'Basic Website Package',
+  'Standard Website Package',
+  'Premium Website Package',
+  'Custom Website + Meta Ads',
+];
+
 type StageGroupFilter = 'all' | 'sales' | 'execution' | 'closed';
+type SortField = 'default' | 'value_desc' | 'value_asc' | 'pending_desc' | 'name_asc';
+
 type Client360Tab =
   | 'overview'
   | 'projects'
   | 'payments'
+  | 'tasks'
   | 'meta-ads'
   | 'domains'
-  | 'tasks'
-  | 'files';
+  | 'files'
+  | 'communication'
+  | 'activity';
 
 export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
   clients,
@@ -101,17 +130,23 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
   onToggleTaskStatus,
   selectedClient360Id,
   onSelectClient360,
+  onApplyProjectTemplate,
+  onToggleApprovalCheckpoint,
+  onToggleMilestoneSubtask,
+  onAddCommunicationLog,
 }) => {
-  // PART 3: Table View is now the Default View in CRM & Pipeline
+  // PART 3: Table View is the Default View in CRM & Pipeline
   const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table');
   const [stageGroup, setStageGroup] = useState<StageGroupFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [founderFilter, setFounderFilter] = useState<'All' | FounderName>('All');
   const [nicheFilter, setNicheFilter] = useState<string>('All');
+  const [leadSourceFilter, setLeadSourceFilter] = useState<string>('All');
+  const [sortField, setSortField] = useState<SortField>('default');
   const [showAddForm, setShowAddForm] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
-  // Client 360° Active Tab
+  // Client 360° Active Tab (9 Tabs)
   const [active360Tab, setActive360Tab] = useState<Client360Tab>('overview');
 
   // Inline Quick Add States inside Client 360°
@@ -130,12 +165,19 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
   const [draftOverview, setDraftOverview] = useState<ClientLead | null>(null);
   const [overviewSavedNotice, setOverviewSavedNotice] = useState(false);
 
+  // Communication Logger State
+  const [commType, setCommType] = useState<ClientCommunicationLog['type']>('WhatsApp');
+  const [commSummary, setCommSummary] = useState('');
+  const [commLoggedBy, setCommLoggedBy] = useState<FounderName>('Krishna');
+
   // New Client Lead Form State
   const [businessName, setBusinessName] = useState('');
   const [contactPerson, setContactPerson] = useState('');
   const [phone, setPhone] = useState('+91 ');
+  const [email, setEmail] = useState('');
   const [city, setCity] = useState('Pune');
   const [niche, setNiche] = useState<ClientLead['niche']>('Banquet/Lawns');
+  const [leadSource, setLeadSource] = useState<LeadSource>('Direct Outreach');
   const [packageTier, setPackageTier] = useState('Custom Website + Lead Funnel');
   const [quotedPrice, setQuotedPrice] = useState(25000);
   const [finalAgreedPrice, setFinalAgreedPrice] = useState(22000);
@@ -145,7 +187,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
   const [sampleLinkSent, setSampleLinkSent] = useState('');
   const [notes, setNotes] = useState('');
 
-  // Canonical Financial Engine so CRM Pipeline header matches Overview & Finance 100%
+  // Canonical Financial Engine & Lead Conversion Analytics
   const canonicalFinances = calculateStudioFinances(
     dbState.expenses,
     dbState.payments,
@@ -154,26 +196,49 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
     dbState.tickets,
     dbState.tasks || []
   );
+  const leadAnalytics = calculateLeadConversionAnalytics(clients);
 
-  const filteredClients = clients.filter((c) => {
-    const matchesSearch =
-      c.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.contactPerson.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.packageTier.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFounder =
-      founderFilter === 'All' || c.assignedTo === founderFilter || c.assignedTo === 'Both';
-    const matchesNiche = nicheFilter === 'All' || c.niche === nicheFilter;
-    const matchesStageGroup =
-      stageGroup === 'all'
-        ? true
-        : stageGroup === 'sales'
-        ? ['Cold Lead', 'Sample Sent / WhatsApp', 'In Talks / Demo Shown'].includes(c.stage)
-        : stageGroup === 'execution'
-        ? ['In Building', 'Live / Payment Pending'].includes(c.stage)
-        : ['Delivered / Live', 'Rejected / Dropped'].includes(c.stage);
-    return matchesSearch && matchesFounder && matchesNiche && matchesStageGroup;
-  });
+  const filteredClients = clients
+    .filter((c) => {
+      const matchesSearch =
+        c.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.contactPerson.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.packageTier.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (c.leadSource || '').toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesFounder =
+        founderFilter === 'All' || c.assignedTo === founderFilter || c.assignedTo === 'Both';
+      const matchesNiche = nicheFilter === 'All' || c.niche === nicheFilter;
+      const matchesSource =
+        leadSourceFilter === 'All' || (c.leadSource || 'Direct Outreach') === leadSourceFilter;
+      const matchesStageGroup =
+        stageGroup === 'all'
+          ? true
+          : stageGroup === 'sales'
+          ? ['Cold Lead', 'Sample Sent / WhatsApp', 'In Talks / Demo Shown'].includes(c.stage)
+          : stageGroup === 'execution'
+          ? ['In Building', 'Live / Payment Pending'].includes(c.stage)
+          : ['Delivered / Live', 'Rejected / Dropped'].includes(c.stage);
+      return (
+        matchesSearch &&
+        matchesFounder &&
+        matchesNiche &&
+        matchesSource &&
+        matchesStageGroup
+      );
+    })
+    .sort((a, b) => {
+      if (sortField === 'value_desc') return b.finalAgreedPrice - a.finalAgreedPrice;
+      if (sortField === 'value_asc') return a.finalAgreedPrice - b.finalAgreedPrice;
+      if (sortField === 'pending_desc') {
+        return (
+          calculatePendingBalance(b.finalAgreedPrice, b.advancePaid) -
+          calculatePendingBalance(a.finalAgreedPrice, a.advancePaid)
+        );
+      }
+      if (sortField === 'name_asc') return a.businessName.localeCompare(b.businessName);
+      return 0;
+    });
 
   const visibleKanbanStages: LeadStage[] =
     stageGroup === 'sales'
@@ -184,6 +249,51 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
       ? ['Delivered / Live', 'Rejected / Dropped']
       : STAGES;
 
+  const handleExportCSV = () => {
+    const headers = [
+      'Business Name',
+      'Contact Person',
+      'Phone',
+      'Email',
+      'City',
+      'Niche',
+      'Lead Source',
+      'Package / Scope',
+      'Stage',
+      'Agreed Price (INR)',
+      'Advance Paid (INR)',
+      'Pending Balance (INR)',
+      'Assigned To',
+      'Follow-Up Date',
+    ];
+    const rows = filteredClients.map((c) => [
+      `"${c.businessName.replace(/"/g, '""')}"`,
+      `"${c.contactPerson.replace(/"/g, '""')}"`,
+      `"${c.phone}"`,
+      `"${c.email || ''}"`,
+      `"${c.city}"`,
+      `"${c.niche}"`,
+      `"${c.leadSource || 'Direct Outreach'}"`,
+      `"${c.packageTier.replace(/"/g, '""')}"`,
+      `"${c.stage}"`,
+      c.finalAgreedPrice,
+      c.advancePaid,
+      calculatePendingBalance(c.finalAgreedPrice, c.advancePaid),
+      c.assignedTo,
+      c.followUpDate,
+    ]);
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `aethel-crm-pipeline-${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleCreateLead = (e: React.FormEvent) => {
     e.preventDefault();
     if (!businessName.trim()) return;
@@ -192,8 +302,10 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
       businessName: businessName.trim(),
       contactPerson: contactPerson.trim() || 'Owner',
       phone: phone.trim(),
+      email: email.trim(),
       city: city.trim(),
       niche,
+      leadSource,
       packageTier,
       quotedPrice: Number(quotedPrice),
       finalAgreedPrice: Number(finalAgreedPrice),
@@ -207,6 +319,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
     });
     setBusinessName('');
     setContactPerson('');
+    setEmail('');
     setSampleLinkSent('');
     setNotes('');
     setShowAddForm(false);
@@ -267,7 +380,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
 
   return (
     <div className="space-y-5">
-      {/* Header & Unified Financial Summary Strip */}
+      {/* Header & Unified Financial + Lead Conversion Summary Strip */}
       <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-5">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
@@ -275,10 +388,10 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
               CLIENT OPERATIONS · CENTRAL CRM & PIPELINE
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
-              Client Accounts & Deal Pipeline
+              Client Accounts, Lead Funnel & 360° Workspace
             </h1>
             <p className="text-xs sm:text-sm text-[#64748B] mt-0.5">
-              Click any client row to open their <strong>Unified 7-Tab Client 360° Profile</strong> (Projects, Milestones, Payments, Meta Ads, Domains & Vault).
+              Click any client row to open their <strong>Unified 9-Tab Client 360° Workspace</strong> (Overview, Projects & Approvals, Payments & Invoices, Tasks, Meta Ads, Domains, Vault, Communication & Activity).
             </p>
           </div>
 
@@ -308,6 +421,15 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                 Kanban Board
               </button>
             </div>
+
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[#F8F9FA] hover:bg-[#F1F5F9] text-[#0B0F19] border border-[#EAECEF] text-xs font-bold transition-all cursor-pointer"
+              title="Export CRM Pipeline to CSV"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export CSV</span>
+            </button>
 
             <button
               onClick={() => setShowAddForm(!showAddForm)}
@@ -341,7 +463,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
               {formatINR(canonicalFinances.totalRevenueCollected)}
             </div>
             <div className="text-[11px] text-[#047857] mt-0.5">
-              100% synced with Studio Finance Ledger
+              {canonicalFinances.collectionRatePercent}% collection rate · Synced with Ledger
             </div>
           </div>
 
@@ -365,8 +487,48 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
               {formatINR(canonicalFinances.unclosedPipelineVolume)}
             </div>
             <div className="text-[11px] text-[#2563EB] mt-0.5">
-              {canonicalFinances.unclosedLeadsCount} leads in talks/sample stage
+              {canonicalFinances.unclosedLeadsCount} leads · {leadAnalytics.conversionRatePercent}% Deal Win Rate
             </div>
+          </div>
+        </div>
+
+        {/* PART 3 — LEAD CONVERSION ANALYTICS STRIP */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 pt-2 border-t border-[#F1F5F9]">
+          <div className="px-3 py-2 rounded-xl bg-[#FAFBFC] border border-[#EAECEF] flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-[#64748B]">Total Leads</span>
+            <span className="text-xs font-mono font-extrabold text-[#0B0F19]">
+              {leadAnalytics.totalLeads}
+            </span>
+          </div>
+          <div className="px-3 py-2 rounded-xl bg-[#FAFBFC] border border-[#EAECEF] flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-[#64748B]">Qualified</span>
+            <span className="text-xs font-mono font-extrabold text-[#2563EB]">
+              {leadAnalytics.qualifiedLeads}
+            </span>
+          </div>
+          <div className="px-3 py-2 rounded-xl bg-[#FAFBFC] border border-[#EAECEF] flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-[#64748B]">Proposals / Talks</span>
+            <span className="text-xs font-mono font-extrabold text-[#2563EB]">
+              {leadAnalytics.proposalsSent}
+            </span>
+          </div>
+          <div className="px-3 py-2 rounded-xl bg-[#FAFBFC] border border-[#EAECEF] flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-[#64748B]">Won Deals</span>
+            <span className="text-xs font-mono font-extrabold text-[#059669]">
+              {leadAnalytics.wonDeals}
+            </span>
+          </div>
+          <div className="px-3 py-2 rounded-xl bg-[#FAFBFC] border border-[#EAECEF] flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-[#64748B]">Conversion Rate</span>
+            <span className="text-xs font-mono font-extrabold text-[#059669]">
+              {leadAnalytics.conversionRatePercent}%
+            </span>
+          </div>
+          <div className="px-3 py-2 rounded-xl bg-[#FAFBFC] border border-[#EAECEF] flex items-center justify-between">
+            <span className="text-[11px] font-semibold text-[#64748B]">Avg Deal Size</span>
+            <span className="text-xs font-mono font-extrabold text-[#0B0F19]">
+              {formatINR(leadAnalytics.averageDealValue)}
+            </span>
           </div>
         </div>
       </div>
@@ -378,7 +540,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
           className="bg-white rounded-3xl p-6 border-2 border-[#2563EB]/20 shadow-lg space-y-4"
         >
           <div className="flex items-center justify-between border-b border-[#EAECEF] pb-3">
-            <h3 className="text-sm font-bold text-[#0B0F19] uppercase tracking-wider text-[#2563EB]">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-[#2563EB]">
               + Add New Client Account or Prospect
             </h3>
             <button
@@ -428,6 +590,18 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
             </div>
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Email Address
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="owner@business.com"
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
                 City / Area
               </label>
               <input
@@ -439,7 +613,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
             </div>
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
-                Niche
+                Industry Niche
               </label>
               <select
                 value={niche}
@@ -452,6 +626,22 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                 <option value="Retail/Electronics">Retail/Electronics</option>
                 <option value="Real Estate/Interior">Real Estate/Interior</option>
                 <option value="Other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Lead Source
+              </label>
+              <select
+                value={leadSource}
+                onChange={(e) => setLeadSource(e.target.value as LeadSource)}
+                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm bg-white"
+              >
+                {ALL_LEAD_SOURCES.map((src) => (
+                  <option key={src} value={src}>
+                    {src}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -518,7 +708,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                 <option value="Both">Both</option>
               </select>
             </div>
-            <div>
+            <div className="sm:col-span-2">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
                 Sample Prototype Link
               </label>
@@ -530,7 +720,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                 className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
               />
             </div>
-            <div>
+            <div className="sm:col-span-2">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
                 Notes
               </label>
@@ -546,7 +736,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
           <div className="flex justify-end">
             <button
               type="submit"
-              className="px-6 py-2.5 rounded-full bg-[#0B0F19] text-white text-xs font-bold hover:bg-[#1E293B] cursor-pointer"
+              className="px-6 py-2.5 rounded-xl bg-[#0B0F19] text-white text-xs font-bold hover:bg-[#1E293B] cursor-pointer"
             >
               Create Client Record
             </button>
@@ -554,7 +744,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
         </form>
       )}
 
-      {/* Search & Stage Filters Bar */}
+      {/* Search, Lead Source, Sort & Stage Filters Bar */}
       <div className="bg-white rounded-2xl p-3.5 border border-[#EAECEF] flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -562,7 +752,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Filter by client name, contact person, city, or scope..."
+            placeholder="Filter by client name, contact person, city, source, or scope..."
             className="w-full pl-9 pr-4 py-2 rounded-xl bg-[#F8F9FA] border border-[#EAECEF] text-xs focus:outline-none focus:border-[#2563EB]"
           />
         </div>
@@ -612,6 +802,20 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
           </div>
 
           <select
+            value={leadSourceFilter}
+            onChange={(e) => setLeadSourceFilter(e.target.value)}
+            aria-label="Filter by lead source"
+            className="px-3 py-1.5 rounded-xl bg-[#F8F9FA] border border-[#EAECEF] text-xs font-semibold text-[#475569]"
+          >
+            <option value="All">All Sources</option>
+            {ALL_LEAD_SOURCES.map((src) => (
+              <option key={src} value={src}>
+                {src}
+              </option>
+            ))}
+          </select>
+
+          <select
             value={founderFilter}
             onChange={(e) => setFounderFilter(e.target.value as 'All' | FounderName)}
             aria-label="Filter by founder"
@@ -624,17 +828,16 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
           </select>
 
           <select
-            value={nicheFilter}
-            onChange={(e) => setNicheFilter(e.target.value)}
-            aria-label="Filter by industry niche"
+            value={sortField}
+            onChange={(e) => setSortField(e.target.value as SortField)}
+            aria-label="Sort table rows"
             className="px-3 py-1.5 rounded-xl bg-[#F8F9FA] border border-[#EAECEF] text-xs font-semibold text-[#475569]"
           >
-            <option value="All">All Niches</option>
-            <option value="Banquet/Lawns">Banquet/Lawns</option>
-            <option value="Clinic/Hospital">Clinic/Hospital</option>
-            <option value="Cafe/Restaurant">Cafe/Restaurant</option>
-            <option value="Retail/Electronics">Retail/Electronics</option>
-            <option value="Real Estate/Interior">Real Estate/Interior</option>
+            <option value="default">Sort: Default</option>
+            <option value="value_desc">Value: High → Low</option>
+            <option value="value_asc">Value: Low → High</option>
+            <option value="pending_desc">Pending Balance: High → Low</option>
+            <option value="name_asc">Name: A → Z</option>
           </select>
         </div>
       </div>
@@ -643,15 +846,42 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
       {viewMode === 'table' ? (
         <div className="bg-white rounded-3xl border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[780px]">
+            <table className="w-full text-left border-collapse min-w-[820px]">
               <thead>
                 <tr className="bg-[#F8F9FA] border-b border-[#EAECEF] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
-                  <th className="py-3 px-4">Client</th>
+                  <th
+                    onClick={() =>
+                      setSortField(sortField === 'name_asc' ? 'default' : 'name_asc')
+                    }
+                    className="py-3 px-4 cursor-pointer hover:text-[#0B0F19]"
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      Client & Source <ArrowUpDown className="w-3 h-3" />
+                    </span>
+                  </th>
                   <th className="py-3 px-3">Project / Scope</th>
-                  <th className="py-3 px-3 text-right">Value</th>
+                  <th
+                    onClick={() =>
+                      setSortField(sortField === 'value_desc' ? 'value_asc' : 'value_desc')
+                    }
+                    className="py-3 px-3 text-right cursor-pointer hover:text-[#0B0F19]"
+                  >
+                    <span className="inline-flex items-center justify-end gap-1">
+                      Value <ArrowUpDown className="w-3 h-3" />
+                    </span>
+                  </th>
                   <th className="py-3 px-3">Stage</th>
                   <th className="py-3 px-3 text-right">Paid</th>
-                  <th className="py-3 px-3 text-right">Pending</th>
+                  <th
+                    onClick={() =>
+                      setSortField(sortField === 'pending_desc' ? 'default' : 'pending_desc')
+                    }
+                    className="py-3 px-3 text-right cursor-pointer hover:text-[#0B0F19]"
+                  >
+                    <span className="inline-flex items-center justify-end gap-1">
+                      Pending <ArrowUpDown className="w-3 h-3" />
+                    </span>
+                  </th>
                   <th className="py-3 px-2.5">Owner</th>
                   <th className="py-3 px-4 text-right">Next Action</th>
                 </tr>
@@ -679,14 +909,19 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                       onClick={() => openClient360(client, 'overview')}
                       className="hover:bg-[#F8F9FA] transition-colors cursor-pointer group"
                     >
-                      {/* Client */}
-                      <td className="py-3 px-4 max-w-[180px]">
+                      {/* Client & Source */}
+                      <td className="py-3 px-4 max-w-[200px]">
                         <div className="font-extrabold text-[#0B0F19] group-hover:text-[#2563EB] flex items-center gap-1 truncate">
                           <span className="truncate">{client.businessName}</span>
                           <ArrowUpRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 text-[#2563EB] transition-opacity shrink-0" />
                         </div>
-                        <div className="text-[11px] text-[#64748B] mt-0.5 truncate">
-                          {client.contactPerson} · {client.city} · {client.niche}
+                        <div className="text-[11px] text-[#64748B] mt-0.5 truncate flex items-center gap-1.5">
+                          <span>
+                            {client.contactPerson} · {client.city}
+                          </span>
+                          <span className="px-1.5 py-0.2 rounded bg-[#F1F5F9] text-[#475569] text-[10px] font-semibold">
+                            {client.leadSource || 'Direct Outreach'}
+                          </span>
                         </div>
                       </td>
 
@@ -892,7 +1127,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                                   {client.businessName}
                                 </div>
                                 <div className="text-[11px] text-[#64748B]">
-                                  {client.city} · {client.assignedTo}
+                                  {client.city} · {client.assignedTo} · {client.leadSource || 'Direct'}
                                 </div>
                               </div>
                             </div>
@@ -946,7 +1181,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
       )}
 
       {/* ============================================================================
-          PART 4 — UNIFIED 7-TAB CLIENT 360° PROFILE MODAL / DRAWER
+          PART 3 & PART 4 — UNIFIED 9-TAB CLIENT 360° WORKSPACE DRAWER
           "One Client. One Central Source of Truth."
          ============================================================================ */}
       {activeClient360 && (() => {
@@ -958,6 +1193,11 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
           (p) =>
             p.clientId === client.id ||
             p.clientName.toLowerCase().trim() === client.businessName.toLowerCase().trim()
+        );
+        const clientInvoices = (dbState.invoices || []).filter(
+          (inv) =>
+            inv.clientId === client.id ||
+            inv.clientName.toLowerCase().trim() === client.businessName.toLowerCase().trim()
         );
         const clientCampaigns = dbState.metaCampaigns.filter(
           (m) =>
@@ -984,6 +1224,10 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
             v.clientAssociated.toLowerCase().includes(client.businessName.toLowerCase()) ||
             v.clientAssociated === 'All Hosted Clients'
         );
+        const clientActivityLogs = (dbState.activityLogs || []).filter((log) =>
+          log.targetName.toLowerCase().includes(client.businessName.toLowerCase())
+        );
+        const commLogs = client.communicationLogs || [];
 
         return (
           <div className="fixed inset-0 z-50 bg-[#0B0F19]/60 backdrop-blur-xs flex justify-end">
@@ -993,11 +1237,13 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-[#60A5FA]">
-                      <span>CLIENT 360° CENTRAL DOSSIER</span>
+                      <span>CLIENT 360° UNIFIED WORKSPACE</span>
                       <span>·</span>
                       <span>{client.niche}</span>
                       <span>·</span>
                       <span>{client.city}</span>
+                      <span>·</span>
+                      <span>Source: {client.leadSource || 'Direct Outreach'}</span>
                     </div>
                     <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight mt-1">
                       {client.businessName}
@@ -1006,6 +1252,12 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                       <span>Contact: <strong>{client.contactPerson}</strong></span>
                       <span>·</span>
                       <span className="font-mono">{client.phone}</span>
+                      {client.email && (
+                        <>
+                          <span>·</span>
+                          <span>{client.email}</span>
+                        </>
+                      )}
                       <span>·</span>
                       <span>Owner: <strong>{client.assignedTo}</strong></span>
                     </div>
@@ -1051,16 +1303,16 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                     </div>
                   </div>
                   <div>
-                    <div className="text-[10px] uppercase text-[#94A3B8]">Delivery Progress</div>
+                    <div className="text-[10px] uppercase text-[#94A3B8]">Delivery & Approvals</div>
                     <div className="text-base font-extrabold font-mono text-[#60A5FA]">
-                      {prog.percent}% ({prog.completedMilestones}/6)
+                      {prog.percent}% · {prog.approvedCheckpointsCount}/5 Approved
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* 7-TAB NAVIGATION BAR (Part 4) */}
-              <div className="px-5 bg-[#F8F9FA] border-b border-[#EAECEF] flex items-center gap-1 overflow-x-auto no-scrollbar shrink-0">
+              {/* 9-TAB NAVIGATION BAR (Part 3 Client 360° Workspace) */}
+              <div className="px-4 bg-[#F8F9FA] border-b border-[#EAECEF] flex items-center gap-0.5 overflow-x-auto no-scrollbar shrink-0">
                 {[
                   { id: 'overview', label: '1. Overview', icon: Users },
                   {
@@ -1070,28 +1322,38 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                   },
                   {
                     id: 'payments',
-                    label: `3. Payments (${clientPayments.length})`,
+                    label: `3. Payments & Invoices (${clientPayments.length})`,
                     icon: CreditCard,
                   },
                   {
+                    id: 'tasks',
+                    label: `4. Tasks (${clientTasks.length})`,
+                    icon: CheckSquare,
+                  },
+                  {
                     id: 'meta-ads',
-                    label: `4. Meta Ads (${clientCampaigns.length})`,
+                    label: `5. Marketing (${clientCampaigns.length})`,
                     icon: Megaphone,
                   },
                   {
                     id: 'domains',
-                    label: `5. Domains (${clientDomains.length})`,
+                    label: `6. Domains (${clientDomains.length})`,
                     icon: Globe,
                   },
                   {
-                    id: 'tasks',
-                    label: `6. Tasks & Notes (${clientTasks.length})`,
-                    icon: CheckSquare,
+                    id: 'files',
+                    label: `7. Vault & Docs (${clientVaultItems.length})`,
+                    icon: ShieldCheck,
                   },
                   {
-                    id: 'files',
-                    label: `7. Files & Vault (${clientVaultItems.length})`,
-                    icon: ShieldCheck,
+                    id: 'communication',
+                    label: `8. Comms (${commLogs.length})`,
+                    icon: PhoneCall,
+                  },
+                  {
+                    id: 'activity',
+                    label: `9. Activity (${clientActivityLogs.length})`,
+                    icon: Activity,
                   },
                 ].map((tab) => {
                   const Icon = tab.icon;
@@ -1100,7 +1362,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                     <button
                       key={tab.id}
                       onClick={() => setActive360Tab(tab.id as Client360Tab)}
-                      className={`flex items-center gap-1.5 px-3.5 py-3 border-b-2 text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                      className={`flex items-center gap-1.5 px-3 py-3 border-b-2 text-[11px] font-bold whitespace-nowrap transition-all cursor-pointer ${
                         active
                           ? 'border-[#2563EB] text-[#2563EB] bg-white'
                           : 'border-transparent text-[#64748B] hover:text-[#0B0F19]'
@@ -1115,7 +1377,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
 
               {/* TAB CONTENT AREA */}
               <div className="flex-1 overflow-y-auto p-5 sm:p-7 space-y-6">
-                {/* TAB 1: OVERVIEW (Buffered editing so typing never fires partial updates) */}
+                {/* TAB 1: OVERVIEW */}
                 {active360Tab === 'overview' && draftOverview && (
                   <form
                     onSubmit={(e) => {
@@ -1126,7 +1388,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                     }}
                     className="space-y-5"
                   >
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       <div>
                         <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
                           Business Name
@@ -1163,6 +1425,27 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                       </div>
                       <div>
                         <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
+                          Lead Source
+                        </label>
+                        <select
+                          value={draftOverview.leadSource || 'Direct Outreach'}
+                          onChange={(e) =>
+                            setDraftOverview({
+                              ...draftOverview,
+                              leadSource: e.target.value as LeadSource,
+                            })
+                          }
+                          className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm bg-white"
+                        >
+                          {ALL_LEAD_SOURCES.map((src) => (
+                            <option key={src} value={src}>
+                              {src}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
                           Contact Person
                         </label>
                         <input
@@ -1188,6 +1471,20 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                             setDraftOverview({ ...draftOverview, phone: e.target.value })
                           }
                           className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
+                          Email Address
+                        </label>
+                        <input
+                          type="email"
+                          value={draftOverview.email || ''}
+                          onChange={(e) =>
+                            setDraftOverview({ ...draftOverview, email: e.target.value })
+                          }
+                          placeholder="owner@business.com"
+                          className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
                         />
                       </div>
                       <div className="sm:col-span-2">
@@ -1238,6 +1535,38 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                           <option value="Both">Both Founders</option>
                         </select>
                       </div>
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
+                          Project Start Date
+                        </label>
+                        <input
+                          type="date"
+                          value={draftOverview.projectStartDate || draftOverview.createdAt}
+                          onChange={(e) =>
+                            setDraftOverview({
+                              ...draftOverview,
+                              projectStartDate: e.target.value,
+                            })
+                          }
+                          className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase text-[#475569] mb-1">
+                          Target Completion Date
+                        </label>
+                        <input
+                          type="date"
+                          value={draftOverview.projectEndDate || draftOverview.followUpDate}
+                          onChange={(e) =>
+                            setDraftOverview({
+                              ...draftOverview,
+                              projectEndDate: e.target.value,
+                            })
+                          }
+                          className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
+                        />
+                      </div>
                     </div>
 
                     <div>
@@ -1272,14 +1601,88 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                   </form>
                 )}
 
-                {/* TAB 2: PROJECTS & 6-STAGE MILESTONES */}
+                {/* TAB 2: PROJECTS, TEMPLATES, SUBTASKS & CLIENT APPROVAL CHECKPOINTS */}
                 {active360Tab === 'projects' && (
                   <div className="space-y-6">
+                    {/* Project Template Selector (Part 4) */}
+                    <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB]">
+                          STANDARDIZED AGENCY WORKFLOW TEMPLATE
+                        </div>
+                        <div className="text-xs font-bold text-[#0B0F19]">
+                          Apply 1-Click Package Template & Granular Subtasks
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {PROJECT_TEMPLATES.map((tpl) => (
+                          <button
+                            key={tpl}
+                            onClick={() =>
+                              onApplyProjectTemplate && onApplyProjectTemplate(client.id, tpl)
+                            }
+                            className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-colors cursor-pointer ${
+                              client.projectTemplate === tpl
+                                ? 'bg-[#0B0F19] text-white border-[#0B0F19]'
+                                : 'bg-white text-[#475569] border-[#EAECEF] hover:border-[#2563EB]'
+                            }`}
+                          >
+                            {tpl.replace(' Package', '')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 5 Client Approval Checkpoints (Part 4) */}
+                    <div className="p-5 rounded-2xl bg-white border border-[#EAECEF] space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB] flex items-center gap-1">
+                            <Award className="w-3.5 h-3.5" /> CLIENT SIGN-OFF GATES
+                          </div>
+                          <h4 className="text-sm font-extrabold text-[#0B0F19]">
+                            Client Approval Checkpoints ({prog.approvedCheckpointsCount}/5 Approved)
+                          </h4>
+                        </div>
+                        <span className="text-[11px] text-[#64748B]">Click any gate to record sign-off</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+                        {(client.approvals || []).map((app) => (
+                          <button
+                            key={app.stage}
+                            onClick={() =>
+                              onToggleApprovalCheckpoint &&
+                              onToggleApprovalCheckpoint(client.id, app.stage)
+                            }
+                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                              app.approved
+                                ? 'bg-[#ECFDF5] border-[#A7F3D0] text-[#059669]'
+                                : 'bg-[#F8F9FA] border-[#EAECEF] text-[#64748B] hover:border-[#2563EB]'
+                            }`}
+                          >
+                            <div className="text-[10px] font-mono font-bold uppercase">
+                              {app.approved ? '✓ APPROVED' : 'AWAITING'}
+                            </div>
+                            <div className="text-xs font-extrabold text-[#0B0F19] mt-0.5">
+                              {app.stage}
+                            </div>
+                            {app.approvedDate && (
+                              <div className="text-[10px] font-mono text-[#059669] mt-0.5">
+                                {app.approvedDate}
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 6-Stage Milestones + Granular Subtasks */}
                     <div className="p-5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-4">
                       <div className="flex items-center justify-between">
                         <div>
                           <div className="text-[10px] font-bold uppercase tracking-wider text-[#2563EB]">
-                            6-STAGE DELIVERY PIPELINE
+                            6-STAGE DELIVERY PIPELINE & SUBTASKS
                           </div>
                           <h3 className="text-base font-extrabold text-[#0B0F19]">
                             {client.packageTier}
@@ -1297,36 +1700,77 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                         />
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {(client.milestones || []).map((m, idx) => (
-                          <button
+                          <div
                             key={m.stage}
-                            onClick={() => onToggleMilestone(client.id, m.stage)}
-                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                            className={`p-3.5 rounded-2xl border transition-all ${
                               m.completed
-                                ? 'bg-[#ECFDF5] border-[#A7F3D0] text-[#059669]'
-                                : 'bg-white border-[#EAECEF] text-[#475569] hover:border-[#2563EB]'
+                                ? 'bg-[#ECFDF5]/60 border-[#A7F3D0]'
+                                : 'bg-white border-[#EAECEF]'
                             }`}
                           >
-                            <div className="flex items-center justify-between text-[10px] font-mono">
-                              <span>STAGE 0{idx + 1}</span>
-                              <span>{m.completed ? '✓ DONE' : 'PENDING'}</span>
+                            <div className="flex items-center justify-between mb-2">
+                              <div>
+                                <span className="text-[10px] font-mono text-[#64748B]">
+                                  STAGE 0{idx + 1}
+                                </span>
+                                <div className="text-xs font-extrabold text-[#0B0F19]">
+                                  {m.stage}
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => onToggleMilestone(client.id, m.stage)}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold cursor-pointer ${
+                                  m.completed
+                                    ? 'bg-[#059669] text-white'
+                                    : 'bg-[#F1F5F9] text-[#475569] hover:bg-[#2563EB] hover:text-white'
+                                }`}
+                              >
+                                {m.completed ? '✓ COMPLETED' : 'Mark Stage Done'}
+                              </button>
                             </div>
-                            <div className="text-xs font-extrabold text-[#0B0F19] mt-1">
-                              {m.stage}
-                            </div>
-                          </button>
+
+                            {/* Subtasks */}
+                            {m.subtasks && m.subtasks.length > 0 && (
+                              <div className="space-y-1.5 pt-2 border-t border-[#EAECEF]/80">
+                                {m.subtasks.map((st) => (
+                                  <label
+                                    key={st.id}
+                                    className="flex items-center gap-2 text-[11px] cursor-pointer"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={st.completed}
+                                      onChange={() =>
+                                        onToggleMilestoneSubtask &&
+                                        onToggleMilestoneSubtask(client.id, m.stage, st.id)
+                                      }
+                                      className="w-3.5 h-3.5 accent-[#2563EB]"
+                                    />
+                                    <span
+                                      className={
+                                        st.completed
+                                          ? 'line-through text-[#94A3B8]'
+                                          : 'text-[#334155] font-medium'
+                                      }
+                                    >
+                                      {st.title}
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         ))}
                       </div>
                     </div>
 
                     {/* Linked Revision / Delivery Tickets */}
                     <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-[#475569]">
-                          Revision & Bug Tickets ({clientTickets.length})
-                        </h4>
-                      </div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-[#475569]">
+                        Revision & Bug Tickets ({clientTickets.length})
+                      </h4>
 
                       <div className="flex gap-2">
                         <input
@@ -1444,6 +1888,49 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                       </div>
                     </div>
 
+                    {/* Auto-Synced Client Invoices */}
+                    {clientInvoices.length > 0 && (
+                      <div className="space-y-2.5">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-[#475569]">
+                          Numbered Client Invoices & Receipts ({clientInvoices.length})
+                        </h4>
+                        {clientInvoices.map((inv) => (
+                          <div
+                            key={inv.id}
+                            className="p-3.5 rounded-2xl border border-[#EAECEF] bg-[#FAFBFC] flex items-center justify-between text-xs"
+                          >
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-extrabold text-[#2563EB]">
+                                  {inv.invoiceNumber}
+                                </span>
+                                <span className="font-bold text-[#0B0F19]">
+                                  {inv.type}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                    inv.status === 'Paid'
+                                      ? 'bg-[#D1FAE5] text-[#059669]'
+                                      : inv.status === 'Overdue'
+                                      ? 'bg-[#FFE4E6] text-[#E11D48]'
+                                      : 'bg-[#FEF3C7] text-[#D97706]'
+                                  }`}
+                                >
+                                  {inv.status}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-[#64748B] mt-0.5">
+                                {inv.notes}
+                              </div>
+                            </div>
+                            <span className="font-mono font-extrabold text-[#0B0F19] text-sm">
+                              {formatINR(inv.amount)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     <div className="space-y-2.5">
                       <h4 className="text-xs font-bold uppercase tracking-wider text-[#475569]">
                         Verified Payment Ledger ({clientPayments.length})
@@ -1475,7 +1962,94 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                   </div>
                 )}
 
-                {/* TAB 4: META ADS */}
+                {/* TAB 4: TASKS */}
+                {active360Tab === 'tasks' && (
+                  <div className="space-y-5">
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={quickTaskTitle}
+                        onChange={(e) => setQuickTaskTitle(e.target.value)}
+                        placeholder="Schedule a follow-up call, invoice reminder, or milestone check..."
+                        className="flex-1 px-3.5 py-2 rounded-xl border border-[#EAECEF] text-xs"
+                      />
+                      <input
+                        type="date"
+                        value={quickTaskDue}
+                        onChange={(e) => setQuickTaskDue(e.target.value)}
+                        className="px-3 py-2 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                      />
+                      <button
+                        onClick={() => {
+                          if (!quickTaskTitle.trim()) return;
+                          onAddTask({
+                            id: `tsk-${Date.now()}`,
+                            clientId: client.id,
+                            clientName: client.businessName,
+                            title: quickTaskTitle.trim(),
+                            type: 'Follow-up',
+                            category: 'Client Communication',
+                            recurrence: 'None',
+                            priority: 'High',
+                            status: 'Pending',
+                            assignedTo: client.assignedTo,
+                            dueDate: quickTaskDue,
+                            notes: '',
+                            createdAt: new Date().toISOString().slice(0, 10),
+                          });
+                          setQuickTaskTitle('');
+                        }}
+                        className="px-4 py-2 rounded-xl bg-[#2563EB] text-white text-xs font-bold cursor-pointer"
+                      >
+                        + Add Task
+                      </button>
+                    </div>
+
+                    <div className="space-y-2">
+                      {clientTasks.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-[#64748B] border border-[#EAECEF] rounded-2xl">
+                          No tasks scheduled for {client.businessName}.
+                        </div>
+                      ) : (
+                        clientTasks.map((tsk) => (
+                          <div
+                            key={tsk.id}
+                            className="p-3.5 rounded-2xl border border-[#EAECEF] flex items-center justify-between text-xs"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <input
+                                type="checkbox"
+                                checked={tsk.status === 'Completed'}
+                                onChange={() => onToggleTaskStatus(tsk.id)}
+                                className="w-4 h-4 accent-[#2563EB] cursor-pointer"
+                              />
+                              <div>
+                                <div
+                                  className={`font-bold ${
+                                    tsk.status === 'Completed'
+                                      ? 'line-through text-[#94A3B8]'
+                                      : 'text-[#0B0F19]'
+                                  }`}
+                                >
+                                  {tsk.title}
+                                </div>
+                                <div className="text-[11px] text-[#64748B]">
+                                  {tsk.category || tsk.type} · Assigned: {tsk.assignedTo} · Due:{' '}
+                                  {tsk.dueDate}
+                                </div>
+                              </div>
+                            </div>
+                            <span className="font-mono text-[11px] font-bold text-[#475569]">
+                              {tsk.status}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 5: MARKETING (META ADS) */}
                 {active360Tab === 'meta-ads' && (
                   <div className="space-y-5">
                     <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-3">
@@ -1508,7 +2082,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                               objective: 'WhatsApp Messages',
                               status: 'Active',
                               totalBudget: quickCampaignBudget,
-                              amountSpent: 0,
+                              amountSpent: quickCampaignBudget,
                               agencyFee: quickCampaignFee,
                               leadsGenerated: 0,
                               startDate: new Date().toISOString().slice(0, 10),
@@ -1566,7 +2140,7 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                   </div>
                 )}
 
-                {/* TAB 5: DOMAINS & HOSTING */}
+                {/* TAB 6: DOMAINS & HOSTING */}
                 {active360Tab === 'domains' && (
                   <div className="space-y-5">
                     <div className="flex gap-2">
@@ -1622,7 +2196,8 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                               {dom.domainName}
                             </div>
                             <div className="text-[11px] text-[#64748B]">
-                              {dom.registrar} · {dom.hostingPlatform} · SSL: {dom.sslStatus} · Expires in{' '}
+                              {dom.registrar} · {dom.hostingPlatform} · SSL: {dom.sslStatus} · Uptime:{' '}
+                              {dom.uptimePercent || 99.98}% · Expires in{' '}
                               {calculateDaysUntilExpiry(dom.expiryDate)} days
                             </div>
                           </div>
@@ -1640,111 +2215,56 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                   </div>
                 )}
 
-                {/* TAB 6: TASKS & COMMUNICATION */}
-                {active360Tab === 'tasks' && (
-                  <div className="space-y-5">
-                    <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        type="text"
-                        value={quickTaskTitle}
-                        onChange={(e) => setQuickTaskTitle(e.target.value)}
-                        placeholder="Schedule a follow-up call, invoice reminder, or milestone check..."
-                        className="flex-1 px-3.5 py-2 rounded-xl border border-[#EAECEF] text-xs"
-                      />
-                      <input
-                        type="date"
-                        value={quickTaskDue}
-                        onChange={(e) => setQuickTaskDue(e.target.value)}
-                        className="px-3 py-2 rounded-xl border border-[#EAECEF] text-xs font-mono"
-                      />
-                      <button
-                        onClick={() => {
-                          if (!quickTaskTitle.trim()) return;
-                          onAddTask({
-                            id: `tsk-${Date.now()}`,
-                            clientId: client.id,
-                            clientName: client.businessName,
-                            title: quickTaskTitle.trim(),
-                            type: 'Follow-up',
-                            priority: 'High',
-                            status: 'Pending',
-                            assignedTo: client.assignedTo,
-                            dueDate: quickTaskDue,
-                            notes: '',
-                            createdAt: new Date().toISOString().slice(0, 10),
-                          });
-                          setQuickTaskTitle('');
-                        }}
-                        className="px-4 py-2 rounded-xl bg-[#2563EB] text-white text-xs font-bold cursor-pointer"
-                      >
-                        + Add Task
-                      </button>
-                    </div>
-
-                    <div className="space-y-2">
-                      {clientTasks.map((tsk) => (
-                        <div
-                          key={tsk.id}
-                          className="p-3.5 rounded-2xl border border-[#EAECEF] flex items-center justify-between text-xs"
-                        >
-                          <div className="flex items-center gap-2.5">
-                            <input
-                              type="checkbox"
-                              checked={tsk.status === 'Completed'}
-                              onChange={() => onToggleTaskStatus(tsk.id)}
-                              className="w-4 h-4 accent-[#2563EB] cursor-pointer"
-                            />
-                            <div>
-                              <div
-                                className={`font-bold ${
-                                  tsk.status === 'Completed'
-                                    ? 'line-through text-[#94A3B8]'
-                                    : 'text-[#0B0F19]'
-                                }`}
-                              >
-                                {tsk.title}
-                              </div>
-                              <div className="text-[11px] text-[#64748B]">
-                                {tsk.type} · Assigned: {tsk.assignedTo} · Due: {tsk.dueDate}
-                              </div>
-                            </div>
-                          </div>
-                          <span className="font-mono text-[11px] font-bold text-[#475569]">
-                            {tsk.status}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* TAB 7: FILES, PROPOSALS & VAULT CREDENTIALS */}
+                {/* TAB 7: DOCUMENTS & VAULT */}
                 {active360Tab === 'files' && (
                   <div className="space-y-5">
-                    <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-2">
+                    <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-3">
                       <div className="text-xs font-bold text-[#0B0F19] flex items-center gap-1.5">
-                        <FileText className="w-4 h-4 text-[#2563EB]" /> Staging & Prototype Links
+                        <FileText className="w-4 h-4 text-[#2563EB]" /> Staging, Proposal & Contract Links
                       </div>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={client.sampleLinkSent}
-                          onChange={(e) =>
-                            onUpdateClient({ ...client, sampleLinkSent: e.target.value })
-                          }
-                          placeholder="https://client-preview.vercel.app"
-                          className="flex-1 px-3 py-2 rounded-xl border border-[#EAECEF] bg-white text-xs font-mono"
-                        />
-                        {client.sampleLinkSent && (
-                          <a
-                            href={client.sampleLinkSent}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="px-3 py-2 rounded-xl bg-[#2563EB] text-white text-xs font-bold flex items-center gap-1"
-                          >
-                            Open <ExternalLink className="w-3 h-3" />
-                          </a>
-                        )}
+                      <div className="grid grid-cols-1 gap-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-[#64748B] w-28">
+                            Prototype URL:
+                          </span>
+                          <input
+                            type="text"
+                            value={client.sampleLinkSent}
+                            onChange={(e) =>
+                              onUpdateClient({ ...client, sampleLinkSent: e.target.value })
+                            }
+                            placeholder="https://client-preview.vercel.app"
+                            className="flex-1 px-3 py-1.5 rounded-xl border border-[#EAECEF] bg-white text-xs font-mono"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-[#64748B] w-28">
+                            Proposal Doc:
+                          </span>
+                          <input
+                            type="text"
+                            value={client.proposalUrl || ''}
+                            onChange={(e) =>
+                              onUpdateClient({ ...client, proposalUrl: e.target.value })
+                            }
+                            placeholder="https://docs.google.com/proposal..."
+                            className="flex-1 px-3 py-1.5 rounded-xl border border-[#EAECEF] bg-white text-xs font-mono"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] font-bold text-[#64748B] w-28">
+                            Signed Contract:
+                          </span>
+                          <input
+                            type="text"
+                            value={client.contractUrl || ''}
+                            onChange={(e) =>
+                              onUpdateClient({ ...client, contractUrl: e.target.value })
+                            }
+                            placeholder="https://drive.google.com/contract..."
+                            className="flex-1 px-3 py-1.5 rounded-xl border border-[#EAECEF] bg-white text-xs font-mono"
+                          />
+                        </div>
                       </div>
                     </div>
 
@@ -1769,6 +2289,126 @@ export const ClientPipelineView: React.FC<ClientPipelineViewProps> = ({
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {/* TAB 8: COMMUNICATION LOG (Calls, WhatsApp, Emails, Meetings, Decisions) */}
+                {active360Tab === 'communication' && (
+                  <div className="space-y-5">
+                    <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-3">
+                      <div className="text-xs font-bold text-[#0B0F19]">
+                        Log Client Interaction or Key Decision
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                        <select
+                          value={commType}
+                          onChange={(e) =>
+                            setCommType(e.target.value as ClientCommunicationLog['type'])
+                          }
+                          className="px-3 py-2 rounded-xl border border-[#EAECEF] bg-white text-xs font-semibold"
+                        >
+                          <option value="WhatsApp">WhatsApp Chat</option>
+                          <option value="Call">Phone Call</option>
+                          <option value="Meeting">In-Person / Zoom Meeting</option>
+                          <option value="Email">Email</option>
+                          <option value="Decision">Client Decision / Sign-off</option>
+                        </select>
+                        <input
+                          type="text"
+                          value={commSummary}
+                          onChange={(e) => setCommSummary(e.target.value)}
+                          placeholder="Summary of call, feedback, or price agreement..."
+                          className="sm:col-span-2 px-3 py-2 rounded-xl border border-[#EAECEF] bg-white text-xs"
+                        />
+                        <button
+                          onClick={() => {
+                            if (!commSummary.trim()) return;
+                            const newEntry = {
+                              date: new Date().toISOString().slice(0, 10),
+                              type: commType,
+                              summary: commSummary.trim(),
+                              loggedBy: commLoggedBy,
+                            };
+                            if (onAddCommunicationLog) {
+                              onAddCommunicationLog(client.id, newEntry);
+                            } else {
+                              onUpdateClient({
+                                ...client,
+                                communicationLogs: [
+                                  { id: `comm-${Date.now()}`, ...newEntry },
+                                  ...(client.communicationLogs || []),
+                                ],
+                              });
+                            }
+                            setCommSummary('');
+                          }}
+                          className="px-4 py-2 rounded-xl bg-[#0B0F19] text-white text-xs font-bold cursor-pointer"
+                        >
+                          + Log Entry
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {commLogs.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-[#64748B] border border-[#EAECEF] rounded-2xl">
+                          No communication logs recorded yet. Log calls, WhatsApp discussions, or client decisions above.
+                        </div>
+                      ) : (
+                        commLogs.map((log) => (
+                          <div
+                            key={log.id}
+                            className="p-3.5 rounded-2xl border border-[#EAECEF] flex items-start justify-between gap-3 text-xs"
+                          >
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 rounded bg-[#EFF6FF] text-[#2563EB] text-[10px] font-bold">
+                                  {log.type}
+                                </span>
+                                <span className="font-mono text-[11px] text-[#64748B]">
+                                  {log.date}
+                                </span>
+                                <span className="text-[11px] text-[#64748B]">
+                                  by <strong className="text-[#0B0F19]">{log.loggedBy}</strong>
+                                </span>
+                              </div>
+                              <div className="text-[#0B0F19] font-medium mt-1">
+                                {log.summary}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 9: ACTIVITY TIMELINE */}
+                {active360Tab === 'activity' && (
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#475569]">
+                      Chronological Client Audit Stream ({clientActivityLogs.length})
+                    </h4>
+                    {clientActivityLogs.length === 0 ? (
+                      <div className="p-6 text-center text-xs text-[#64748B] border border-[#EAECEF] rounded-2xl">
+                        All future milestone updates, payment inflows, and stage changes for {client.businessName} appear here automatically.
+                      </div>
+                    ) : (
+                      clientActivityLogs.map((log) => (
+                        <div
+                          key={log.id}
+                          className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] flex items-center justify-between text-xs"
+                        >
+                          <div>
+                            <span className="font-bold text-[#0B0F19]">{log.actor}</span>{' '}
+                            <span className="text-[#475569]">{log.action}</span>
+                          </div>
+                          <span className="font-mono text-[11px] text-[#64748B]">
+                            {new Date(log.timestamp).toLocaleDateString('en-IN')}
+                          </span>
+                        </div>
+                      ))
+                    )}
                   </div>
                 )}
               </div>

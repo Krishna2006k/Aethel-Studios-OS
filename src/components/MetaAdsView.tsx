@@ -11,9 +11,18 @@ import {
   CheckCircle2,
   Pencil,
   X,
+  FileBarChart,
+  Printer,
+  MousePointerClick,
+  Eye,
 } from 'lucide-react';
 import { ClientLead, ExpensePaidBy, MetaAdCampaign } from '../types';
-import { calculateCPL, formatINR } from '../utils/calculations';
+import {
+  calculateCPC,
+  calculateCPL,
+  calculateCTR,
+  formatINR,
+} from '../utils/calculations';
 
 interface MetaAdsViewProps {
   campaigns: MetaAdCampaign[];
@@ -41,11 +50,18 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
   const [amountSpent, setAmountSpent] = useState(1652);
   const [agencyFee, setAgencyFee] = useState(0);
   const [paidBy, setPaidBy] = useState<ExpensePaidBy>('Vansh');
+  const [impressions, setImpressions] = useState(24800);
+  const [reach, setReach] = useState(18400);
+  const [clicks, setClicks] = useState(840);
+  const [roas, setRoas] = useState(4.2);
   const [notes, setNotes] = useState('');
 
   // Full Card Edit State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<MetaAdCampaign | null>(null);
+
+  // Client Monthly Performance Report Modal State
+  const [reportCampaign, setReportCampaign] = useState<MetaAdCampaign | null>(null);
 
   const handleStartEdit = (camp: MetaAdCampaign) => {
     setEditingId(camp.id);
@@ -71,6 +87,11 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
       amountSpent: cleanSpent,
       agencyFee: Math.max(0, Number(editDraft.agencyFee) || 0),
       leadsGenerated: Math.max(0, Number(editDraft.leadsGenerated) || 0),
+      impressions: Math.max(0, Number(editDraft.impressions) || 0),
+      reach: Math.max(0, Number(editDraft.reach) || 0),
+      clicks: Math.max(0, Number(editDraft.clicks) || 0),
+      conversions: Math.max(0, Number(editDraft.conversions) || 0),
+      roas: Math.max(0, Number(editDraft.roas) || 0),
       notes: editDraft.notes.trim(),
     });
     setEditingId(null);
@@ -85,7 +106,11 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
   const totalSpent = campaigns.reduce((s, c) => s + c.amountSpent, 0);
   const totalAgencyFees = campaigns.reduce((s, c) => s + c.agencyFee, 0);
   const totalLeads = campaigns.reduce((s, c) => s + c.leadsGenerated, 0);
+  const totalImpressions = campaigns.reduce((s, c) => s + (c.impressions || 0), 0);
+  const totalClicks = campaigns.reduce((s, c) => s + (c.clicks || 0), 0);
   const avgCPL = calculateCPL(totalSpent, totalLeads);
+  const avgCTR = calculateCTR(totalClicks, totalImpressions);
+  const avgCPC = calculateCPC(totalSpent, totalClicks);
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,6 +135,11 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
       amountSpent: spentNum,
       agencyFee: Math.max(0, Number(agencyFee) || 0),
       leadsGenerated: 0,
+      impressions: Math.max(0, Number(impressions) || 0),
+      reach: Math.max(0, Number(reach) || 0),
+      clicks: Math.max(0, Number(clicks) || 0),
+      conversions: 0,
+      roas: Math.max(0, Number(roas) || 0),
       startDate: today,
       endDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
       notes: notes.trim() || 'Targeted hyper-local lead generation campaign.',
@@ -127,13 +157,13 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
       <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] mb-1">
-            GROWTH · META ADS &amp; LEAD FUNNELS (AUTO-SYNCED TO FINANCE)
+            GROWTH · META ADS &amp; PERFORMANCE INTELLIGENCE (AUTO-SYNCED TO FINANCE)
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
-            Client Ad Spend, CPL &amp; Retainer Tracker
+            Client Ad Spend, CTR, CPL &amp; Retainer Tracker
           </h1>
           <p className="text-xs sm:text-sm text-[#64748B] mt-0.5">
-            Every campaign budget/spend and payer (<strong>Vansh</strong>, <strong>Krishna</strong>, or <strong>Studio Account</strong>) automatically syncs 1-to-1 with <strong>Studio Finance &amp; Expenses</strong>.
+            Track full funnel metrics (<strong>Impressions, Reach, Clicks, CTR, CPC, CPL, ROAS</strong>) and generate printable Monthly Performance Reports for clients.
           </p>
         </div>
 
@@ -154,6 +184,16 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
             ))}
           </div>
 
+          {campaigns.length > 0 && (
+            <button
+              onClick={() => setReportCampaign(campaigns[0])}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#2563EB] border border-[#BFDBFE] text-xs font-bold cursor-pointer"
+            >
+              <FileBarChart className="w-4 h-4" />
+              Monthly Ad Report
+            </button>
+          )}
+
           <button
             onClick={() => setShowAdd(!showAdd)}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-[#1E293B] text-white text-xs font-bold shadow-xs cursor-pointer"
@@ -165,7 +205,7 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
       </div>
 
       {/* Summary Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <div className="bg-[#0B0F19] text-white rounded-3xl p-5 flex flex-col justify-between">
           <div className="flex items-center justify-between text-[#94A3B8] text-xs font-medium">
             <span>Total Meta Ad Spend Synced</span>
@@ -180,8 +220,45 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
             </div>
           </div>
           <div className="text-[11px] text-[#34D399] font-mono flex items-center gap-1">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Live-synced to Studio Finance Expenses
+            <CheckCircle2 className="w-3.5 h-3.5" /> Synced to Studio Finance
           </div>
+        </div>
+
+        <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#64748B] text-xs font-medium">
+            <span>Total Impressions &amp; Reach</span>
+            <Eye className="w-4 h-4 text-[#2563EB]" />
+          </div>
+          <div className="text-2xl font-extrabold font-mono text-[#0B0F19] my-2">
+            {totalImpressions.toLocaleString('en-IN')}
+          </div>
+          <div className="text-[11px] text-[#64748B] font-mono">
+            Clicks: <strong className="text-[#0B0F19]">{totalClicks.toLocaleString('en-IN')}</strong> · CTR: <strong className="text-[#2563EB]">{avgCTR}%</strong>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#64748B] text-xs font-medium">
+            <span>Average CPC &amp; CPL</span>
+            <MousePointerClick className="w-4 h-4 text-[#059669]" />
+          </div>
+          <div className="text-2xl font-extrabold font-mono text-[#0B0F19] my-2">
+            ₹{avgCPC} <span className="text-xs font-normal text-[#64748B]">CPC</span>
+          </div>
+          <div className="text-[11px] text-[#059669] font-semibold font-mono">
+            Avg CPL: {avgCPL > 0 ? formatINR(avgCPL) : '₹0'}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-[#64748B] text-xs font-medium">
+            <span>Total Leads Generated</span>
+            <Users className="w-4 h-4 text-[#2563EB]" />
+          </div>
+          <div className="text-2xl font-extrabold font-mono text-[#0B0F19] my-2">
+            {totalLeads}
+          </div>
+          <div className="text-[11px] text-[#64748B]">Qualified WhatsApp &amp; Web inquiries</div>
         </div>
 
         <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between">
@@ -193,30 +270,6 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
             {formatINR(totalAgencyFees)}
           </div>
           <div className="text-[11px] text-[#64748B]">Standalone management retainer</div>
-        </div>
-
-        <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#64748B] text-xs font-medium">
-            <span>Total Client Leads Generated</span>
-            <Users className="w-4 h-4 text-[#2563EB]" />
-          </div>
-          <div className="text-2xl font-extrabold font-mono text-[#0B0F19] my-2">
-            {totalLeads}
-          </div>
-          <div className="text-[11px] text-[#64748B]">Qualified WhatsApp &amp; Website inquiries</div>
-        </div>
-
-        <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between">
-          <div className="flex items-center justify-between text-[#64748B] text-xs font-medium">
-            <span>Studio Average CPL</span>
-            <Target className="w-4 h-4 text-[#059669]" />
-          </div>
-          <div className="text-2xl font-extrabold font-mono text-[#0B0F19] my-2">
-            {formatINR(avgCPL)}
-          </div>
-          <div className="text-[11px] text-[#059669] font-semibold">
-            High-converting hyper-local funnels
-          </div>
         </div>
       </div>
 
@@ -329,16 +382,55 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
             </div>
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
-                Extra Retainer Fee (₹)
+                Impressions / Reach / Clicks
               </label>
-              <input
-                type="number"
-                value={agencyFee}
-                onChange={(e) => setAgencyFee(Number(e.target.value))}
-                className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
-              />
+              <div className="grid grid-cols-3 gap-1.5">
+                <input
+                  type="number"
+                  value={impressions}
+                  onChange={(e) => setImpressions(Number(e.target.value))}
+                  placeholder="Impr"
+                  className="px-2 py-2 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                />
+                <input
+                  type="number"
+                  value={reach}
+                  onChange={(e) => setReach(Number(e.target.value))}
+                  placeholder="Reach"
+                  className="px-2 py-2 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                />
+                <input
+                  type="number"
+                  value={clicks}
+                  onChange={(e) => setClicks(Number(e.target.value))}
+                  placeholder="Clicks"
+                  className="px-2 py-2 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                />
+              </div>
             </div>
             <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Retainer Fee (₹) &amp; ROAS
+              </label>
+              <div className="grid grid-cols-2 gap-1.5">
+                <input
+                  type="number"
+                  value={agencyFee}
+                  onChange={(e) => setAgencyFee(Number(e.target.value))}
+                  placeholder="Retainer"
+                  className="px-2.5 py-2 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                />
+                <input
+                  type="number"
+                  step="0.1"
+                  value={roas}
+                  onChange={(e) => setRoas(Number(e.target.value))}
+                  placeholder="ROAS 4.2x"
+                  className="px-2.5 py-2 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                />
+              </div>
+            </div>
+            <div className="sm:col-span-2 lg:col-span-4">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
                 Creative / Targeting Notes
               </label>
@@ -346,7 +438,7 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
                 type="text"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="25 miles Radius..."
+                placeholder="25 miles Radius, Festive Offer..."
                 className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
               />
             </div>
@@ -372,7 +464,7 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
             No {statusFilter !== 'All' ? statusFilter : ''} Meta Ad Campaigns Yet
           </h3>
           <p className="text-xs text-[#64748B] leading-relaxed">
-            Launch a campaign for any client in your CRM pipeline to track Ad Spend, CPL, and automatically sync the ad spend to Studio Finance Expenses.
+            Launch a campaign for any client in your CRM pipeline to track Ad Spend, CTR, CPC, CPL, and automatically sync the ad spend to Studio Finance Expenses.
           </p>
           <button
             onClick={() => setShowAdd(true)}
@@ -382,9 +474,11 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {filteredCampaigns.map((camp) => {
             const cpl = calculateCPL(camp.amountSpent, camp.leadsGenerated);
+            const ctr = calculateCTR(camp.clicks || 0, camp.impressions || 0);
+            const cpc = calculateCPC(camp.amountSpent, camp.clicks || 0);
             const burnPercent =
               camp.totalBudget > 0
                 ? Math.min(100, Math.round((camp.amountSpent / camp.totalBudget) * 100))
@@ -400,7 +494,7 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
                 >
                   <div className="flex items-center justify-between border-b border-[#EAECEF] pb-2">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-[#2563EB]">
-                      Edit Campaign (Syncs to Finance)
+                      Edit Campaign Metrics &amp; Finance Sync
                     </span>
                     <button
                       type="button"
@@ -541,6 +635,74 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
                       </div>
                     </div>
 
+                    <div className="grid grid-cols-4 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                          Impressions
+                        </label>
+                        <input
+                          type="number"
+                          value={editDraft.impressions || 0}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              impressions: Number(e.target.value),
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                          Reach
+                        </label>
+                        <input
+                          type="number"
+                          value={editDraft.reach || 0}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              reach: Number(e.target.value),
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                          Clicks
+                        </label>
+                        <input
+                          type="number"
+                          value={editDraft.clicks || 0}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              clicks: Number(e.target.value),
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                          ROAS (x)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          value={editDraft.roas || 4.2}
+                          onChange={(e) =>
+                            setEditDraft({
+                              ...editDraft,
+                              roas: Number(e.target.value),
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
@@ -622,7 +784,7 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
                 className="bg-white rounded-3xl p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between space-y-4"
               >
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <span className="text-[11px] font-bold text-[#2563EB]">
                       {camp.objective}
                     </span>
@@ -654,6 +816,14 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
                         <option value="Paused">❚❚ Paused</option>
                         <option value="Completed">✓ Completed</option>
                       </select>
+
+                      <button
+                        type="button"
+                        onClick={() => setReportCampaign(camp)}
+                        className="px-2.5 py-1 rounded-lg bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#2563EB] border border-[#BFDBFE] text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <FileBarChart className="w-3 h-3" /> Report
+                      </button>
 
                       <button
                         type="button"
@@ -712,7 +882,41 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Inline Editable Spend, Budget & Paid By (Syncs directly to Finance) */}
+                  {/* Part 6: Rich Campaign Performance Metrics Grid */}
+                  <div className="grid grid-cols-5 gap-2 pt-1 text-center">
+                    <div className="p-2 rounded-xl bg-[#F8F9FA] border border-[#EAECEF]">
+                      <div className="text-[9px] font-bold uppercase text-[#64748B]">Impr.</div>
+                      <div className="text-xs font-mono font-extrabold text-[#0B0F19]">
+                        {(camp.impressions || 0).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-xl bg-[#F8F9FA] border border-[#EAECEF]">
+                      <div className="text-[9px] font-bold uppercase text-[#64748B]">Reach</div>
+                      <div className="text-xs font-mono font-extrabold text-[#0B0F19]">
+                        {(camp.reach || 0).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-xl bg-[#F8F9FA] border border-[#EAECEF]">
+                      <div className="text-[9px] font-bold uppercase text-[#64748B]">Clicks</div>
+                      <div className="text-xs font-mono font-extrabold text-[#0B0F19]">
+                        {(camp.clicks || 0).toLocaleString('en-IN')}
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-xl bg-[#EFF6FF] border border-[#BFDBFE]">
+                      <div className="text-[9px] font-bold uppercase text-[#2563EB]">CTR / CPC</div>
+                      <div className="text-xs font-mono font-extrabold text-[#2563EB]">
+                        {ctr}% · ₹{cpc}
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-xl bg-[#ECFDF5] border border-[#A7F3D0]">
+                      <div className="text-[9px] font-bold uppercase text-[#059669]">ROAS</div>
+                      <div className="text-xs font-mono font-extrabold text-[#059669]">
+                        {camp.roas || 4.2}x
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Inline Editable Spend, Leads & Paid By (Syncs directly to Finance) */}
                   <div className="grid grid-cols-3 gap-2 pt-1">
                     <div className="p-2.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
                       <label className="block text-[9px] font-bold uppercase text-[#64748B]">
@@ -800,10 +1004,135 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
                   >
                     +₹500 Spend
                   </button>
+                  <button
+                    onClick={() => setReportCampaign(camp)}
+                    className="py-2 px-3 rounded-xl bg-[#0B0F19] hover:bg-[#1E293B] text-white text-xs font-bold cursor-pointer"
+                  >
+                    Client Report
+                  </button>
                 </div>
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* CLIENT MONTHLY AD PERFORMANCE REPORT GENERATOR MODAL (PART 6) */}
+      {reportCampaign && (
+        <div className="fixed inset-0 z-50 bg-[#0B0F19]/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 border border-[#EAECEF] shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between border-b border-[#EAECEF] pb-4">
+              <div>
+                <div className="text-[10px] font-mono uppercase tracking-widest text-[#2563EB] font-bold">
+                  AETHEL STUDIOS · CLIENT META ADS PERFORMANCE REPORT
+                </div>
+                <h2 className="text-xl font-extrabold text-[#0B0F19] mt-0.5">
+                  {reportCampaign.clientName} — {reportCampaign.campaignName}
+                </h2>
+                <p className="text-xs text-[#64748B] mt-0.5">
+                  Campaign Period: {reportCampaign.startDate} to {reportCampaign.endDate} · Objective: {reportCampaign.objective}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-3.5 py-2 rounded-xl bg-[#2563EB] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" /> Print / Save PDF
+                </button>
+                <button
+                  onClick={() => setReportCampaign(null)}
+                  className="p-2 rounded-xl bg-[#F8F9FA] text-[#64748B] hover:text-[#0B0F19] cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Campaign Selector inside Report Modal */}
+            <div className="flex items-center justify-between bg-[#F8F9FA] p-3 rounded-2xl border border-[#EAECEF]">
+              <span className="text-xs font-bold text-[#475569]">Select Client Campaign:</span>
+              <select
+                value={reportCampaign.id}
+                onChange={(e) => {
+                  const found = campaigns.find((c) => c.id === e.target.value);
+                  if (found) setReportCampaign(found);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-white border border-[#EAECEF] text-xs font-bold text-[#0B0F19]"
+              >
+                {campaigns.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.clientName} — {c.campaignName} ({formatINR(c.amountSpent)})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Key Performance Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-4 rounded-2xl bg-[#0B0F19] text-white">
+                <div className="text-[10px] font-mono uppercase text-[#94A3B8]">Amount Spent</div>
+                <div className="text-xl font-extrabold font-mono mt-1">
+                  {formatINR(reportCampaign.amountSpent)}
+                </div>
+                <div className="text-[10px] text-[#34D399] mt-0.5">
+                  Budget: {formatINR(reportCampaign.totalBudget)}
+                </div>
+              </div>
+              <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+                <div className="text-[10px] font-mono uppercase text-[#64748B]">Impressions</div>
+                <div className="text-xl font-extrabold font-mono text-[#0B0F19] mt-1">
+                  {(reportCampaign.impressions || 0).toLocaleString('en-IN')}
+                </div>
+                <div className="text-[10px] text-[#64748B] mt-0.5">
+                  Unique Reach: {(reportCampaign.reach || 0).toLocaleString('en-IN')}
+                </div>
+              </div>
+              <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+                <div className="text-[10px] font-mono uppercase text-[#64748B]">Clicks &amp; CTR</div>
+                <div className="text-xl font-extrabold font-mono text-[#2563EB] mt-1">
+                  {(reportCampaign.clicks || 0).toLocaleString('en-IN')}
+                </div>
+                <div className="text-[10px] text-[#059669] font-bold mt-0.5">
+                  CTR: {calculateCTR(reportCampaign.clicks || 0, reportCampaign.impressions || 0)}% · CPC: ₹{calculateCPC(reportCampaign.amountSpent, reportCampaign.clicks || 0)}
+                </div>
+              </div>
+              <div className="p-4 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0]">
+                <div className="text-[10px] font-mono uppercase text-[#059669]">Leads &amp; ROAS</div>
+                <div className="text-xl font-extrabold font-mono text-[#059669] mt-1">
+                  {reportCampaign.leadsGenerated} Leads
+                </div>
+                <div className="text-[10px] text-[#047857] font-bold mt-0.5">
+                  CPL: {calculateCPL(reportCampaign.amountSpent, reportCampaign.leadsGenerated) > 0 ? formatINR(calculateCPL(reportCampaign.amountSpent, reportCampaign.leadsGenerated)) : '—'} · {reportCampaign.roas || 4.2}x ROAS
+                </div>
+              </div>
+            </div>
+
+            {/* Strategic Recommendations */}
+            <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-2">
+              <div className="text-xs font-extrabold text-[#0B0F19]">
+                Campaign Summary &amp; Next-Month Growth Recommendations
+              </div>
+              <p className="text-xs text-[#475569] leading-relaxed">
+                <strong>Targeting &amp; Creative Notes:</strong> {reportCampaign.notes}
+              </p>
+              <ul className="text-xs text-[#475569] list-disc pl-4 space-y-1">
+                <li>
+                  High local engagement achieved with{' '}
+                  <strong>{(reportCampaign.impressions || 0).toLocaleString('en-IN')} impressions</strong> and{' '}
+                  <strong>{calculateCTR(reportCampaign.clicks || 0, reportCampaign.impressions || 0)}% CTR</strong>.
+                </li>
+                <li>
+                  Recommended action for next cycle: Scale top-performing creative ad set by 20% and add retargeting for website visitors &amp; WhatsApp inquiry openers.
+                </li>
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-[#EAECEF] text-[11px] text-[#64748B]">
+              <span>Prepared by Aethel Studios (Vansh Khakole &amp; Krishna Khakole)</span>
+              <span className="font-mono">aethelstudios.in@gmail.com</span>
+            </div>
+          </div>
         </div>
       )}
     </div>

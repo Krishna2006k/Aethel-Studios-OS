@@ -372,3 +372,54 @@ test('Domains and Meta Ads automatically sync 1-to-1 into Studio Finance Expense
   assert.equal(fin.totalClientAdSpendPassThrough, 3304);
 });
 
+test('Studio Health, Lead Conversion Analytics, Project Templates, and Approval Checkpoints compute accurately', async () => {
+  const {
+    calculateStudioHealth,
+    calculateLeadConversionAnalytics,
+    generateStudioNotifications,
+  } = await import('./calculations');
+  const {
+    applyProjectTemplateToClient,
+    toggleClientApprovalCheckpoint,
+  } = await import('./syncEngine');
+
+  const reconciled = reconcileDatabaseIntegrity(REAL_STUDIO_FIXTURE);
+  const health = calculateStudioHealth(reconciled);
+  assert.equal(health.length, 5);
+  assert.equal(health[0].id, 'financial');
+
+  const leadAnalytics = calculateLeadConversionAnalytics(reconciled.clients);
+  assert.equal(leadAnalytics.totalLeads, 5);
+  assert.equal(leadAnalytics.wonDeals, 3);
+  assert.equal(leadAnalytics.conversionRatePercent, 60);
+
+  const notifications = generateStudioNotifications(reconciled);
+  // New Sagar Mobiles Risod has ₹7,000 pending in Live / Payment Pending -> critical notification
+  assert.equal(
+    notifications.some((n) => n.clientId === 'cli-1794853179793' && n.severity === 'critical'),
+    true
+  );
+
+  // Apply project template to Balaji Lawns
+  const withTemplate = applyProjectTemplateToClient(
+    reconciled,
+    'cli-1794853265701',
+    'Premium Website Package'
+  );
+  const balaji = withTemplate.clients.find((c) => c.id === 'cli-1794853265701')!;
+  assert.equal(balaji.projectTemplate, 'Premium Website Package');
+  assert.ok((balaji.milestones?.[2].subtasks?.length || 0) >= 3);
+
+  // Toggle approval checkpoint
+  const withApproval = toggleClientApprovalCheckpoint(
+    withTemplate,
+    'cli-1794853265701',
+    'Website Preview',
+    'Krishna'
+  );
+  const balajiApproved = withApproval.clients.find((c) => c.id === 'cli-1794853265701')!;
+  const previewGate = balajiApproved.approvals?.find((a) => a.stage === 'Website Preview');
+  assert.equal(previewGate?.approved, true);
+});
+
+

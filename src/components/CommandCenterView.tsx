@@ -1,22 +1,19 @@
 import React from 'react';
 import {
   ArrowUpRight,
-  AlertCircle,
   CheckCircle2,
   Clock,
-  Globe,
-  Megaphone,
   TrendingUp,
-  Users,
   Wallet,
-  Wrench,
-  MessageSquare,
   Plus,
-  Sparkles,
   CheckSquare,
   Activity,
   Layers,
   ChevronRight,
+  Calendar,
+  ShieldCheck,
+  AlertTriangle,
+  BarChart3,
 } from 'lucide-react';
 import {
   AethelDatabaseState,
@@ -27,9 +24,12 @@ import {
 import {
   calculateClientProjectProgress,
   calculateDaysUntilExpiry,
+  calculateLeadConversionAnalytics,
   calculatePendingBalance,
   calculateStudioFinances,
+  calculateStudioHealth,
   formatINR,
+  generateUpcoming7DaysTimeline,
 } from '../utils/calculations';
 
 interface CommandCenterViewProps {
@@ -68,16 +68,15 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
     dbState.tasks || []
   );
 
+  const healthIndicators = calculateStudioHealth(dbState, finances);
+  const leadAnalytics = calculateLeadConversionAnalytics(dbState.clients);
+  const upcomingTimeline = generateUpcoming7DaysTimeline(dbState).filter((ev) =>
+    matchesFounder(ev.assignedTo)
+  );
+
   const filteredClients = dbState.clients.filter((c) => matchesFounder(c.assignedTo));
   const filteredTickets = dbState.tickets.filter((t) => matchesFounder(t.assignedTo));
   const filteredTasks = (dbState.tasks || []).filter((t) => matchesFounder(t.assignedTo));
-
-  const activeClients = filteredClients.filter(
-    (c) =>
-      c.stage === 'In Building' ||
-      c.stage === 'Live / Payment Pending' ||
-      c.stage === 'Delivered / Live'
-  );
 
   const activeBuildProjects = filteredClients.filter(
     (c) => c.stage === 'In Building' || c.stage === 'Live / Payment Pending'
@@ -108,7 +107,7 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
 
   const priorityRows: PriorityRow[] = [];
 
-  // 1. Live / Payment Pending clients (Highest financial priority, if not already in pendingTasks)
+  // 1. Live / Payment Pending clients (Highest financial priority)
   filteredClients
     .filter(
       (c) =>
@@ -149,7 +148,7 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
       id: `prio-tsk-${tsk.id}`,
       priority: tsk.priority,
       taskTitle: tsk.title,
-      categoryBadge: tsk.type,
+      categoryBadge: tsk.category || tsk.type,
       clientName: tsk.clientName,
       clientId: matchedClient?.id,
       assignedTo: tsk.assignedTo,
@@ -194,6 +193,25 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
     });
   });
 
+  // 4. Sales Follow-ups in "In Talks / Demo Shown"
+  filteredClients
+    .filter((c) => c.stage === 'In Talks / Demo Shown' || c.stage === 'Sample Sent / WhatsApp')
+    .forEach((c) => {
+      priorityRows.push({
+        id: `prio-lead-${c.id}`,
+        priority: 'High',
+        taskTitle: `Follow up on ${c.packageTier} proposal (${formatINR(c.finalAgreedPrice)})`,
+        categoryBadge: c.stage,
+        clientName: c.businessName,
+        clientId: c.id,
+        assignedTo: c.assignedTo,
+        deadline: c.followUpDate || 'Today',
+        phone: c.phone,
+        actionLabel: 'Client 360°',
+        onAction: () => onOpenClient360(c.id),
+      });
+    });
+
   const formattedToday = new Intl.DateTimeFormat('en-IN', {
     weekday: 'long',
     day: 'numeric',
@@ -203,38 +221,45 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
 
   const activityLogs = (dbState.activityLogs || []).slice(0, 8);
 
+  const domainExpensesSum = dbState.expenses
+    .filter((e) => e.category === 'Domain & Hosting')
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  const metaExpensesSum = dbState.expenses
+    .filter((e) => e.category === 'Meta Ad Spend')
+    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
   return (
-    <div className="space-y-6">
-      {/* SECTION A — WELCOME HEADER & FOUNDER LENS */}
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[#2563EB] mb-1">
-            <span>WORKSPACE OVERVIEW</span>
+    <div className="space-y-6 min-w-0">
+      {/* SECTION 1 — HEADER & WORKSPACE SWITCHER */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 bg-white rounded-3xl p-4 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] min-w-0">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-[#2563EB] mb-1">
+            <span>STUDIO COMMAND CENTER</span>
             <span className="text-[#CBD5E1]">·</span>
             <span className="font-mono text-[#64748B]">{formattedToday}</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
             Good day, {activeFounderFilter === 'All' ? 'Krishna & Vansh' : activeFounderFilter}
           </h1>
-          <p className="text-sm text-[#64748B] mt-1">
-            Here is what needs your attention across Aethel Studios today. Click any client or priority to open their unified 360° dossier.
+          <p className="text-xs sm:text-sm text-[#64748B] mt-1">
+            Studio Overview — Real-time financial snapshot, studio health indicators, daily priorities, and 7-day execution horizon.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Founder Filter Pill */}
-          <div className="inline-flex items-center bg-[#F8F9FA] border border-[#EAECEF] rounded-xl p-1">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Persistent Workspace Switcher */}
+          <div className="flex flex-wrap items-center bg-[#F8F9FA] border border-[#EAECEF] rounded-xl p-1">
             {(['All', 'Krishna', 'Vansh'] as const).map((f) => (
               <button
                 key={f}
                 onClick={() => onChangeFounderFilter(f)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                   activeFounderFilter === f
                     ? 'bg-[#0B0F19] text-white shadow-2xs'
                     : 'text-[#64748B] hover:text-[#0B0F19]'
                 }`}
               >
-                {f === 'All' ? 'All Studio' : `${f}'s Queue`}
+                {f === 'All' ? 'All Studio' : f}
               </button>
             ))}
           </div>
@@ -244,7 +269,7 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
-            <span>New Action</span>
+            <span>Quick Action</span>
             <kbd className="hidden sm:inline-block ml-1 px-1.5 py-0.5 text-[10px] font-mono bg-white/20 rounded">
               Ctrl+K
             </kbd>
@@ -252,331 +277,674 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
         </div>
       </div>
 
-      {/* SECTION B — 4 PRIMARY OPERATIONAL KPI CARDS (Part 2B) */}
+      {/* SECTION 2 — FINANCIAL & OPERATIONAL SNAPSHOT (4 RICH CONTEXT CARDS) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: Active Clients */}
+        {/* Card 1: Agency Revenue */}
         <div
-          onClick={() => onNavigate('pipeline')}
-          className="bg-white rounded-2xl p-5 border border-[#EAECEF] hover:border-[#2563EB] transition-all cursor-pointer group shadow-[0_8px_24px_-12px_rgba(11,15,25,0.05)]"
+          onClick={() => onNavigate('finance')}
+          className="bg-white rounded-2xl p-5 border border-[#EAECEF] hover:border-[#2563EB] transition-all cursor-pointer group shadow-[0_8px_24px_-12px_rgba(11,15,25,0.05)] flex flex-col justify-between"
         >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
-              1. Active Clients
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center group-hover:bg-[#2563EB] group-hover:text-white transition-colors">
-              <Users className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="flex items-baseline justify-between gap-2">
-            <div className="text-3xl font-extrabold font-mono text-[#0B0F19]">
-              {activeClients.length}
-            </div>
-            <span className="text-[11px] font-semibold text-[#059669]">
-              {filteredClients.length} total in CRM →
-            </span>
-          </div>
-          <div className="mt-2 pt-2 border-t border-[#F1F5F9] text-xs text-[#64748B] space-y-1">
-            <div className="flex items-center justify-between">
-              <span>Confirmed Deal Volume</span>
-              <span className="font-mono font-bold text-[#0B0F19]">
-                {formatINR(finances.totalContractedVolume)}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                1. Agency Revenue
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-[#ECFDF5] text-[#059669] text-[10px] font-mono font-bold">
+                {finances.collectionRatePercent}% Collected
               </span>
             </div>
-            {finances.unclosedLeadsCount > 0 && (
-              <div className="flex items-center justify-between text-[11px] text-[#64748B]">
-                <span>Unclosed Leads ({finances.unclosedLeadsCount})</span>
-                <span className="font-mono font-semibold text-[#475569]">
-                  {formatINR(finances.unclosedPipelineVolume)}
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="text-3xl font-extrabold font-mono text-[#0B0F19]">
+                {formatINR(finances.totalRevenueCollected)}
+              </div>
+              <span className="text-[11px] font-mono text-[#64748B]">
+                of {formatINR(finances.totalContractedVolume)}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-[#F1F5F9] text-xs space-y-1">
+            <div className="flex items-center justify-between text-[#475569]">
+              <span>Website Projects</span>
+              <span className="font-mono font-bold text-[#0B0F19]">
+                {formatINR(finances.clientProjectRevenue)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[#64748B]">
+              <span>Confirmed Active Deals</span>
+              <span className="font-mono font-semibold text-[#059669]">
+                {finances.activeClientsCount} accounts
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 2: Net Studio Profit */}
+        <div
+          onClick={() => onNavigate('finance')}
+          className="bg-white rounded-2xl p-5 border border-[#EAECEF] hover:border-[#2563EB] transition-all cursor-pointer group shadow-[0_8px_24px_-12px_rgba(11,15,25,0.05)] flex flex-col justify-between"
+        >
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                2. Net Studio Profit
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-[#EFF6FF] text-[#2563EB] text-[10px] font-mono font-bold">
+                {finances.profitMarginPercent}% Margin
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="text-3xl font-extrabold font-mono text-[#059669]">
+                {formatINR(finances.netProfit)}
+              </div>
+              <span className="text-[11px] font-semibold text-[#64748B]">
+                50/50 Co-Founder Split
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-[#F1F5F9] text-xs space-y-1">
+            <div className="flex items-center justify-between text-[#475569]">
+              <span>Krishna's 50% Share</span>
+              <span className="font-mono font-bold text-[#0B0F19]">
+                {formatINR(finances.krishnaProfitShare50)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[#475569]">
+              <span>Vansh's 50% Share</span>
+              <span className="font-mono font-bold text-[#0B0F19]">
+                {formatINR(finances.vanshProfitShare50)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 3: Pending Receivables */}
+        <div
+          onClick={() => onNavigate('pipeline')}
+          className="bg-white rounded-2xl p-5 border border-[#EAECEF] hover:border-[#2563EB] transition-all cursor-pointer group shadow-[0_8px_24px_-12px_rgba(11,15,25,0.05)] flex flex-col justify-between"
+        >
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                3. Pending Receivables
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${
+                  finances.overdueReceivables > 0
+                    ? 'bg-[#FFE4E6] text-[#E11D48]'
+                    : 'bg-[#FEF3C7] text-[#D97706]'
+                }`}
+              >
+                {finances.livePaymentPendingCount} Live Due
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="text-3xl font-extrabold font-mono text-[#0B0F19]">
+                {formatINR(finances.pendingReceivables)}
+              </div>
+              <span className="text-[11px] font-semibold text-[#D97706]">
+                Contracted Balance
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-[#F1F5F9] text-xs space-y-1">
+            <div className="flex items-center justify-between text-[#E11D48]">
+              <span>Overdue / Live Deployed</span>
+              <span className="font-mono font-bold">
+                {formatINR(finances.overdueReceivables)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[#64748B]">
+              <span>In-Build Milestone Balance</span>
+              <span className="font-mono font-semibold text-[#0B0F19]">
+                {formatINR(finances.dueThisWeekReceivables)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 4: Operational Expenses & Pipeline */}
+        <div
+          onClick={() => onNavigate('finance')}
+          className="bg-white rounded-2xl p-5 border border-[#EAECEF] hover:border-[#2563EB] transition-all cursor-pointer group shadow-[0_8px_24px_-12px_rgba(11,15,25,0.05)] flex flex-col justify-between"
+        >
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
+                4. Studio Expenses
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-[10px] font-mono font-bold">
+                {dbState.expenses.length} Entries
+              </span>
+            </div>
+            <div className="flex items-baseline justify-between gap-2">
+              <div className="text-3xl font-extrabold font-mono text-[#0B0F19]">
+                {formatINR(finances.totalStudioExpenses)}
+              </div>
+              <span className="text-[11px] font-semibold text-[#64748B]">
+                Auto-Synced
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-[#F1F5F9] text-xs space-y-1">
+            <div className="flex items-center justify-between text-[#475569]">
+              <span>Domains & Hosting Sync</span>
+              <span className="font-mono font-bold text-[#0B0F19]">
+                {formatINR(domainExpensesSum)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[#475569]">
+              <span>Meta Ad Spend Sync</span>
+              <span className="font-mono font-bold text-[#0B0F19]">
+                {formatINR(metaExpensesSum)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* STUDIO HEALTH INDICATOR BAR (5 CALCULATED INDICATORS — PART 2) */}
+      <div className="bg-white rounded-2xl border border-[#EAECEF] p-4 shadow-[0_8px_24px_-12px_rgba(11,15,25,0.04)]">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-[#2563EB]" />
+            <span className="text-xs font-extrabold uppercase tracking-wider text-[#0B0F19]">
+              Studio Health Diagnostic Strip
+            </span>
+          </div>
+          <span className="text-[11px] font-mono text-[#64748B]">
+            Calculated live from financial, delivery & infrastructure telemetry
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {healthIndicators.map((ind) => (
+            <div
+              key={ind.id}
+              className="p-3 rounded-xl bg-[#F8F9FA] border border-[#EAECEF] flex flex-col justify-between"
+            >
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <span className="text-[11px] font-bold text-[#475569]">{ind.label}</span>
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                    ind.status === 'Healthy'
+                      ? 'bg-[#D1FAE5] text-[#059669]'
+                      : ind.status === 'Needs Attention'
+                      ? 'bg-[#FEF3C7] text-[#D97706]'
+                      : 'bg-[#FFE4E6] text-[#E11D48]'
+                  }`}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      ind.status === 'Healthy'
+                        ? 'bg-[#059669]'
+                        : ind.status === 'Needs Attention'
+                        ? 'bg-[#D97706]'
+                        : 'bg-[#E11D48]'
+                    }`}
+                  />
+                  {ind.status}
                 </span>
+              </div>
+              <div className="text-sm font-extrabold font-mono text-[#0B0F19]">
+                {ind.metric}
+              </div>
+              <div className="text-[11px] text-[#64748B] mt-0.5 truncate" title={ind.detail}>
+                {ind.detail}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* SECTION 3 — DAILY OPERATIONS (TWO-COLUMN SPLIT: TODAY'S PRIORITIES + UPCOMING 7 DAYS) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Column: Today's Priorities & Immediate Follow-ups (7 cols) */}
+        <div className="lg:col-span-7 bg-white rounded-3xl border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] overflow-hidden flex flex-col justify-between">
+          <div>
+            <div className="p-5 sm:px-6 border-b border-[#EAECEF] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB]">
+                  DAILY OPERATIONS · LEFT PANEL
+                </div>
+                <h2 className="text-lg font-extrabold text-[#0B0F19]">
+                  Today's Priorities & Immediate Follow-ups ({priorityRows.length})
+                </h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => onNavigate('tasks')}
+                  className="px-3 py-1.5 rounded-xl bg-[#F8F9FA] hover:bg-[#F1F5F9] text-xs font-bold text-[#0B0F19] border border-[#EAECEF] cursor-pointer"
+                >
+                  All Tasks
+                </button>
+                <button
+                  onClick={onOpenQuickAction}
+                  className="px-3 py-1.5 rounded-xl bg-[#0B0F19] hover:bg-[#1E293B] text-white text-xs font-bold cursor-pointer"
+                >
+                  + Add Task
+                </button>
+              </div>
+            </div>
+
+            {priorityRows.length === 0 ? (
+              <div className="p-8 text-center text-sm text-[#64748B]">
+                All priority tasks for {activeFounderFilter} are complete.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#EAECEF] bg-[#F8F9FA] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                      <th className="py-2.5 px-4">Priority</th>
+                      <th className="py-2.5 px-3">Task / Action Required</th>
+                      <th className="py-2.5 px-3">Client</th>
+                      <th className="py-2.5 px-3">Owner</th>
+                      <th className="py-2.5 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#F1F5F9] text-xs">
+                    {priorityRows.slice(0, 7).map((row) => (
+                      <tr
+                        key={row.id}
+                        className="hover:bg-[#F8F9FA]/80 transition-colors"
+                      >
+                        <td className="py-3 px-4 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1.5 font-bold text-[11px] ${
+                              row.priority === 'Urgent'
+                                ? 'text-[#E11D48]'
+                                : row.priority === 'High'
+                                ? 'text-[#D97706]'
+                                : 'text-[#2563EB]'
+                            }`}
+                          >
+                            <span
+                              className={`w-2 h-2 rounded-full ${
+                                row.priority === 'Urgent'
+                                  ? 'bg-[#E11D48]'
+                                  : row.priority === 'High'
+                                  ? 'bg-[#D97706]'
+                                  : 'bg-[#2563EB]'
+                              }`}
+                            />
+                            {row.priority}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="font-bold text-[#0B0F19]">{row.taskTitle}</div>
+                          <div className="text-[11px] text-[#64748B]">
+                            {row.categoryBadge} · Due <span className="font-mono">{row.deadline}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 whitespace-nowrap">
+                          {row.clientId ? (
+                            <button
+                              onClick={() => onOpenClient360(row.clientId!)}
+                              className="font-bold text-[#2563EB] hover:underline flex items-center gap-0.5 cursor-pointer"
+                            >
+                              {row.clientName}
+                              <ArrowUpRight className="w-3 h-3" />
+                            </button>
+                          ) : (
+                            <span className="font-semibold text-[#0B0F19]">{row.clientName}</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 whitespace-nowrap text-[#475569] font-semibold">
+                          {row.assignedTo}
+                        </td>
+                        <td className="py-3 px-4 whitespace-nowrap text-right">
+                          <div className="inline-flex items-center gap-1.5">
+                            {row.taskId && (
+                              <button
+                                onClick={() => onToggleTaskStatus(row.taskId!)}
+                                className="px-2 py-1 rounded-lg bg-[#ECFDF5] hover:bg-[#D1FAE5] text-[#059669] font-bold text-[11px] cursor-pointer"
+                              >
+                                ✓ Done
+                              </button>
+                            )}
+                            {row.phone && (
+                              <a
+                                href={`https://wa.me/${row.phone.replace(/[^0-9]/g, '')}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-2 py-1 rounded-lg bg-[#F8F9FA] hover:bg-[#ECFDF5] text-[#059669] border border-[#EAECEF] font-bold text-[11px]"
+                              >
+                                WA
+                              </a>
+                            )}
+                            <button
+                              onClick={row.onAction}
+                              className="px-2.5 py-1 rounded-lg bg-[#0B0F19] hover:bg-[#2563EB] text-white font-bold text-[11px] cursor-pointer"
+                            >
+                              {row.actionLabel}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
         </div>
 
-        {/* Card 2: Pending Receivables (Single Financial Source of Truth) */}
-        <div
-          onClick={() => onNavigate('finance')}
-          className="bg-white rounded-2xl p-5 border border-[#EAECEF] hover:border-[#2563EB] transition-all cursor-pointer group shadow-[0_8px_24px_-12px_rgba(11,15,25,0.05)]"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
-              2. Pending Receivables
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:bg-amber-500 group-hover:text-white transition-colors">
-              <Wallet className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="flex items-baseline justify-between gap-2">
-            <div className="text-3xl font-extrabold font-mono text-[#0B0F19]">
-              {formatINR(finances.pendingReceivables)}
-            </div>
-            <span className="text-[11px] font-semibold text-amber-700">
-              {finances.livePaymentPendingCount} live due →
-            </span>
-          </div>
-          <div className="mt-2 pt-2 border-t border-[#F1F5F9] text-xs text-[#64748B] flex items-center justify-between">
-            <span>Verified Collected</span>
-            <span className="font-mono font-bold text-[#059669]">
-              {formatINR(finances.totalRevenueCollected)}
-            </span>
-          </div>
-        </div>
-
-        {/* Card 3: Active Projects */}
-        <div
-          onClick={() => onNavigate('tickets')}
-          className="bg-white rounded-2xl p-5 border border-[#EAECEF] hover:border-[#2563EB] transition-all cursor-pointer group shadow-[0_8px_24px_-12px_rgba(11,15,25,0.05)]"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
-              3. Active Projects
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-[#ECFDF5] text-[#059669] flex items-center justify-center group-hover:bg-[#059669] group-hover:text-white transition-colors">
-              <Layers className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="flex items-baseline justify-between gap-2">
-            <div className="text-3xl font-extrabold font-mono text-[#0B0F19]">
-              {activeBuildProjects.length}
-            </div>
-            <span className="text-[11px] font-semibold text-[#2563EB]">
-              6-stage tracker →
-            </span>
-          </div>
-          <div className="mt-2 pt-2 border-t border-[#F1F5F9] text-xs text-[#64748B] flex items-center justify-between">
-            <span>Live Hosted Sites</span>
-            <span className="font-mono font-bold text-[#0B0F19]">
-              {dbState.websites.filter((w) => w.siteStatus === 'Online').length} online
-            </span>
-          </div>
-        </div>
-
-        {/* Card 4: Outstanding Tasks & Revisions */}
-        <div
-          onClick={() => onNavigate('tasks')}
-          className="bg-white rounded-2xl p-5 border border-[#EAECEF] hover:border-[#2563EB] transition-all cursor-pointer group shadow-[0_8px_24px_-12px_rgba(11,15,25,0.05)]"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#64748B]">
-              4. Outstanding Tasks
-            </span>
-            <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center group-hover:bg-rose-600 group-hover:text-white transition-colors">
-              <CheckSquare className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="flex items-baseline justify-between gap-2">
-            <div className="text-3xl font-extrabold font-mono text-[#0B0F19]">
-              {pendingTasks.length + openTickets.length}
-            </div>
-            <span className="text-[11px] font-semibold text-rose-600">
-              {openTickets.length} revisions · {pendingTasks.length} tasks →
-            </span>
-          </div>
-          <div className="mt-2 pt-2 border-t border-[#F1F5F9] text-xs text-[#64748B] flex items-center justify-between">
-            <span>Expiring Domains</span>
-            <span className="font-mono font-bold text-[#0B0F19]">
-              {expiringDomains.length} in 45d
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* UNIFIED STUDIO TREASURY STRIP (Guarantees 100% alignment between Overview, Pipeline & Finance) */}
-      <div className="bg-[#0B0F19] text-white rounded-2xl p-4 sm:px-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-[#60A5FA] shrink-0">
-            <TrendingUp className="w-4 h-4" />
-          </div>
+        {/* Right Column: Upcoming 7 Days Schedule & Horizon (5 cols) */}
+        <div className="lg:col-span-5 bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between">
           <div>
-            <div className="text-[10px] font-mono uppercase tracking-widest text-[#94A3B8]">
-              UNIFIED FINANCIAL LEDGER · CANONICAL SOURCE OF TRUTH
-            </div>
-            <div className="text-xs text-slate-300">
-              Synchronized across CRM Pipeline, Client 360° Dossiers, and Studio Finance
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 pt-3 lg:pt-0 border-t lg:border-t-0 border-white/10">
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-[#94A3B8]">
-              Agency Revenue Collected
-            </div>
-            <div className="text-base font-extrabold font-mono text-[#34D399]">
-              {formatINR(finances.totalRevenueCollected)}
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-[#94A3B8]">
-              Studio Ops Expenses
-            </div>
-            <div className="text-base font-extrabold font-mono text-rose-400">
-              {formatINR(finances.totalStudioExpenses)}
-            </div>
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-[#94A3B8]">
-              Net Studio Profit (50/50)
-            </div>
-            <div className="text-base font-extrabold font-mono text-white">
-              {formatINR(finances.netProfit)}{' '}
-              <span className="text-[10px] font-normal text-[#94A3B8]">
-                ({formatINR(finances.krishnaProfitShare50)} ea)
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB] flex items-center gap-1">
+                  <Calendar className="w-3 h-3" /> DAILY OPERATIONS · RIGHT PANEL
+                </div>
+                <h2 className="text-lg font-extrabold text-[#0B0F19]">
+                  Upcoming 7 Days & Deadlines
+                </h2>
+              </div>
+              <span className="text-[11px] font-mono text-[#64748B]">
+                {upcomingTimeline.length} scheduled
               </span>
             </div>
-          </div>
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-[#94A3B8]">
-              Client Ad Spend (Pass-Thru)
-            </div>
-            <div className="text-base font-extrabold font-mono text-[#60A5FA]">
-              {formatINR(finances.totalClientAdSpendPassThrough)}
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* SECTION C — TODAY'S PRIORITIES TABLE (Part 2C) */}
-      <div className="bg-white rounded-3xl border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] overflow-hidden">
-        <div className="p-5 sm:px-6 border-b border-[#EAECEF] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-          <div>
-            <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB]">
-              ACTION QUEUE
-            </div>
-            <h2 className="text-lg font-extrabold text-[#0B0F19]">
-              Today's Priorities & Immediate Follow-ups ({priorityRows.length})
-            </h2>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => onNavigate('tasks')}
-              className="px-3 py-1.5 rounded-xl bg-[#F8F9FA] hover:bg-[#F1F5F9] text-xs font-bold text-[#0B0F19] border border-[#EAECEF] cursor-pointer"
-            >
-              View All Tasks
-            </button>
-            <button
-              onClick={onOpenQuickAction}
-              className="px-3 py-1.5 rounded-xl bg-[#0B0F19] hover:bg-[#1E293B] text-white text-xs font-bold cursor-pointer"
-            >
-              + Add Task
-            </button>
-          </div>
-        </div>
-
-        {priorityRows.length === 0 ? (
-          <div className="p-8 text-center text-sm text-[#64748B]">
-            All priority tasks for {activeFounderFilter} are complete.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[720px]">
-              <thead>
-                <tr className="border-b border-[#EAECEF] bg-[#F8F9FA] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
-                  <th className="py-3 px-5">Priority</th>
-                  <th className="py-3 px-4">Task / Action Required</th>
-                  <th className="py-3 px-4">Client</th>
-                  <th className="py-3 px-4">Assigned</th>
-                  <th className="py-3 px-4">Deadline</th>
-                  <th className="py-3 px-5 text-right">Quick Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#F1F5F9] text-xs">
-                {priorityRows.slice(0, 8).map((row) => (
-                  <tr
-                    key={row.id}
-                    className="hover:bg-[#F8F9FA]/80 transition-colors group"
+            {upcomingTimeline.length === 0 ? (
+              <div className="p-6 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] text-center text-xs text-[#64748B]">
+                No upcoming deadlines or renewals scheduled.
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {upcomingTimeline.slice(0, 6).map((ev) => (
+                  <div
+                    key={ev.id}
+                    onClick={() => ev.clientId && onOpenClient360(ev.clientId)}
+                    className="p-3 rounded-2xl bg-[#F8F9FA] hover:bg-[#F1F5F9] border border-[#EAECEF] flex items-center justify-between gap-3 transition-colors cursor-pointer"
                   >
-                    <td className="py-3.5 px-5 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center gap-1.5 font-bold text-[11px] ${
-                          row.priority === 'Urgent'
-                            ? 'text-rose-600'
-                            : row.priority === 'High'
-                            ? 'text-amber-600'
-                            : 'text-[#2563EB]'
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                            ev.type === 'Milestone'
+                              ? 'bg-[#EFF6FF] text-[#2563EB]'
+                              : ev.type === 'Domain Renewal'
+                              ? 'bg-[#FEF3C7] text-[#D97706]'
+                              : 'bg-white border border-[#EAECEF] text-[#475569]'
+                          }`}
+                        >
+                          {ev.type}
+                        </span>
+                        <span className="text-xs font-bold text-[#0B0F19] truncate">
+                          {ev.title}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-[#64748B] mt-0.5 truncate">
+                        {ev.subtitle} · Assigned to <strong className="text-[#0B0F19]">{ev.assignedTo}</strong>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[11px] font-mono font-bold text-[#0B0F19]">
+                        {ev.date}
+                      </div>
+                      <div
+                        className={`text-[10px] font-mono ${
+                          ev.daysFromNow < 0
+                            ? 'text-[#E11D48] font-bold'
+                            : ev.daysFromNow === 0
+                            ? 'text-[#D97706] font-bold'
+                            : 'text-[#64748B]'
                         }`}
                       >
-                        <span
-                          className={`w-2 h-2 rounded-full ${
-                            row.priority === 'Urgent'
-                              ? 'bg-rose-600'
-                              : row.priority === 'High'
-                              ? 'bg-amber-500'
-                              : 'bg-[#2563EB]'
-                          }`}
-                        />
-                        {row.priority}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4">
-                      <div className="font-bold text-[#0B0F19]">{row.taskTitle}</div>
-                      <div className="text-[11px] text-[#64748B]">{row.categoryBadge}</div>
-                    </td>
-                    <td className="py-3.5 px-4 whitespace-nowrap">
-                      {row.clientId ? (
-                        <button
-                          onClick={() => onOpenClient360(row.clientId!)}
-                          className="font-bold text-[#2563EB] hover:underline flex items-center gap-1 cursor-pointer"
-                        >
-                          {row.clientName}
-                          <ArrowUpRight className="w-3 h-3" />
-                        </button>
-                      ) : (
-                        <span className="font-semibold text-[#0B0F19]">{row.clientName}</span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 whitespace-nowrap text-[#475569] font-medium">
-                      {row.assignedTo}
-                    </td>
-                    <td className="py-3.5 px-4 whitespace-nowrap font-mono text-[11px] text-[#475569]">
-                      {row.deadline}
-                    </td>
-                    <td className="py-3.5 px-5 whitespace-nowrap text-right">
-                      <div className="inline-flex items-center gap-1.5">
-                        {row.taskId && (
-                          <button
-                            onClick={() => onToggleTaskStatus(row.taskId!)}
-                            title="Mark task completed"
-                            className="px-2.5 py-1 rounded-lg bg-[#ECFDF5] hover:bg-[#D1FAE5] text-[#059669] font-bold text-[11px] transition-colors cursor-pointer"
-                          >
-                            ✓ Done
-                          </button>
-                        )}
-                        {row.phone && (
-                          <a
-                            href={`https://wa.me/${row.phone.replace(/[^0-9]/g, '')}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="px-2.5 py-1 rounded-lg bg-[#F8F9FA] hover:bg-[#ECFDF5] text-[#059669] border border-[#EAECEF] font-bold text-[11px] transition-colors"
-                          >
-                            WA
-                          </a>
-                        )}
-                        <button
-                          onClick={row.onAction}
-                          className="px-3 py-1 rounded-lg bg-[#0B0F19] hover:bg-[#2563EB] text-white font-bold text-[11px] transition-colors cursor-pointer"
-                        >
-                          {row.actionLabel}
-                        </button>
+                        {ev.daysFromNow < 0
+                          ? `${Math.abs(ev.daysFromNow)}d ago`
+                          : ev.daysFromNow === 0
+                          ? 'Today'
+                          : `in ${ev.daysFromNow}d`}
                       </div>
-                    </td>
-                  </tr>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            )}
           </div>
-        )}
+
+          <div className="mt-4 pt-3 border-t border-[#F1F5F9] flex items-center justify-between text-xs text-[#64748B]">
+            <span>Synchronized across CRM, Projects & Domains</span>
+            <button
+              onClick={() => onNavigate('tasks')}
+              className="font-bold text-[#2563EB] hover:underline cursor-pointer"
+            >
+              Open Full Schedule →
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* SECTION D & E — ACTIVE PROJECTS (WITH MILESTONE PROGRESS) + RECENT ACTIVITY FEED */}
+      {/* SECTION 4 — BUSINESS PERFORMANCE (3 CLEAN VISUAL CHARTS — PART 2) */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Chart 1: Revenue vs Expenses & Net Profit */}
+        <div className="bg-white rounded-2xl p-5 border border-[#EAECEF] shadow-[0_8px_24px_-12px_rgba(11,15,25,0.04)] flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB]">
+                  PERFORMANCE CHART 01
+                </div>
+                <h3 className="text-sm font-extrabold text-[#0B0F19]">
+                  Revenue vs Operational Expenses
+                </h3>
+              </div>
+              <BarChart3 className="w-4 h-4 text-[#64748B]" />
+            </div>
+
+            <div className="space-y-3 mt-4">
+              <div>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="font-semibold text-[#475569]">Collected Revenue</span>
+                  <span className="font-mono font-bold text-[#059669]">
+                    {formatINR(finances.totalRevenueCollected)}
+                  </span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-[#F1F5F9] overflow-hidden">
+                  <div className="h-full bg-[#059669] rounded-full" style={{ width: '100%' }} />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="font-semibold text-[#475569]">Operational Expenses</span>
+                  <span className="font-mono font-bold text-[#E11D48]">
+                    {formatINR(finances.totalStudioExpenses)}
+                  </span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-[#F1F5F9] overflow-hidden">
+                  <div
+                    className="h-full bg-[#E11D48] rounded-full"
+                    style={{
+                      width: `${
+                        finances.totalRevenueCollected > 0
+                          ? Math.min(
+                              100,
+                              Math.round(
+                                (finances.totalStudioExpenses / finances.totalRevenueCollected) * 100
+                              )
+                            )
+                          : 0
+                      }%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="font-semibold text-[#475569]">Net Studio Profit</span>
+                  <span className="font-mono font-bold text-[#2563EB]">
+                    {formatINR(finances.netProfit)} ({finances.profitMarginPercent}%)
+                  </span>
+                </div>
+                <div className="w-full h-2.5 rounded-full bg-[#F1F5F9] overflow-hidden">
+                  <div
+                    className="h-full bg-[#2563EB] rounded-full"
+                    style={{ width: `${Math.max(0, Math.min(100, finances.profitMarginPercent))}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-[#F1F5F9] flex items-center justify-between text-[11px] text-[#64748B]">
+            <span>Client Pass-Through Ad Spend</span>
+            <span className="font-mono font-bold text-[#0B0F19]">
+              {formatINR(finances.totalClientAdSpendPassThrough)}
+            </span>
+          </div>
+        </div>
+
+        {/* Chart 2: Client Acquisition & Conversion Funnel */}
+        <div className="bg-white rounded-2xl p-5 border border-[#EAECEF] shadow-[0_8px_24px_-12px_rgba(11,15,25,0.04)] flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB]">
+                  PERFORMANCE CHART 02
+                </div>
+                <h3 className="text-sm font-extrabold text-[#0B0F19]">
+                  Client Acquisition & Deal Funnel
+                </h3>
+              </div>
+              <span className="text-xs font-mono font-bold text-[#059669]">
+                {leadAnalytics.conversionRatePercent}% Win Rate
+              </span>
+            </div>
+
+            <div className="space-y-2.5 mt-3">
+              <div className="flex items-center justify-between text-xs p-2 rounded-xl bg-[#F8F9FA]">
+                <span className="text-[#475569] font-medium">Total Opportunities</span>
+                <span className="font-mono font-bold text-[#0B0F19]">
+                  {leadAnalytics.totalLeads} leads ({formatINR(finances.totalAllPipelineVolume)})
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs p-2 rounded-xl bg-[#EFF6FF]/60">
+                <span className="text-[#2563EB] font-semibold">Proposals / In Talks</span>
+                <span className="font-mono font-bold text-[#2563EB]">
+                  {finances.unclosedLeadsCount} active ({formatINR(finances.unclosedPipelineVolume)})
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-xs p-2 rounded-xl bg-[#ECFDF5]">
+                <span className="text-[#059669] font-semibold">Confirmed Won Deals</span>
+                <span className="font-mono font-bold text-[#059669]">
+                  {leadAnalytics.wonDeals} deals ({formatINR(finances.totalContractedVolume)})
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-[#F1F5F9] flex items-center justify-between text-[11px] text-[#64748B]">
+            <span>Average Confirmed Deal Size</span>
+            <span className="font-mono font-bold text-[#0B0F19]">
+              {formatINR(leadAnalytics.averageDealValue)}
+            </span>
+          </div>
+        </div>
+
+        {/* Chart 3: Receivables vs Collected Breakdown */}
+        <div className="bg-white rounded-2xl p-5 border border-[#EAECEF] shadow-[0_8px_24px_-12px_rgba(11,15,25,0.04)] flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB]">
+                  PERFORMANCE CHART 03
+                </div>
+                <h3 className="text-sm font-extrabold text-[#0B0F19]">
+                  Receivables vs Collected Breakdown
+                </h3>
+              </div>
+              <Wallet className="w-4 h-4 text-[#64748B]" />
+            </div>
+
+            {/* Stacked Visual Bar */}
+            <div className="w-full h-3.5 rounded-full bg-[#F1F5F9] overflow-hidden flex my-3">
+              <div
+                className="h-full bg-[#059669]"
+                style={{ width: `${finances.collectionRatePercent}%` }}
+                title={`Collected: ${formatINR(finances.clientProjectRevenue)}`}
+              />
+              <div
+                className="h-full bg-[#E11D48]"
+                style={{
+                  width: `${
+                    finances.totalContractedVolume > 0
+                      ? Math.round(
+                          (finances.overdueReceivables / finances.totalContractedVolume) * 100
+                        )
+                      : 0
+                  }%`,
+                }}
+                title={`Live Due: ${formatINR(finances.overdueReceivables)}`}
+              />
+              <div
+                className="h-full bg-[#F59E0B]"
+                style={{
+                  width: `${
+                    finances.totalContractedVolume > 0
+                      ? Math.round(
+                          (finances.dueThisWeekReceivables / finances.totalContractedVolume) * 100
+                        )
+                      : 0
+                  }%`,
+                }}
+                title={`In-Build Balance: ${formatINR(finances.dueThisWeekReceivables)}`}
+              />
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-[#475569]">
+                  <span className="w-2.5 h-2.5 rounded-xs bg-[#059669]" /> Collected Revenue
+                </span>
+                <span className="font-mono font-bold text-[#059669]">
+                  {formatINR(finances.clientProjectRevenue)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-[#475569]">
+                  <span className="w-2.5 h-2.5 rounded-xs bg-[#E11D48]" /> Overdue / Live Pending
+                </span>
+                <span className="font-mono font-bold text-[#E11D48]">
+                  {formatINR(finances.overdueReceivables)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-[#475569]">
+                  <span className="w-2.5 h-2.5 rounded-xs bg-[#F59E0B]" /> In-Build Milestone Balance
+                </span>
+                <span className="font-mono font-bold text-[#D97706]">
+                  {formatINR(finances.dueThisWeekReceivables)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-[#F1F5F9] flex items-center justify-between text-[11px] text-[#64748B]">
+            <span>Total Confirmed Contract Volume</span>
+            <span className="font-mono font-bold text-[#0B0F19]">
+              {formatINR(finances.totalContractedVolume)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 5 & 6 — ACTIVE CLIENT PROJECTS (WITH DEADLINES & APPROVALS) + RECENT ACTIVITY FEED */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* SECTION D: Active Projects (7 cols) */}
+        {/* SECTION 5: Active Projects (7 cols) */}
         <div className="lg:col-span-7 bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB]">
-                  DELIVERY ENGINE
+                  DELIVERY ENGINE · ACTIVE PROJECTS
                 </div>
                 <h2 className="text-lg font-extrabold text-[#0B0F19]">
                   Active Client Projects ({activeBuildProjects.length})
@@ -586,7 +954,7 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
                 onClick={() => onNavigate('tickets')}
                 className="text-xs font-bold text-[#2563EB] hover:underline flex items-center gap-1 cursor-pointer"
               >
-                All Projects & Milestones <ChevronRight className="w-3.5 h-3.5" />
+                All Projects, Templates & Approvals <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
 
@@ -614,7 +982,7 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <button
                               onClick={() => onOpenClient360(client.id)}
                               className="text-sm font-extrabold text-[#0B0F19] hover:text-[#2563EB] transition-colors cursor-pointer text-left"
@@ -624,9 +992,30 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
                             <span className="text-[11px] text-[#64748B]">
                               · {client.city}
                             </span>
+                            <span className="px-2 py-0.5 rounded-md bg-white border border-[#EAECEF] text-[10px] font-mono font-bold text-[#475569]">
+                              {prog.approvedCheckpointsCount}/{prog.totalCheckpointsCount} Approvals
+                            </span>
+                            {prog.daysRemaining !== null && (
+                              <span
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${
+                                  prog.daysRemaining < 0
+                                    ? 'bg-[#FFE4E6] text-[#E11D48]'
+                                    : 'bg-[#EFF6FF] text-[#2563EB]'
+                                }`}
+                              >
+                                {prog.daysRemaining < 0
+                                  ? `${Math.abs(prog.daysRemaining)}d overdue`
+                                  : `${prog.daysRemaining}d remaining`}
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs text-[#475569] mt-0.5">
                             Service: <span className="font-semibold">{client.packageTier}</span>
+                            {client.projectEndDate && (
+                              <span className="ml-2 text-[11px] font-mono text-[#64748B]">
+                                · Target: {client.projectEndDate}
+                              </span>
+                            )}
                           </div>
                         </div>
 
@@ -698,7 +1087,7 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
           </div>
         </div>
 
-        {/* SECTION E: Recent Activity Feed (5 cols) */}
+        {/* SECTION 6: Recent Activity Feed (5 cols) */}
         <div className="lg:col-span-5 bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -762,7 +1151,7 @@ export const CommandCenterView: React.FC<CommandCenterViewProps> = ({
               onClick={() => onNavigate('analytics')}
               className="font-bold text-[#2563EB] hover:underline cursor-pointer"
             >
-              View Studio Reports →
+              View Studio Intelligence Reports →
             </button>
           </div>
         </div>

@@ -26,6 +26,10 @@ import {
   ProjectMilestoneStage,
   StudioTask,
   ExpensePaidBy,
+  ProjectTemplateName,
+  ApprovalCheckpointStage,
+  ClientCommunicationLog,
+  ClientInvoice,
 } from './types';
 import { SEED_DATA } from './data/seedData';
 import {
@@ -35,7 +39,9 @@ import {
 } from './services/dbService';
 import { calculateDaysUntilExpiry } from './utils/calculations';
 import {
+  addClientCommunicationLog,
   appendActivityLog,
+  applyProjectTemplateToClient,
   cascadeClientDelete,
   cascadeClientUpdate,
   convertLeadToActiveProject,
@@ -43,7 +49,9 @@ import {
   deletePaymentAndSyncClient,
   reconcileDatabaseIntegrity,
   recordPaymentAndSyncClient,
+  toggleClientApprovalCheckpoint,
   toggleClientMilestone,
+  toggleMilestoneSubtask,
   updateExpenseAndSyncSource,
   updatePaymentAndSyncClient,
 } from './utils/syncEngine';
@@ -166,6 +174,79 @@ export default function App() {
         activeFounderFilter === 'All' ? 'Krishna' : activeFounderFilter
       )
     );
+  };
+
+  const handleApplyProjectTemplate = (clientId: string, templateName: ProjectTemplateName) => {
+    persistUpdate((prev) => applyProjectTemplateToClient(prev, clientId, templateName));
+  };
+
+  const handleToggleApprovalCheckpoint = (
+    clientId: string,
+    stage: ApprovalCheckpointStage
+  ) => {
+    persistUpdate((prev) =>
+      toggleClientApprovalCheckpoint(
+        prev,
+        clientId,
+        stage,
+        activeFounderFilter === 'All' ? 'Krishna' : activeFounderFilter
+      )
+    );
+  };
+
+  const handleToggleMilestoneSubtask = (
+    clientId: string,
+    milestoneStage: ProjectMilestoneStage,
+    subtaskId: string
+  ) => {
+    persistUpdate((prev) =>
+      toggleMilestoneSubtask(prev, clientId, milestoneStage, subtaskId)
+    );
+  };
+
+  const handleAddCommunicationLog = (
+    clientId: string,
+    log: Omit<ClientCommunicationLog, 'id'>
+  ) => {
+    persistUpdate((prev) => addClientCommunicationLog(prev, clientId, log));
+  };
+
+  const handleToggleAutomationRule = (ruleId: string) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      automationRules: (prev.automationRules || []).map((r) =>
+        r.id === ruleId ? { ...r, enabled: !r.enabled } : r
+      ),
+    }));
+  };
+
+  const handleAddInvoice = (newInv: ClientInvoice) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      invoices: [newInv, ...(prev.invoices || [])],
+      activityLogs: appendActivityLog(prev, {
+        actor: 'Krishna',
+        action: `Generated ${newInv.type} (${newInv.invoiceNumber}) for ₹${newInv.amount.toLocaleString('en-IN')}`,
+        targetName: newInv.clientName,
+        category: 'Finance',
+      }),
+    }));
+  };
+
+  const handleUpdateInvoice = (updated: ClientInvoice) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      invoices: (prev.invoices || []).map((inv) =>
+        inv.id === updated.id ? updated : inv
+      ),
+    }));
+  };
+
+  const handleDeleteInvoice = (invoiceId: string) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      invoices: (prev.invoices || []).filter((inv) => inv.id !== invoiceId),
+    }));
   };
 
   const handleUpdateCampaign = (updated: MetaAdCampaign) => {
@@ -432,16 +513,18 @@ export default function App() {
         activeFounderFilter={activeFounderFilter}
         onChangeFounderFilter={setActiveFounderFilter}
         clients={dbState.clients}
+        dbState={dbState}
         onOpenClient360={handleOpenClient360}
+        onToggleAutomationRule={handleToggleAutomationRule}
       />
 
       {/* Main Workspace Container */}
       <div
-        className={`flex-1 flex flex-col justify-between transition-all duration-200 ${
+        className={`flex-1 min-w-0 overflow-x-hidden flex flex-col justify-between transition-all duration-200 ${
           sidebarCollapsed ? 'lg:pl-[68px]' : 'lg:pl-[240px]'
         }`}
       >
-        <main className="max-w-[1440px] w-full mx-auto px-3 sm:px-6 lg:px-8 pt-5 pb-12">
+        <main className="max-w-[1440px] w-full min-w-0 mx-auto px-3 sm:px-6 lg:px-8 pt-5 pb-12">
           {activeModule === 'command-center' && (
             <CommandCenterView
               dbState={dbState}
@@ -464,6 +547,10 @@ export default function App() {
               onDeleteClient={handleDeleteClient}
               onConvertLeadToProject={handleConvertLeadToProject}
               onToggleMilestone={handleToggleMilestone}
+              onApplyProjectTemplate={handleApplyProjectTemplate}
+              onToggleApprovalCheckpoint={handleToggleApprovalCheckpoint}
+              onToggleMilestoneSubtask={handleToggleMilestoneSubtask}
+              onAddCommunicationLog={handleAddCommunicationLog}
               onAddPayment={handleAddPayment}
               onAddTicket={handleAddTicket}
               onAddCampaign={handleAddCampaign}
@@ -487,6 +574,9 @@ export default function App() {
               onAddTicket={handleAddTicket}
               onDeleteTicket={handleDeleteTicket}
               onToggleMilestone={handleToggleMilestone}
+              onApplyProjectTemplate={handleApplyProjectTemplate}
+              onToggleApprovalCheckpoint={handleToggleApprovalCheckpoint}
+              onToggleMilestoneSubtask={handleToggleMilestoneSubtask}
               onAddTask={handleAddTask}
               onUpdateTask={handleUpdateTask}
               onToggleTaskStatus={handleToggleTaskStatus}
@@ -523,6 +613,8 @@ export default function App() {
               payments={dbState.payments}
               clients={dbState.clients}
               metaCampaigns={dbState.metaCampaigns}
+              websites={dbState.websites}
+              invoices={dbState.invoices || []}
               initialSubView={activeModule === 'analytics' ? 'analytics' : 'ledger'}
               onUpdateExpense={handleUpdateExpense}
               onAddExpense={handleAddExpense}
@@ -530,6 +622,9 @@ export default function App() {
               onAddPayment={handleAddPayment}
               onUpdatePayment={handleUpdatePayment}
               onDeletePayment={handleDeletePayment}
+              onAddInvoice={handleAddInvoice}
+              onUpdateInvoice={handleUpdateInvoice}
+              onDeleteInvoice={handleDeleteInvoice}
               onOpenClient360={handleOpenClient360}
             />
           )}

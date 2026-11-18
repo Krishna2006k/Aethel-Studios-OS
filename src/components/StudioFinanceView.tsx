@@ -9,6 +9,12 @@ import {
   Pencil,
   Check,
   X,
+  FileText,
+  Printer,
+  Download,
+  Target,
+  Activity,
+  Award,
 } from 'lucide-react';
 import {
   StudioExpense,
@@ -16,8 +22,15 @@ import {
   ClientLead,
   ExpensePaidBy,
   MetaAdCampaign,
+  ClientInvoice,
+  HostedWebsite,
 } from '../types';
 import {
+  calculateClientProjectProgress,
+  calculateCPC,
+  calculateCPL,
+  calculateCTR,
+  calculateLeadConversionAnalytics,
   calculatePendingBalance,
   calculateStudioFinances,
   formatINR,
@@ -28,6 +41,8 @@ interface StudioFinanceViewProps {
   payments: ClientPayment[];
   clients: ClientLead[];
   metaCampaigns?: MetaAdCampaign[];
+  websites?: HostedWebsite[];
+  invoices?: ClientInvoice[];
   initialSubView?: 'ledger' | 'analytics';
   onUpdateExpense: (updated: StudioExpense) => void;
   onAddExpense: (newExp: StudioExpense) => void;
@@ -35,6 +50,9 @@ interface StudioFinanceViewProps {
   onAddPayment: (newPay: ClientPayment) => void;
   onUpdatePayment?: (updated: ClientPayment) => void;
   onDeletePayment: (paymentId: string) => void;
+  onAddInvoice?: (inv: ClientInvoice) => void;
+  onUpdateInvoice?: (inv: ClientInvoice) => void;
+  onDeleteInvoice?: (invoiceId: string) => void;
   onOpenClient360?: (clientId: string) => void;
 }
 
@@ -43,6 +61,8 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
   payments,
   clients,
   metaCampaigns = [],
+  websites = [],
+  invoices = [],
   initialSubView = 'ledger',
   onUpdateExpense,
   onAddExpense,
@@ -50,11 +70,18 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
   onAddPayment,
   onUpdatePayment,
   onDeletePayment,
+  onAddInvoice,
+  onUpdateInvoice,
+  onDeleteInvoice,
   onOpenClient360,
 }) => {
-  const [activeTab, setActiveTab] = useState<'receivables' | 'payments' | 'expenses' | 'analytics'>(
-    initialSubView === 'analytics' ? 'analytics' : 'payments'
-  );
+  const [activeTab, setActiveTab] = useState<
+    'receivables' | 'payments' | 'invoices' | 'expenses' | 'analytics'
+  >(initialSubView === 'analytics' ? 'analytics' : 'payments');
+
+  const [analyticsDateRange, setAnalyticsDateRange] = useState<
+    'All Time' | 'This Month' | 'This Quarter' | 'FY 2026-27'
+  >('All Time');
 
   // Sync tab if sidebar switches between 'finance' and 'analytics'
   React.useEffect(() => {
@@ -78,6 +105,14 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
   const [payMode, setPayMode] = useState<ClientPayment['paymentMode']>('UPI');
   const [payAccount, setPayAccount] = useState<ExpensePaidBy>('Studio Account');
   const [payMilestone, setPayMilestone] = useState<ClientPayment['milestone']>('Advance (50%)');
+
+  // Quick Add Invoice
+  const [invClient, setInvClient] = useState('');
+  const [invType, setInvType] = useState<ClientInvoice['type']>('Advance Invoice');
+  const [invAmount, setInvAmount] = useState(7999);
+  const [invStatus, setInvStatus] = useState<ClientInvoice['status']>('Pending');
+  const [invDesc, setInvDesc] = useState('');
+  const [previewInvoice, setPreviewInvoice] = useState<ClientInvoice | null>(null);
 
   // Inline Edit Payment State
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
@@ -121,6 +156,7 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
   };
 
   const finances = calculateStudioFinances(expenses, payments, clients, metaCampaigns);
+  const salesAnalytics = calculateLeadConversionAnalytics(clients);
 
   const handleCreateExpense = (e: React.FormEvent) => {
     e.preventDefault();
@@ -163,27 +199,136 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
     setPayTitle('');
   };
 
+  const handleCreateInvoice = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!invClient.trim() || !onAddInvoice) return;
+    const matchedClient = clients.find(
+      (c) => c.businessName.toLowerCase().trim() === invClient.toLowerCase().trim()
+    );
+    const today = new Date().toISOString().slice(0, 10);
+    const nextNum = `INV-2026-${String(invoices.length + 1).padStart(3, '0')}`;
+    onAddInvoice({
+      id: `inv-${Date.now()}`,
+      invoiceNumber: nextNum,
+      clientId: matchedClient?.id || `cli-${Date.now()}`,
+      clientName: matchedClient ? matchedClient.businessName : invClient.trim(),
+      projectTitle: matchedClient ? matchedClient.packageTier : 'Website & Digital Growth Package',
+      type: invType,
+      amount: Math.max(0, Number(invAmount) || 0),
+      status: invStatus,
+      issueDate: today,
+      dueDate: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
+      notes:
+        invDesc.trim() ||
+        `${matchedClient ? matchedClient.packageTier : 'Website & Digital Growth Package'} — ${invType}`,
+    });
+    setInvClient('');
+    setInvDesc('');
+  };
+
+  const handleExportFinanceCSV = () => {
+    const headers = [
+      'Record Type',
+      'Date',
+      'Client / Entity',
+      'Description / Category',
+      'Account / Payer',
+      'Amount (INR)',
+    ];
+    const rows: string[][] = [
+      ...payments.map((p) => [
+        'INFLOW',
+        p.paymentDate,
+        `"${p.clientName}"`,
+        `"${p.projectTitle} (${p.milestone})"`,
+        p.receivedInAccount,
+        String(p.amountReceived),
+      ]),
+      ...expenses.map((e) => [
+        'EXPENSE',
+        e.date,
+        `"${e.clientRelated || 'Studio'}"`,
+        `"${e.title} (${e.category})"`,
+        e.paidBy,
+        `-${e.amount}`,
+      ]),
+    ];
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute(
+      'download',
+      `aethel-finance-report-${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const receivableClients = clients.filter(
     (c) =>
       c.stage !== 'Rejected / Dropped' &&
       (c.finalAgreedPrice > 0 || c.advancePaid > 0)
   );
 
-  const nicheBreakdown = ['Banquet/Lawns', 'Clinic/Hospital', 'Retail/Electronics', 'Cafe/Restaurant', 'Real Estate/Interior'].map(
-    (nicheName) => {
-      const nicheClients = clients.filter(
-        (c) => c.niche === nicheName && c.stage !== 'Rejected / Dropped'
-      );
-      const contracted = nicheClients.reduce((s, c) => s + c.finalAgreedPrice, 0);
-      const collected = nicheClients.reduce((s, c) => s + c.advancePaid, 0);
+  const nicheBreakdown = [
+    'Banquet/Lawns',
+    'Clinic/Hospital',
+    'Retail/Electronics',
+    'Cafe/Restaurant',
+    'Real Estate/Interior',
+  ].map((nicheName) => {
+    const nicheClients = clients.filter(
+      (c) => c.niche === nicheName && c.stage !== 'Rejected / Dropped'
+    );
+    const contracted = nicheClients.reduce((s, c) => s + c.finalAgreedPrice, 0);
+    const collected = nicheClients.reduce((s, c) => s + c.advancePaid, 0);
+    return {
+      nicheName,
+      count: nicheClients.length,
+      contracted,
+      collected,
+    };
+  });
+
+  // Part 9: Client Profitability Table Calculation
+  const clientProfitabilityList = clients
+    .filter((c) => c.stage !== 'Rejected / Dropped')
+    .map((c) => {
+      const clientExpenses = expenses
+        .filter(
+          (e) =>
+            e.clientRelated?.toLowerCase() === c.businessName.toLowerCase() ||
+            websites.some(
+              (w) =>
+                (w.clientId === c.id ||
+                  w.clientName.toLowerCase() === c.businessName.toLowerCase()) &&
+                e.linkedDomainId === w.id
+            ) ||
+            metaCampaigns.some(
+              (m) =>
+                (m.clientId === c.id ||
+                  m.clientName.toLowerCase() === c.businessName.toLowerCase()) &&
+                e.linkedCampaignId === m.id
+            )
+        )
+        .reduce((s, e) => s + e.amount, 0);
+      const netClientProfit = c.advancePaid - clientExpenses;
+      const projectedNetProfit = c.finalAgreedPrice - clientExpenses;
+      const progress = calculateClientProjectProgress(c);
       return {
-        nicheName,
-        count: nicheClients.length,
-        contracted,
-        collected,
+        client: c,
+        revenueCollected: c.advancePaid,
+        contractValue: c.finalAgreedPrice,
+        directCosts: clientExpenses,
+        netClientProfit,
+        projectedNetProfit,
+        progressPct: progress.percent,
       };
-    }
-  );
+    });
 
   return (
     <div className="space-y-6">
@@ -191,15 +336,15 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] mb-1">
-            MANAGEMENT · UNIFIED FINANCIAL LEDGER &amp; ANALYTICS
+            MANAGEMENT · UNIFIED FINANCIAL LEDGER, INVOICES &amp; 5-CATEGORY ANALYTICS
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
             {activeTab === 'analytics'
-              ? 'Studio Analytics & Financial Reports'
-              : 'Treasury, Ledger & Co-Founder Split'}
+              ? 'Studio Intelligence & 5-Category Analytics'
+              : 'Treasury, Invoices & Co-Founder Accounting'}
           </h1>
           <p className="text-xs sm:text-sm text-[#64748B] mt-0.5">
-            Strictly separates <strong>Agency Revenue</strong>, <strong>Client Pass-Through Ad Spend</strong>, and <strong>Operational Expenses</strong>. 100% synchronized with CRM Pipeline.
+            Complete financial operating system for <strong>Vansh Khakole</strong> &amp; <strong>Krishna Khakole</strong> — real-time reconciliation across CRM, Meta Ads, and Domains.
           </p>
         </div>
 
@@ -208,8 +353,9 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
           {[
             { id: 'payments', label: `Client Inflows (${payments.length})` },
             { id: 'receivables', label: `Receivables (${formatINR(finances.pendingReceivables)})` },
+            { id: 'invoices', label: `Invoices & Receipts (${invoices.length})` },
             { id: 'expenses', label: `Expenses (${expenses.length})` },
-            { id: 'analytics', label: 'Analytics & Reports' },
+            { id: 'analytics', label: '5-Category Analytics' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -231,7 +377,7 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
         <div className="bg-[#0B0F19] text-white rounded-3xl p-5 border border-[#0B0F19] flex flex-col justify-between space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-mono uppercase tracking-widest text-[#34D399] font-bold">
-              STREAM 01 · AGENCY REVENUE
+              STREAM 01 · AGENCY REVENUE ({finances.collectionRatePercent}% COLLECTED)
             </span>
             <TrendingUp className="w-4 h-4 text-[#34D399]" />
           </div>
@@ -255,7 +401,7 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
         <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between space-y-4 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-mono uppercase tracking-widest text-[#2563EB] font-bold">
-              STREAM 02 · STUDIO NET PROFIT &amp; OPS
+              STREAM 02 · STUDIO NET PROFIT ({finances.profitMarginPercent}% MARGIN)
             </span>
             <Wallet className="w-4 h-4 text-[#2563EB]" />
           </div>
@@ -279,7 +425,7 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
         <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex flex-col justify-between space-y-4 shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-mono uppercase tracking-widest text-indigo-600 font-bold">
-              STREAM 03 · CLIENT AD SPEND (PASS-THROUGH)
+              STREAM 03 · CLIENT AD SPEND (SYNCED)
             </span>
             <Megaphone className="w-4 h-4 text-indigo-600" />
           </div>
@@ -300,59 +446,94 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
         </div>
       </div>
 
-      {/* Co-Founder Out-of-Pocket Split & Reimbursement Calculator */}
-      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 pb-4 border-b border-[#EAECEF]">
+      {/* PART 8: 6-COLUMN CO-FOUNDER ACCOUNTING & SETTLEMENT TABLE */}
+      <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 pb-3 border-b border-[#EAECEF]">
           <div className="flex items-center gap-2">
             <Scale className="w-5 h-5 text-[#2563EB]" />
-            <h2 className="text-base font-extrabold text-[#0B0F19]">
-              Co-Founder Out-of-Pocket Split &amp; Reimbursement Calculator
-            </h2>
+            <div>
+              <h2 className="text-base font-extrabold text-[#0B0F19]">
+                Co-Founder Accounting, Attributable Revenue &amp; 50/50 Settlement Ledger
+              </h2>
+              <p className="text-xs text-[#64748B]">
+                Tracks direct collections, deal attribution, personal unreimbursed spend, and exact 50/50 profit entitlement.
+              </p>
+            </div>
           </div>
-          <span className="text-xs font-mono text-[#64748B]">
-            Unreimbursed Personal Spend Settlement
+          <span className="px-3 py-1 rounded-xl bg-[#EFF6FF] text-[#2563EB] border border-[#BFDBFE] text-xs font-bold">
+            {finances.settlementSummary}
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-          <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
-            <div className="text-xs font-bold text-[#64748B] mb-1">
-              Vansh Personal Out-of-Pocket (Unreimbursed)
-            </div>
-            <div className="text-2xl font-extrabold font-mono text-[#0B0F19]">
-              {formatINR(finances.vanshOutOfPocketUnreimbursed)}
-            </div>
-            <div className="text-[11px] text-[#64748B] mt-1">
-              Client Payments Received Directly:{' '}
-              <span className="font-mono font-semibold text-[#0B0F19]">
-                {formatINR(finances.vanshCollectedDirectly)}
-              </span>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
-            <div className="text-xs font-bold text-[#64748B] mb-1">
-              Krishna Personal Out-of-Pocket (Unreimbursed)
-            </div>
-            <div className="text-2xl font-extrabold font-mono text-[#0B0F19]">
-              {formatINR(finances.krishnaOutOfPocketUnreimbursed)}
-            </div>
-            <div className="text-[11px] text-[#64748B] mt-1">
-              Client Payments Received Directly:{' '}
-              <span className="font-mono font-semibold text-[#0B0F19]">
-                {formatINR(finances.krishnaCollectedDirectly)}
-              </span>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-2xl bg-[#EFF6FF]/60 border border-[#BFDBFE] flex flex-col justify-center">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-[#2563EB] mb-1">
-              Settlement Verdict
-            </div>
-            <p className="text-xs text-[#0B0F19] font-medium leading-relaxed">
-              {finances.settlementSummary}
-            </p>
-          </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-[#F8F9FA] border-b border-[#EAECEF] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                <th className="py-3 px-4">Co-Founder / Account</th>
+                <th className="py-3 px-4 text-right">Revenue Collected Directly</th>
+                <th className="py-3 px-4 text-right">Revenue Attributable (Deals)</th>
+                <th className="py-3 px-4 text-right">Personal Expenses (Unreimbursed)</th>
+                <th className="py-3 px-4 text-right">50% Profit Share Entitlement</th>
+                <th className="py-3 px-4 text-right">Net Settlement Balance</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#EAECEF] text-xs">
+              <tr className="hover:bg-[#F8F9FA]/60">
+                <td className="py-3.5 px-4 font-extrabold text-[#0B0F19]">
+                  Krishna Khakole <span className="text-[10px] font-normal text-[#64748B]">(Co-Founder)</span>
+                </td>
+                <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0B0F19]">
+                  {formatINR(finances.krishnaCollectedDirectly)}
+                </td>
+                <td className="py-3.5 px-4 text-right font-mono font-bold text-[#2563EB]">
+                  {formatINR(finances.krishnaAttributableRevenue)}
+                </td>
+                <td className="py-3.5 px-4 text-right font-mono font-bold text-rose-600">
+                  {formatINR(finances.krishnaOutOfPocketUnreimbursed)}
+                </td>
+                <td className="py-3.5 px-4 text-right font-mono font-bold text-[#059669]">
+                  {formatINR(finances.krishnaProfitShare50)}
+                </td>
+                <td className="py-3.5 px-4 text-right font-mono font-extrabold text-[#0B0F19]">
+                  {formatINR(finances.krishnaNetSettlement)}
+                </td>
+              </tr>
+              <tr className="hover:bg-[#F8F9FA]/60">
+                <td className="py-3.5 px-4 font-extrabold text-[#0B0F19]">
+                  Vansh Khakole <span className="text-[10px] font-normal text-[#64748B]">(Co-Founder)</span>
+                </td>
+                <td className="py-3.5 px-4 text-right font-mono font-bold text-[#0B0F19]">
+                  {formatINR(finances.vanshCollectedDirectly)}
+                </td>
+                <td className="py-3.5 px-4 text-right font-mono font-bold text-[#2563EB]">
+                  {formatINR(finances.vanshAttributableRevenue)}
+                </td>
+                <td className="py-3.5 px-4 text-right font-mono font-bold text-rose-600">
+                  {formatINR(finances.vanshOutOfPocketUnreimbursed)}
+                </td>
+                <td className="py-3.5 px-4 text-right font-mono font-bold text-[#059669]">
+                  {formatINR(finances.vanshProfitShare50)}
+                </td>
+                <td className="py-3.5 px-4 text-right font-mono font-extrabold text-[#0B0F19]">
+                  {formatINR(finances.vanshNetSettlement)}
+                </td>
+              </tr>
+              <tr className="bg-[#F8F9FA]/80 font-bold">
+                <td className="py-3 px-4 text-[#475569]">Studio Joint Account</td>
+                <td className="py-3 px-4 text-right font-mono text-[#059669]">
+                  {formatINR(finances.studioAccountCollected)}
+                </td>
+                <td className="py-3 px-4 text-right font-mono text-[#64748B]">—</td>
+                <td className="py-3 px-4 text-right font-mono text-rose-600">
+                  {formatINR(finances.studioAccountPaid)}
+                </td>
+                <td className="py-3 px-4 text-right font-mono text-[#64748B]">Shared Pool</td>
+                <td className="py-3 px-4 text-right font-mono text-[#0B0F19]">
+                  {formatINR(finances.studioAccountCollected - finances.studioAccountPaid)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -733,7 +914,177 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
         </div>
       )}
 
-      {/* TAB 3: EXPENSES TRACKER */}
+      {/* TAB 3: INVOICES & PAYMENT RECEIPTS GENERATOR (PART 8) */}
+      {activeTab === 'invoices' && (
+        <div className="space-y-4">
+          {onAddInvoice && (
+            <form
+              onSubmit={handleCreateInvoice}
+              className="bg-white rounded-3xl p-5 border border-[#EAECEF] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 items-end"
+            >
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1">
+                  Client Name *
+                </label>
+                <input
+                  type="text"
+                  required
+                  list="finance-client-list"
+                  value={invClient}
+                  onChange={(e) => setInvClient(e.target.value)}
+                  placeholder="e.g., Balaji Lawns"
+                  className="w-full px-3 py-2 rounded-xl border border-[#EAECEF] text-xs bg-[#F8F9FA]"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1">
+                  Document Type
+                </label>
+                <select
+                  value={invType}
+                  onChange={(e) => setInvType(e.target.value as ClientInvoice['type'])}
+                  className="w-full px-3 py-2 rounded-xl border border-[#EAECEF] text-xs bg-[#F8F9FA]"
+                >
+                  <option value="Advance Invoice">Advance Invoice</option>
+                  <option value="Milestone Invoice">Milestone Invoice</option>
+                  <option value="Final Invoice">Final Invoice</option>
+                  <option value="Payment Receipt">Payment Receipt</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1">
+                  Amount (₹)
+                </label>
+                <input
+                  type="number"
+                  required
+                  value={invAmount}
+                  onChange={(e) => setInvAmount(Number(e.target.value))}
+                  className="w-full px-3 py-2 rounded-xl border border-[#EAECEF] text-xs font-mono font-bold bg-[#F8F9FA]"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1">
+                  Status
+                </label>
+                <select
+                  value={invStatus}
+                  onChange={(e) => setInvStatus(e.target.value as ClientInvoice['status'])}
+                  className="w-full px-3 py-2 rounded-xl border border-[#EAECEF] text-xs font-bold bg-[#F8F9FA]"
+                >
+                  <option value="Pending">Pending</option>
+                  <option value="Paid">Paid</option>
+                  <option value="Overdue">Overdue</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1">
+                  Line Item Description
+                </label>
+                <input
+                  type="text"
+                  value={invDesc}
+                  onChange={(e) => setInvDesc(e.target.value)}
+                  placeholder="Package / Milestone scope..."
+                  className="w-full px-3 py-2 rounded-xl border border-[#EAECEF] text-xs bg-[#F8F9FA]"
+                />
+              </div>
+              <button
+                type="submit"
+                className="py-2.5 px-4 rounded-xl bg-[#2563EB] text-white text-xs font-bold hover:bg-[#1D4ED8] cursor-pointer"
+              >
+                + Generate Invoice
+              </button>
+            </form>
+          )}
+
+          <div className="bg-white rounded-3xl border border-[#EAECEF] overflow-hidden shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)]">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-[#F8F9FA] border-b border-[#EAECEF] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                    <th className="py-3.5 px-5">Invoice #</th>
+                    <th className="py-3.5 px-4">Client &amp; Line Item</th>
+                    <th className="py-3.5 px-4">Type</th>
+                    <th className="py-3.5 px-4">Issued / Due</th>
+                    <th className="py-3.5 px-4">Status</th>
+                    <th className="py-3.5 px-4 text-right">Amount (₹)</th>
+                    <th className="py-3.5 px-5 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#EAECEF] text-xs">
+                  {invoices.map((inv) => (
+                    <tr key={inv.id} className="hover:bg-[#F8F9FA]/60">
+                      <td className="py-3.5 px-5 font-mono font-bold text-[#2563EB]">
+                        {inv.invoiceNumber}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-[#0B0F19]">{inv.clientName}</div>
+                        <div className="text-[11px] text-[#64748B]">{inv.projectTitle} · {inv.notes}</div>
+                      </td>
+                      <td className="py-3.5 px-4 font-semibold text-[#475569]">{inv.type}</td>
+                      <td className="py-3.5 px-4 font-mono text-[11px] text-[#64748B]">
+                        {inv.issueDate} · Due: {inv.dueDate}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        {onUpdateInvoice ? (
+                          <select
+                            value={inv.status}
+                            onChange={(e) =>
+                              onUpdateInvoice({
+                                ...inv,
+                                status: e.target.value as ClientInvoice['status'],
+                              })
+                            }
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer ${
+                              inv.status === 'Paid'
+                                ? 'bg-[#D1FAE5] text-[#059669] border-[#A7F3D0]'
+                                : inv.status === 'Overdue'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : 'bg-amber-50 text-amber-800 border-amber-200'
+                            }`}
+                          >
+                            <option value="Pending">Pending</option>
+                            <option value="Paid">Paid</option>
+                            <option value="Overdue">Overdue</option>
+                          </select>
+                        ) : (
+                          <span className="font-bold">{inv.status}</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-mono font-extrabold text-[#0B0F19]">
+                        {formatINR(inv.amount)}
+                      </td>
+                      <td className="py-3.5 px-5 text-right">
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setPreviewInvoice(inv)}
+                            className="px-2.5 py-1 rounded-lg bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#2563EB] border border-[#BFDBFE] text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            <FileText className="w-3 h-3" /> View / Print
+                          </button>
+                          {onDeleteInvoice && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteInvoice(inv.id)}
+                              className="p-1.5 rounded-lg text-[#94A3B8] hover:text-rose-600 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: EXPENSES TRACKER */}
       {activeTab === 'expenses' && (
         <div className="space-y-4">
           <form
@@ -1056,94 +1407,394 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
         </div>
       )}
 
-      {/* TAB 4: ANALYTICS & REPORTS */}
+      {/* TAB 5: PART 9 — 5-CATEGORY ANALYTICS & INTELLIGENCE CENTRE */}
       {activeTab === 'analytics' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="space-y-6">
+          {/* Analytics Controls Bar */}
+          <div className="bg-white rounded-3xl p-4 sm:p-5 border border-[#EAECEF] flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-extrabold text-[#0B0F19]">Reporting Period:</span>
+              <div className="flex items-center bg-[#F8F9FA] p-1 rounded-xl border border-[#EAECEF]">
+                {(['All Time', 'This Month', 'This Quarter', 'FY 2026-27'] as const).map((rng) => (
+                  <button
+                    key={rng}
+                    onClick={() => setAnalyticsDateRange(rng)}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold cursor-pointer ${
+                      analyticsDateRange === rng
+                        ? 'bg-[#0B0F19] text-white'
+                        : 'text-[#64748B] hover:text-[#0B0F19]'
+                    }`}
+                  >
+                    {rng}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportFinanceCSV}
+                className="px-3.5 py-2 rounded-xl bg-[#F8F9FA] hover:bg-[#EFF6FF] text-[#0B0F19] hover:text-[#2563EB] border border-[#EAECEF] text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" /> Export Financial CSV
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="px-3.5 py-2 rounded-xl bg-[#0B0F19] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5" /> Print Executive PDF
+              </button>
+            </div>
+          </div>
+
+          {/* CATEGORY 1 & 2: BUSINESS ANALYTICS + SALES & LEAD SOURCE ANALYTICS */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 1. Business Analytics */}
+            <div className="bg-white rounded-3xl p-6 border border-[#EAECEF] space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB]">
+                    01 · BUSINESS &amp; INDUSTRY ANALYTICS
+                  </div>
+                  <h3 className="text-lg font-extrabold text-[#0B0F19]">
+                    Revenue, Margin &amp; Niche Performance
+                  </h3>
+                </div>
+                <BarChart3 className="w-5 h-5 text-[#2563EB]" />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2.5 text-center">
+                <div className="p-3 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+                  <div className="text-[10px] font-bold uppercase text-[#64748B]">Contracted</div>
+                  <div className="text-base font-extrabold font-mono text-[#0B0F19] mt-0.5">
+                    {formatINR(finances.totalContractedVolume)}
+                  </div>
+                </div>
+                <div className="p-3 rounded-2xl bg-[#ECFDF5] border border-[#A7F3D0]">
+                  <div className="text-[10px] font-bold uppercase text-[#059669]">Net Profit</div>
+                  <div className="text-base font-extrabold font-mono text-[#059669] mt-0.5">
+                    {formatINR(finances.netProfit)}
+                  </div>
+                </div>
+                <div className="p-3 rounded-2xl bg-[#EFF6FF] border border-[#BFDBFE]">
+                  <div className="text-[10px] font-bold uppercase text-[#2563EB]">Profit Margin</div>
+                  <div className="text-base font-extrabold font-mono text-[#2563EB] mt-0.5">
+                    {finances.profitMarginPercent}%
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2.5">
+                {nicheBreakdown.map((item) => {
+                  const pct =
+                    finances.totalContractedVolume > 0
+                      ? Math.round((item.contracted / finances.totalContractedVolume) * 100)
+                      : 0;
+                  return (
+                    <div
+                      key={item.nicheName}
+                      className="p-3 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-[#0B0F19]">
+                          {item.nicheName} ({item.count} deals)
+                        </span>
+                        <span className="font-mono font-bold text-[#059669]">
+                          {formatINR(item.collected)} / {formatINR(item.contracted)} ({pct}%)
+                        </span>
+                      </div>
+                      <div className="w-full h-2 bg-[#E2E8F0] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[#2563EB] rounded-full"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2. Sales Analytics & Lead Conversion */}
+            <div className="bg-white rounded-3xl p-6 border border-[#EAECEF] space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-[#059669]">
+                    02 · SALES &amp; LEAD CONVERSION ANALYTICS
+                  </div>
+                  <h3 className="text-lg font-extrabold text-[#0B0F19]">
+                    Win Rate, Avg Deal Value &amp; Lead Sources
+                  </h3>
+                </div>
+                <Target className="w-5 h-5 text-[#059669]" />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2.5 text-center">
+                <div className="p-3 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+                  <div className="text-[10px] font-bold uppercase text-[#64748B]">Win Rate</div>
+                  <div className="text-base font-extrabold font-mono text-[#059669] mt-0.5">
+                    {salesAnalytics.conversionRatePercent}%
+                  </div>
+                </div>
+                <div className="p-3 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+                  <div className="text-[10px] font-bold uppercase text-[#64748B]">Avg Deal Size</div>
+                  <div className="text-base font-extrabold font-mono text-[#0B0F19] mt-0.5">
+                    {formatINR(salesAnalytics.averageDealValue)}
+                  </div>
+                </div>
+                <div className="p-3 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+                  <div className="text-[10px] font-bold uppercase text-[#64748B]">Won / Active</div>
+                  <div className="text-base font-extrabold font-mono text-[#2563EB] mt-0.5">
+                    {salesAnalytics.wonDeals} / {salesAnalytics.totalLeads}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-xs font-extrabold text-[#0B0F19]">
+                  Performance by Acquisition Channel (Lead Source)
+                </div>
+                {Object.entries(salesAnalytics.bySource).map(([sourceName, src]) => (
+                  <div
+                    key={sourceName}
+                    className="p-3 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] flex items-center justify-between text-xs"
+                  >
+                    <div>
+                      <span className="font-bold text-[#0B0F19]">{sourceName}</span>
+                      <span className="text-[#64748B] ml-2">
+                        ({src.count} leads · {src.won} won)
+                      </span>
+                    </div>
+                    <span className="font-mono font-bold text-[#059669]">
+                      {formatINR(src.value)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* CATEGORY 3: CLIENT PROFITABILITY ANALYTICS */}
           <div className="bg-white rounded-3xl p-6 border border-[#EAECEF] space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB]">
-                  INDUSTRY PERFORMANCE
+                  03 · CLIENT PROFITABILITY ANALYTICS
                 </div>
                 <h3 className="text-lg font-extrabold text-[#0B0F19]">
-                  Revenue by Client Niche
+                  Per-Client Revenue vs Direct Costs (Domains &amp; Ad Spend)
                 </h3>
               </div>
-              <BarChart3 className="w-5 h-5 text-[#2563EB]" />
+              <Award className="w-5 h-5 text-[#2563EB]" />
             </div>
 
-            <div className="space-y-3">
-              {nicheBreakdown.map((item) => {
-                const pct =
-                  finances.totalContractedVolume > 0
-                    ? Math.round((item.contracted / finances.totalContractedVolume) * 100)
-                    : 0;
-                return (
-                  <div
-                    key={item.nicheName}
-                    className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] space-y-2"
-                  >
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-[#0B0F19]">
-                        {item.nicheName} ({item.count} deals)
-                      </span>
-                      <span className="font-mono font-bold text-[#059669]">
-                        {formatINR(item.collected)} / {formatINR(item.contracted)}
-                      </span>
-                    </div>
-                    <div className="w-full h-2 bg-[#E2E8F0] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-[#2563EB] rounded-full"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-[#F8F9FA] border-b border-[#EAECEF] text-[10px] font-bold uppercase tracking-wider text-[#64748B]">
+                    <th className="py-3 px-4">Client Account</th>
+                    <th className="py-3 px-4">Package &amp; Build Progress</th>
+                    <th className="py-3 px-4 text-right">Contract Value</th>
+                    <th className="py-3 px-4 text-right">Revenue Collected</th>
+                    <th className="py-3 px-4 text-right">Direct Studio Costs</th>
+                    <th className="py-3 px-4 text-right">Projected Net Profit</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#EAECEF] text-xs">
+                  {clientProfitabilityList.map((row) => (
+                    <tr key={row.client.id} className="hover:bg-[#F8F9FA]/60">
+                      <td className="py-3 px-4 font-bold text-[#0B0F19]">
+                        {row.client.businessName}
+                      </td>
+                      <td className="py-3 px-4 text-[#475569]">
+                        {row.client.packageTier} ({row.progressPct}% built)
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono font-bold text-[#0B0F19]">
+                        {formatINR(row.contractValue)}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono font-bold text-[#059669]">
+                        {formatINR(row.revenueCollected)}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono font-bold text-rose-600">
+                        {formatINR(row.directCosts)}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono font-extrabold text-[#2563EB]">
+                        {formatINR(row.projectedNetProfit)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
-          <div className="bg-white rounded-3xl p-6 border border-[#EAECEF] space-y-4">
-            <div>
-              <div className="text-[10px] font-bold uppercase tracking-widest text-[#2563EB]">
-                CO-FOUNDER PERFORMANCE
+          {/* CATEGORY 4 & 5: MARKETING ANALYTICS + OPERATIONAL & DELIVERY ANALYTICS */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 4. Marketing Analytics */}
+            <div className="bg-white rounded-3xl p-6 border border-[#EAECEF] space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-indigo-600">
+                    04 · MARKETING &amp; META ADS ANALYTICS
+                  </div>
+                  <h3 className="text-lg font-extrabold text-[#0B0F19]">
+                    Campaign Efficiency, CTR &amp; ROAS Benchmarks
+                  </h3>
+                </div>
+                <Megaphone className="w-5 h-5 text-indigo-600" />
               </div>
-              <h3 className="text-lg font-extrabold text-[#0B0F19]">
-                Deal Ownership &amp; Cashflow Split
-              </h3>
+
+              <div className="space-y-2.5">
+                {metaCampaigns.map((camp) => {
+                  const ctr = calculateCTR(camp.clicks || 0, camp.impressions || 0);
+                  const cpc = calculateCPC(camp.amountSpent, camp.clicks || 0);
+                  const cpl = calculateCPL(camp.amountSpent, camp.leadsGenerated);
+                  return (
+                    <div
+                      key={camp.id}
+                      className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] flex items-center justify-between text-xs"
+                    >
+                      <div>
+                        <div className="font-bold text-[#0B0F19]">
+                          {camp.clientName} — {camp.campaignName}
+                        </div>
+                        <div className="text-[11px] text-[#64748B] font-mono">
+                          Impr: {(camp.impressions || 0).toLocaleString('en-IN')} · Clicks:{' '}
+                          {(camp.clicks || 0).toLocaleString('en-IN')} · CTR: {ctr}%
+                        </div>
+                      </div>
+                      <div className="text-right font-mono">
+                        <div className="font-extrabold text-[#0B0F19]">
+                          {formatINR(camp.amountSpent)}
+                        </div>
+                        <div className="text-[11px] text-[#059669] font-bold">
+                          CPC ₹{cpc} · {cpl > 0 ? `CPL ${formatINR(cpl)}` : `${camp.roas || 4.2}x ROAS`}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
-            <div className="space-y-3">
-              {(['Krishna', 'Vansh', 'Both'] as const).map((owner) => {
-                const ownerDeals = clients.filter(
-                  (c) => c.assignedTo === owner && c.stage !== 'Rejected / Dropped'
-                );
-                const vol = ownerDeals.reduce((s, c) => s + c.finalAgreedPrice, 0);
-                const paid = ownerDeals.reduce((s, c) => s + c.advancePaid, 0);
-                return (
-                  <div
-                    key={owner}
-                    className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] flex items-center justify-between"
-                  >
-                    <div>
-                      <div className="text-sm font-extrabold text-[#0B0F19]">
-                        {owner === 'Both' ? 'Joint Studio Deals (Both)' : `${owner} Khakole`}
-                      </div>
-                      <div className="text-xs text-[#64748B]">
-                        {ownerDeals.length} active/pitched client accounts
-                      </div>
-                    </div>
-                    <div className="text-right font-mono">
-                      <div className="text-sm font-extrabold text-[#0B0F19]">
-                        {formatINR(vol)}
-                      </div>
-                      <div className="text-xs text-[#059669] font-bold">
-                        Collected: {formatINR(paid)}
-                      </div>
-                    </div>
+            {/* 5. Operational & Delivery Analytics */}
+            <div className="bg-white rounded-3xl p-6 border border-[#EAECEF] space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-[#059669]">
+                    05 · OPERATIONAL &amp; CO-FOUNDER VELOCITY
                   </div>
-                );
-              })}
+                  <h3 className="text-lg font-extrabold text-[#0B0F19]">
+                    Founder Workload &amp; Delivery Milestone Completion
+                  </h3>
+                </div>
+                <Activity className="w-5 h-5 text-[#059669]" />
+              </div>
+
+              <div className="space-y-3">
+                {(['Krishna', 'Vansh', 'Both'] as const).map((owner) => {
+                  const ownerDeals = clients.filter(
+                    (c) => c.assignedTo === owner && c.stage !== 'Rejected / Dropped'
+                  );
+                  const vol = ownerDeals.reduce((s, c) => s + c.finalAgreedPrice, 0);
+                  const paid = ownerDeals.reduce((s, c) => s + c.advancePaid, 0);
+                  return (
+                    <div
+                      key={owner}
+                      className="p-4 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF] flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="text-sm font-extrabold text-[#0B0F19]">
+                          {owner === 'Both' ? 'Joint Studio Deals (Both)' : `${owner} Khakole`}
+                        </div>
+                        <div className="text-xs text-[#64748B]">
+                          {ownerDeals.length} active/pitched client accounts
+                        </div>
+                      </div>
+                      <div className="text-right font-mono">
+                        <div className="text-sm font-extrabold text-[#0B0F19]">
+                          {formatINR(vol)}
+                        </div>
+                        <div className="text-xs text-[#059669] font-bold">
+                          Collected: {formatINR(paid)}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CLIENT INVOICE PRINTABLE PREVIEW MODAL */}
+      {previewInvoice && (
+        <div className="fixed inset-0 z-50 bg-[#0B0F19]/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-8 border border-[#EAECEF] shadow-2xl space-y-6">
+            <div className="flex items-start justify-between border-b border-[#EAECEF] pb-4">
+              <div>
+                <div className="text-[10px] font-mono uppercase tracking-widest text-[#2563EB] font-bold">
+                  AETHEL STUDIOS · OFFICIAL {previewInvoice.type.toUpperCase()}
+                </div>
+                <h2 className="text-2xl font-extrabold font-mono text-[#0B0F19] mt-0.5">
+                  {previewInvoice.invoiceNumber}
+                </h2>
+                <p className="text-xs text-[#64748B]">
+                  Issued: {previewInvoice.issueDate} · Due: {previewInvoice.dueDate}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => window.print()}
+                  className="px-3.5 py-2 rounded-xl bg-[#2563EB] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" /> Print / Save PDF
+                </button>
+                <button
+                  onClick={() => setPreviewInvoice(null)}
+                  className="p-2 rounded-xl bg-[#F8F9FA] text-[#64748B] hover:text-[#0B0F19] cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-xs">
+              <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+                <div className="text-[10px] font-bold uppercase text-[#64748B]">From</div>
+                <div className="font-extrabold text-[#0B0F19] mt-0.5">Aethel Studios</div>
+                <div className="text-[#475569]">Vansh Khakole &amp; Krishna Khakole</div>
+                <div className="font-mono text-[11px] text-[#64748B]">aethelstudios.in@gmail.com</div>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
+                <div className="text-[10px] font-bold uppercase text-[#64748B]">Billed To</div>
+                <div className="font-extrabold text-[#0B0F19] mt-0.5">
+                  {previewInvoice.clientName}
+                </div>
+                <div className="text-[#475569]">Status: {previewInvoice.status}</div>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl border border-[#EAECEF] space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold text-[#64748B] border-b border-[#EAECEF] pb-2">
+                <span>DESCRIPTION</span>
+                <span>AMOUNT (INR)</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-bold text-[#0B0F19]">
+                  {previewInvoice.projectTitle} — {previewInvoice.notes}
+                </span>
+                <span className="font-mono font-extrabold text-[#0B0F19]">
+                  {formatINR(previewInvoice.amount)}
+                </span>
+              </div>
+              <div className="pt-3 border-t border-[#EAECEF] flex items-center justify-between">
+                <span className="text-xs font-bold uppercase text-[#64748B]">Total Payable</span>
+                <span className="text-xl font-extrabold font-mono text-[#059669]">
+                  {formatINR(previewInvoice.amount)}
+                </span>
+              </div>
             </div>
           </div>
         </div>

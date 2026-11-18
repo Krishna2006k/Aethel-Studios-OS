@@ -22,6 +22,15 @@ export type LeadStage =
   | 'Delivered / Live'
   | 'Rejected / Dropped';
 
+export type LeadSource =
+  | 'Instagram'
+  | 'Facebook Ads'
+  | 'WhatsApp'
+  | 'Direct Outreach'
+  | 'Referral'
+  | 'Website'
+  | 'Existing Client';
+
 export type ProjectMilestoneStage =
   | 'Requirements'
   | 'Design'
@@ -30,12 +39,49 @@ export type ProjectMilestoneStage =
   | 'Deployment'
   | 'Handover';
 
+export type ProjectTemplateName =
+  | 'Basic Website Package'
+  | 'Standard Website Package'
+  | 'Premium Website Package'
+  | 'Custom Website + Meta Ads';
+
+export interface MilestoneSubtask {
+  id: string;
+  title: string;
+  completed: boolean;
+  assignedTo: FounderName;
+}
+
 export interface ClientMilestone {
   stage: ProjectMilestoneStage;
   completed: boolean;
   completedDate?: string;
   owner: FounderName;
   notes?: string;
+  subtasks?: MilestoneSubtask[];
+}
+
+export type ApprovalCheckpointStage =
+  | 'Requirements'
+  | 'Design'
+  | 'Content'
+  | 'Website Preview'
+  | 'Final Delivery';
+
+export interface ClientApprovalCheckpoint {
+  id: string;
+  stage: ApprovalCheckpointStage;
+  approved: boolean;
+  approvedBy?: string;
+  approvedDate?: string;
+}
+
+export interface ClientCommunicationLog {
+  id: string;
+  date: string;
+  type: 'Call' | 'WhatsApp' | 'Email' | 'Meeting' | 'Decision';
+  summary: string;
+  loggedBy: FounderName;
 }
 
 export interface ClientLead {
@@ -43,6 +89,7 @@ export interface ClientLead {
   businessName: string;
   contactPerson: string;
   phone: string;
+  email?: string;
   city: string;
   niche: 'Banquet/Lawns' | 'Clinic/Hospital' | 'Cafe/Restaurant' | 'Retail/Electronics' | 'Real Estate/Interior' | 'Other';
   packageTier: string;
@@ -50,6 +97,7 @@ export interface ClientLead {
   finalAgreedPrice: number;
   advancePaid: number;
   stage: LeadStage;
+  leadSource?: LeadSource;
   assignedTo: FounderName;
   sampleLinkSent: string;
   followUpDate: string;
@@ -58,6 +106,11 @@ export interface ClientLead {
   milestones?: ClientMilestone[];
   proposalUrl?: string;
   contractUrl?: string;
+  projectTemplate?: ProjectTemplateName;
+  projectStartDate?: string;
+  projectEndDate?: string;
+  approvals?: ClientApprovalCheckpoint[];
+  communicationLogs?: ClientCommunicationLog[];
 }
 
 export interface MetaAdCampaign {
@@ -75,6 +128,11 @@ export interface MetaAdCampaign {
   endDate: string;
   notes: string;
   paidBy?: ExpensePaidBy;
+  impressions?: number;
+  reach?: number;
+  clicks?: number;
+  conversions?: number;
+  roas?: number;
 }
 
 export interface HostedWebsite {
@@ -93,6 +151,13 @@ export interface HostedWebsite {
   githubRepo: string;
   notes: string;
   paidBy?: ExpensePaidBy;
+  hostingPlan?: string;
+  backupStatus?: 'Verified Daily' | 'Weekly Snapshot' | 'Manual Only';
+  lastBackupDate?: string;
+  uptimePercent?: number;
+  responseTimeMs?: number;
+  lastCheckedAt?: string;
+  clientPaymentStatus?: 'Client Paid' | 'Pending Client Payment' | 'Studio Covered';
 }
 
 export interface ClientTicket {
@@ -110,18 +175,33 @@ export interface ClientTicket {
   createdAt: string;
 }
 
+export type TaskCategory =
+  | 'Sales'
+  | 'Client Communication'
+  | 'Website Development'
+  | 'Design'
+  | 'Marketing'
+  | 'Finance'
+  | 'Administration'
+  | 'Internal';
+
+export type TaskRecurrence = 'None' | 'Daily' | 'Weekly' | 'Monthly';
+
 export interface StudioTask {
   id: string;
   clientId?: string;
   clientName: string;
   title: string;
   type: 'Follow-up' | 'Call' | 'Proposal' | 'Delivery' | 'Payment Collection' | 'Internal';
+  category?: TaskCategory;
+  recurrence?: TaskRecurrence;
   priority: 'Urgent' | 'High' | 'Normal';
   status: 'Pending' | 'Completed';
   assignedTo: FounderName;
   dueDate: string;
   notes: string;
   createdAt: string;
+  subtasks?: MilestoneSubtask[];
 }
 
 export interface ActivityLogEntry {
@@ -174,17 +254,67 @@ export interface ClientPayment {
   milestone: 'Advance (50%)' | 'Final Delivery (50%)' | 'Full Upfront' | 'Meta Ads Retainer' | 'Domain Renewal';
 }
 
+export interface ClientInvoice {
+  id: string;
+  invoiceNumber: string;
+  clientId?: string;
+  clientName: string;
+  projectTitle: string;
+  type: 'Advance Invoice' | 'Milestone Invoice' | 'Final Invoice' | 'Payment Receipt';
+  amount: number;
+  issueDate: string;
+  dueDate: string;
+  status: 'Paid' | 'Pending' | 'Overdue';
+  notes: string;
+}
+
+export type VaultCategory =
+  | 'Studio Social / Email'
+  | 'Hosting & Cloud'
+  | 'Meta Business Suite'
+  | 'Client Credentials'
+  | 'Payment / Banking'
+  | 'Client Contract / Document'
+  | 'Domain Credentials'
+  | 'API Keys'
+  | 'Proposals'
+  | 'Internal Documents';
+
 export interface EncryptedVaultItem {
   id: string;
   title: string;
-  category: 'Studio Social / Email' | 'Hosting & Cloud' | 'Meta Business Suite' | 'Client Credentials' | 'Payment / Banking' | 'Client Contract / Document';
+  category: VaultCategory;
   accountIdentifier: string;
   loginUrl: string;
   clientAssociated: string;
+  projectAssociated?: string;
+  owner?: FounderName;
+  notes?: string;
   cipherText: string;
   iv: string;
   salt: string;
   updatedAt: string;
+}
+
+export interface StudioNotification {
+  id: string;
+  title: string;
+  description: string;
+  severity: 'critical' | 'warning' | 'info' | 'success';
+  category: 'Finance' | 'Project' | 'Domain' | 'Task' | 'CRM' | 'Growth';
+  targetModule: ModuleId;
+  clientId?: string;
+  timestamp: string;
+}
+
+export interface AutomationRule {
+  id: string;
+  name: string;
+  trigger: string;
+  action: string;
+  enabled: boolean;
+  triggeredCount: number;
+  category: 'Finance' | 'CRM' | 'Project' | 'Domain';
 }
 
 export interface AethelDatabaseState {
@@ -197,6 +327,8 @@ export interface AethelDatabaseState {
   payments: ClientPayment[];
   vaultItems: EncryptedVaultItem[];
   tasks?: StudioTask[];
+  invoices?: ClientInvoice[];
+  automationRules?: AutomationRule[];
   activityLogs?: ActivityLogEntry[];
   lastUpdated: string;
 }

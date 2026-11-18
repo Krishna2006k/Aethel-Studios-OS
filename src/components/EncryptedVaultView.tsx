@@ -11,8 +11,9 @@ import {
   Search,
   Pencil,
   X,
+  ExternalLink,
 } from 'lucide-react';
-import { EncryptedVaultItem } from '../types';
+import { EncryptedVaultItem, FounderName, VaultCategory } from '../types';
 import { encryptSecret, decryptSecret } from '../utils/cryptoService';
 
 interface EncryptedVaultViewProps {
@@ -22,6 +23,19 @@ interface EncryptedVaultViewProps {
   onDeleteVaultItem: (id: string) => void;
 }
 
+const ALL_VAULT_CATEGORIES: VaultCategory[] = [
+  'Client Credentials',
+  'Domain Credentials',
+  'Hosting & Cloud',
+  'Studio Social / Email',
+  'Meta Business Suite',
+  'API Keys',
+  'Payment / Banking',
+  'Client Contract / Document',
+  'Proposals',
+  'Internal Documents',
+];
+
 export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
   vaultItems,
   onAddVaultItem,
@@ -30,8 +44,10 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
 }) => {
   const [masterPassphrase, setMasterPassphrase] = useState('aethel-2025');
   const [showPassphrase, setShowPassphrase] = useState(false);
+  const [vaultSessionLocked, setVaultSessionLocked] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
+  const [ownerFilter, setOwnerFilter] = useState<'All' | FounderName | 'Both'>('All');
   const [decryptedMap, setDecryptedMap] = useState<Record<string, string>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -39,17 +55,28 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
   // Add New Secret Form
   const [showAdd, setShowAdd] = useState(false);
   const [title, setTitle] = useState('');
-  const [category, setCategory] =
-    useState<EncryptedVaultItem['category']>('Client Credentials');
+  const [category, setCategory] = useState<VaultCategory>('Client Credentials');
   const [accountIdentifier, setAccountIdentifier] = useState('aethelstudios.in@gmail.com');
   const [loginUrl, setLoginUrl] = useState('https://');
   const [clientAssociated, setClientAssociated] = useState('Aethel Studios Core');
+  const [projectAssociated, setProjectAssociated] = useState('');
+  const [owner, setOwner] = useState<FounderName | 'Both'>('Both');
   const [plainSecret, setPlainSecret] = useState('');
 
   // Inline Edit Vault Item State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<EncryptedVaultItem | null>(null);
   const [editNewSecret, setEditNewSecret] = useState('');
+
+  const handleToggleVaultSessionLock = () => {
+    if (!vaultSessionLocked) {
+      setVaultSessionLocked(true);
+      setDecryptedMap({});
+      setShowPassphrase(false);
+    } else {
+      setVaultSessionLocked(false);
+    }
+  };
 
   const handleStartEdit = (item: EncryptedVaultItem) => {
     setEditingId(item.id);
@@ -80,6 +107,8 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
         accountIdentifier: editDraft.accountIdentifier.trim(),
         loginUrl: editDraft.loginUrl.trim(),
         clientAssociated: editDraft.clientAssociated.trim() || 'Aethel Studios Core',
+        projectAssociated: editDraft.projectAssociated?.trim() || undefined,
+        owner: editDraft.owner || 'Both',
         cipherText: nextCipher,
         iv: nextIv,
         salt: nextSalt,
@@ -106,6 +135,8 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
         accountIdentifier: accountIdentifier.trim(),
         loginUrl: loginUrl.trim(),
         clientAssociated: clientAssociated.trim() || 'Aethel Studios Core',
+        projectAssociated: projectAssociated.trim() || undefined,
+        owner,
         cipherText: encrypted.ciphertext,
         iv: encrypted.iv,
         salt: encrypted.salt,
@@ -113,6 +144,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
       });
       setTitle('');
       setPlainSecret('');
+      setProjectAssociated('');
       setShowAdd(false);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Encryption error');
@@ -120,6 +152,11 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
   };
 
   const handleToggleReveal = async (item: EncryptedVaultItem) => {
+    if (vaultSessionLocked) {
+      setErrorMsg('Vault session is locked. Click "Unlock Session" in the top bar first.');
+      return;
+    }
+
     if (decryptedMap[item.id]) {
       setDecryptedMap((prev) => {
         const next = { ...prev };
@@ -161,6 +198,10 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
   };
 
   const handleCopy = async (item: EncryptedVaultItem) => {
+    if (vaultSessionLocked) {
+      setErrorMsg('Unlock the Vault session before copying credentials.');
+      return;
+    }
     const val = decryptedMap[item.id] || item.accountIdentifier;
     try {
       await navigator.clipboard.writeText(val);
@@ -175,9 +216,12 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
     const matchesSearch =
       item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       item.clientAssociated.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.accountIdentifier.toLowerCase().includes(searchQuery.toLowerCase());
+      item.accountIdentifier.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item.projectAssociated || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = categoryFilter === 'All' || item.category === categoryFilter;
-    return matchesSearch && matchesCategory;
+    const matchesOwner =
+      ownerFilter === 'All' || (item.owner || 'Both') === ownerFilter;
+    return matchesSearch && matchesCategory && matchesOwner;
   });
 
   return (
@@ -191,20 +235,42 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
               <span>WORKSHOP · ZERO-KNOWLEDGE AES-GCM 256-BIT VAULT &amp; DOCUMENTS</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Studio Credentials &amp; Document Repository
+              Studio Credentials, API Keys &amp; Document Repository
             </h1>
             <p className="text-xs sm:text-sm text-[#94A3B8] mt-1 max-w-2xl">
-              Client passwords, Hostinger master keys, Meta tokens, and contracts are encrypted client-side via PBKDF2 (100,000 SHA-256 iterations) + AES-256-GCM.
+              Organized across 10 agency categories (Client &amp; Domain Credentials, Hosting, API Keys, Contracts, Proposals, and Internal Docs) encrypted client-side via AES-256-GCM.
             </p>
           </div>
 
-          <button
-            onClick={() => setShowAdd(!showAdd)}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-sm cursor-pointer self-start lg:self-auto"
-          >
-            <Plus className="w-4 h-4" />
-            Encrypt Secret / Document
-          </button>
+          <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+            <button
+              type="button"
+              onClick={handleToggleVaultSessionLock}
+              className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
+                vaultSessionLocked
+                  ? 'bg-rose-600 hover:bg-rose-500 text-white'
+                  : 'bg-white/10 hover:bg-white/20 text-[#34D399]'
+              }`}
+            >
+              {vaultSessionLocked ? (
+                <>
+                  <Lock className="w-3.5 h-3.5" /> Vault Locked (Click to Unlock)
+                </>
+              ) : (
+                <>
+                  <Unlock className="w-3.5 h-3.5" /> Lock Vault Session
+                </>
+              )}
+            </button>
+
+            <button
+              onClick={() => setShowAdd(!showAdd)}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold shadow-sm cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Encrypt Secret / Document
+            </button>
+          </div>
         </div>
 
         {/* Master Passphrase Bar */}
@@ -222,16 +288,18 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
 
           <div className="flex items-center gap-2">
             <input
-              type={showPassphrase ? 'text' : 'password'}
+              type={showPassphrase && !vaultSessionLocked ? 'text' : 'password'}
               value={masterPassphrase}
+              disabled={vaultSessionLocked}
               onChange={(e) => setMasterPassphrase(e.target.value)}
               aria-label="Master Passphrase"
-              className="px-3.5 py-1.5 rounded-xl bg-black/40 border border-white/15 text-xs font-mono text-white focus:outline-none focus:border-[#60A5FA]"
+              className="px-3.5 py-1.5 rounded-xl bg-black/40 border border-white/15 text-xs font-mono text-white focus:outline-none focus:border-[#60A5FA] disabled:opacity-50"
             />
             <button
               type="button"
+              disabled={vaultSessionLocked}
               onClick={() => setShowPassphrase(!showPassphrase)}
-              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-slate-200 cursor-pointer"
+              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-slate-200 cursor-pointer disabled:opacity-40"
             >
               {showPassphrase ? 'Hide Key' : 'Show Key'}
             </button>
@@ -245,7 +313,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
         )}
       </div>
 
-      {/* Search & Category Filter */}
+      {/* Search, Category & Owner Filter */}
       <div className="bg-white rounded-2xl p-3.5 border border-[#EAECEF] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-[#94A3B8] absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -253,25 +321,40 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search credentials, client names, or identifiers..."
+            placeholder="Search credentials, client names, projects, or identifiers..."
             className="w-full pl-9 pr-4 py-2 rounded-xl bg-[#F8F9FA] border border-[#EAECEF] text-xs focus:outline-none focus:border-[#2563EB]"
           />
         </div>
 
-        <select
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-          aria-label="Filter Vault Category"
-          className="px-3.5 py-2 rounded-xl bg-[#F8F9FA] border border-[#EAECEF] text-xs font-semibold text-[#475569]"
-        >
-          <option value="All">All Categories ({vaultItems.length})</option>
-          <option value="Studio Social / Email">Studio Social / Email</option>
-          <option value="Hosting & Cloud">Hosting &amp; Cloud</option>
-          <option value="Meta Business Suite">Meta Business Suite</option>
-          <option value="Client Credentials">Client Credentials</option>
-          <option value="Client Contract / Document">Client Contract / Document</option>
-          <option value="Payment / Banking">Payment / Banking</option>
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            aria-label="Filter Vault Category"
+            className="px-3.5 py-2 rounded-xl bg-[#F8F9FA] border border-[#EAECEF] text-xs font-semibold text-[#475569]"
+          >
+            <option value="All">All 10 Categories ({vaultItems.length})</option>
+            {ALL_VAULT_CATEGORIES.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={ownerFilter}
+            onChange={(e) =>
+              setOwnerFilter(e.target.value as 'All' | FounderName | 'Both')
+            }
+            aria-label="Filter Vault Owner"
+            className="px-3.5 py-2 rounded-xl bg-[#F8F9FA] border border-[#EAECEF] text-xs font-semibold text-[#475569]"
+          >
+            <option value="All">All Owners</option>
+            <option value="Both">Both Founders</option>
+            <option value="Krishna">Krishna</option>
+            <option value="Vansh">Vansh</option>
+          </select>
+        </div>
       </div>
 
       {/* Add Form */}
@@ -280,7 +363,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
           onSubmit={handleEncryptAndSave}
           className="bg-white rounded-3xl p-6 border-2 border-[#2563EB]/20 shadow-lg space-y-4"
         >
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
                 Credential / Document Title *
@@ -296,21 +379,18 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
             </div>
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
-                Category
+                Vault Category (10 Types)
               </label>
               <select
                 value={category}
-                onChange={(e) =>
-                  setCategory(e.target.value as EncryptedVaultItem['category'])
-                }
+                onChange={(e) => setCategory(e.target.value as VaultCategory)}
                 className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm bg-white"
               >
-                <option value="Client Credentials">Client Credentials</option>
-                <option value="Hosting & Cloud">Hosting &amp; Cloud</option>
-                <option value="Meta Business Suite">Meta Business Suite</option>
-                <option value="Studio Social / Email">Studio Social / Email</option>
-                <option value="Client Contract / Document">Client Contract / Document</option>
-                <option value="Payment / Banking">Payment / Banking</option>
+                {ALL_VAULT_CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -327,6 +407,29 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
             </div>
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                Associated Project &amp; Owner
+              </label>
+              <div className="grid grid-cols-2 gap-1.5">
+                <input
+                  type="text"
+                  value={projectAssociated}
+                  onChange={(e) => setProjectAssociated(e.target.value)}
+                  placeholder="Project scope"
+                  className="px-2.5 py-2 rounded-xl border border-[#EAECEF] text-xs"
+                />
+                <select
+                  value={owner}
+                  onChange={(e) => setOwner(e.target.value as FounderName | 'Both')}
+                  className="px-2 py-2 rounded-xl border border-[#EAECEF] text-xs font-bold bg-white"
+                >
+                  <option value="Both">Both</option>
+                  <option value="Krishna">Krishna</option>
+                  <option value="Vansh">Vansh</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
                 Username / Account ID
               </label>
               <input
@@ -336,9 +439,9 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
                 className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm font-mono"
               />
             </div>
-            <div>
+            <div className="sm:col-span-2">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
-                Secret Password / Token to Encrypt *
+                Secret Password / API Key / Document Link to Encrypt *
               </label>
               <input
                 type="text"
@@ -351,7 +454,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
             </div>
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
-                Portal URL
+                Portal / Document URL
               </label>
               <input
                 type="text"
@@ -375,7 +478,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
       {/* Vault Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {filteredItems.map((item) => {
-          const isUnlocked = Boolean(decryptedMap[item.id]);
+          const isUnlocked = Boolean(decryptedMap[item.id]) && !vaultSessionLocked;
           const isEditing = editingId === item.id && editDraft !== null;
 
           if (isEditing && editDraft) {
@@ -426,17 +529,16 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
                         onChange={(e) =>
                           setEditDraft({
                             ...editDraft,
-                            category: e.target.value as EncryptedVaultItem['category'],
+                            category: e.target.value as VaultCategory,
                           })
                         }
                         className="w-full px-2 py-1.5 rounded-xl border border-[#EAECEF] text-xs bg-white"
                       >
-                        <option value="Client Credentials">Client Credentials</option>
-                        <option value="Hosting & Cloud">Hosting &amp; Cloud</option>
-                        <option value="Meta Business Suite">Meta Business Suite</option>
-                        <option value="Studio Social / Email">Studio Social / Email</option>
-                        <option value="Client Contract / Document">Client Contract / Document</option>
-                        <option value="Payment / Banking">Payment / Banking</option>
+                        {ALL_VAULT_CATEGORIES.map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
                       </select>
                     </div>
                     <div>
@@ -454,6 +556,43 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
                         }
                         className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs"
                       />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                        Project Associated
+                      </label>
+                      <input
+                        type="text"
+                        value={editDraft.projectAssociated || ''}
+                        onChange={(e) =>
+                          setEditDraft({
+                            ...editDraft,
+                            projectAssociated: e.target.value,
+                          })
+                        }
+                        className="w-full px-2.5 py-1.5 rounded-xl border border-[#EAECEF] text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase text-[#64748B] mb-0.5">
+                        Owner
+                      </label>
+                      <select
+                        value={editDraft.owner || 'Both'}
+                        onChange={(e) =>
+                          setEditDraft({
+                            ...editDraft,
+                            owner: e.target.value as FounderName | 'Both',
+                          })
+                        }
+                        className="w-full px-2 py-1.5 rounded-xl border border-[#EAECEF] text-xs bg-white font-bold"
+                      >
+                        <option value="Both">Both</option>
+                        <option value="Krishna">Krishna</option>
+                        <option value="Vansh">Vansh</option>
+                      </select>
                     </div>
                   </div>
                   <div>
@@ -517,6 +656,9 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="font-bold text-[#2563EB]">{item.category}</span>
                   <div className="flex items-center gap-1.5">
+                    <span className="px-2 py-0.5 rounded bg-[#F8F9FA] border border-[#EAECEF] text-[10px] font-bold text-[#475569]">
+                      {item.owner || 'Both'}
+                    </span>
                     <span className="font-mono text-[#64748B]">{item.updatedAt}</span>
                     {onUpdateVaultItem && (
                       <button
@@ -532,9 +674,25 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
                 </div>
 
                 <div>
-                  <h3 className="text-base font-extrabold text-[#0B0F19]">{item.title}</h3>
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-base font-extrabold text-[#0B0F19]">{item.title}</h3>
+                    {item.loginUrl && item.loginUrl !== 'https://' && (
+                      <a
+                        href={item.loginUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[#64748B] hover:text-[#2563EB]"
+                        title="Open Portal URL"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                  </div>
                   <div className="text-xs text-[#64748B] mt-0.5">
                     Client: <strong className="text-[#0B0F19]">{item.clientAssociated}</strong>
+                    {item.projectAssociated && (
+                      <span> · Project: {item.projectAssociated}</span>
+                    )}
                   </div>
                 </div>
 
@@ -565,7 +723,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
                 >
                   {isUnlocked ? (
                     <>
-                      <Unlock className="w-3.5 h-3.5" /> Lock Secret
+                      <Unlock className="w-3.5 h-3.5" /> Hide Secret
                     </>
                   ) : (
                     <>
