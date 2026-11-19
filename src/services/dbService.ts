@@ -425,6 +425,85 @@ create table if not exists public.tickets (
 );
 
 -- 6. Financial Operating Engine: Invoices, Line Items, Quotations, Payments, Expenses, Transactions & Documents
+-- Automatically migrate legacy v1/v2 UUID primary/foreign keys on finance tables to TEXT IDs (e.g. 'inv-1001', 'AS-I-001')
+do $$
+declare
+  fk_record record;
+begin
+  -- 1. Drop any legacy foreign key constraints referencing or originating from finance tables with UUID columns
+  for fk_record in
+    select
+      tc.table_name,
+      tc.constraint_name
+    from information_schema.table_constraints tc
+    join information_schema.constraint_column_usage ccu
+      on ccu.constraint_name = tc.constraint_name
+      and ccu.table_schema = tc.table_schema
+    where tc.constraint_type = 'FOREIGN KEY'
+      and tc.table_schema = 'public'
+      and (
+        ccu.table_name in ('invoices', 'client_payments', 'payments', 'quotations', 'expenses')
+        or tc.table_name in ('invoices', 'invoice_items', 'client_payments', 'payments', 'quotations', 'quotation_items', 'expenses', 'finance_transactions')
+      )
+  loop
+    execute format('alter table public.%I drop constraint if exists %I', fk_record.table_name, fk_record.constraint_name);
+  end loop;
+
+  -- 2. Upgrade any legacy UUID primary or foreign key columns on finance tables to TEXT
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'invoices' and column_name = 'id' and data_type = 'uuid'
+  ) then
+    alter table public.invoices alter column id drop default;
+    alter table public.invoices alter column id type text using id::text;
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'invoices' and column_name = 'client_id' and data_type = 'uuid'
+  ) then
+    alter table public.invoices alter column client_id type text using client_id::text;
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'client_payments' and column_name = 'id' and data_type = 'uuid'
+  ) then
+    alter table public.client_payments alter column id drop default;
+    alter table public.client_payments alter column id type text using id::text;
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'client_payments' and column_name = 'invoice_id' and data_type = 'uuid'
+  ) then
+    alter table public.client_payments alter column invoice_id type text using invoice_id::text;
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'payments' and column_name = 'invoice_id' and data_type = 'uuid'
+  ) then
+    alter table public.payments alter column invoice_id type text using invoice_id::text;
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'quotations' and column_name = 'id' and data_type = 'uuid'
+  ) then
+    alter table public.quotations alter column id drop default;
+    alter table public.quotations alter column id type text using id::text;
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'expenses' and column_name = 'id' and data_type = 'uuid'
+  ) then
+    alter table public.expenses alter column id drop default;
+    alter table public.expenses alter column id type text using id::text;
+  end if;
+end $$;
+
 create table if not exists public.invoices (
   id text primary key,
   client_id text references public.clients(id) on delete cascade,
