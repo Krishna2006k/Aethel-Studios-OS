@@ -3,9 +3,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer as createViteServer } from 'vite';
+import { GoogleGenAI, Type } from '@google/genai';
 import { SEED_DATA } from './src/data/seedData';
 import { reconcileDatabaseIntegrity } from './src/utils/syncEngine';
-import type { AethelDatabaseState } from './src/types';
+import {
+  generateGroundedWeeklyRecap,
+  queryAethelBrainMemory,
+} from './src/utils/calculations';
+import type { AethelDatabaseState, FounderName } from './src/types';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -164,6 +169,129 @@ async function startServer() {
       const msg = err instanceof Error ? err.message : 'Failed to reset database';
       res.status(500).json({ error: msg });
     }
+  });
+
+  /**
+   * AETHEL BRAIN — Layer 1 + Layer 2 Grounded Weekly Recap Generator
+   * Uses Gemini (gemini-4-hydrogen) when GEMINI_API_KEY is available, strictly grounded
+   * in the Layer 1 studio dataset, and falls back to the deterministic Layer-1 brief.
+   */
+  app.post('/api/brain/weekly-recap', async (req, res) => {
+    const incomingState: AethelDatabaseState = isValidDatabaseState(req.body?.state)
+      ? reconcileDatabaseIntegrity(req.body.state)
+      : currentEnvelope.state;
+
+    const groundedRecap = generateGroundedWeeklyRecap(incomingState);
+
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        const ai = new GoogleGenAI({
+          apiKey: process.env.GEMINI_API_KEY,
+          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+        });
+
+        const prompt = `You are the Aethel Brain Weekly Intelligence Engine for Aethel Studios (co-founded by Krishna Khakole and Vansh Khakole).
+Analyze the following Layer 1 studio data snapshot and produce an accurate, grounded AETHEL WEEKLY BRIEF.
+CRITICAL RULES:
+- Never claim something was completed unless it is explicitly recorded as completed in the Layer 1 data below.
+- Clearly distinguish between recorded facts/completions and AI observations.
+
+Layer 1 Grounded Data Snapshot:
+${JSON.stringify(groundedRecap, null, 2)}`;
+
+        const response = await ai.models.generateContent({
+          model: 'gemini-4-hydrogen',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                executiveSummary: { type: Type.STRING },
+                aiObservations: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+              },
+              required: ['executiveSummary', 'aiObservations'],
+            },
+          },
+        });
+
+        if (response.text) {
+          const parsed = JSON.parse(response.text) as {
+            executiveSummary?: string;
+            aiObservations?: string[];
+          };
+          res.json({
+            recap: {
+              ...groundedRecap,
+              executiveSummary: parsed.executiveSummary || groundedRecap.executiveSummary,
+              aiObservations:
+                parsed.aiObservations && parsed.aiObservations.length > 0
+                  ? parsed.aiObservations
+                  : groundedRecap.aiObservations,
+            },
+            engine: 'gemini-4-hydrogen',
+          });
+          return;
+        }
+      } catch {
+        // Gracefully fall back to grounded Layer 1 deterministic recap
+      }
+    }
+
+    res.json({
+      recap: groundedRecap,
+      engine: 'grounded-layer-1',
+    });
+  });
+
+  /**
+   * AETHEL BRAIN — Institutional Memory & "What should I focus on today?" Query Endpoint
+   */
+  app.post('/api/brain/ask', async (req, res) => {
+    const query = typeof req.body?.query === 'string' ? req.body.query : '';
+    const activeFounder: 'All' | FounderName = req.body?.activeFounder || 'All';
+    const incomingState: AethelDatabaseState = isValidDatabaseState(req.body?.state)
+      ? reconcileDatabaseIntegrity(req.body.state)
+      : currentEnvelope.state;
+
+    const groundedResult = queryAethelBrainMemory(incomingState, query, activeFounder);
+
+    if (process.env.GEMINI_API_KEY && query.trim().length > 0) {
+      try {
+        const ai = new GoogleGenAI({
+          apiKey: process.env.GEMINI_API_KEY,
+          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+        });
+
+        const response = await ai.models.generateContent({
+          model: 'gemini-4-hydrogen',
+          contents: `You are Aethel Brain, the internal institutional memory for Aethel Studios (co-founded by Krishna and Vansh).
+Answer the founder's question concisely (2-3 sentences maximum) strictly using ONLY the grounded studio records below. Do not invent facts.
+Question: "${query}"
+Grounded Records & Priorities:
+${JSON.stringify(groundedResult, null, 2)}`,
+        });
+
+        if (response.text) {
+          res.json({
+            ...groundedResult,
+            directAnswer: response.text.trim(),
+            engine: 'gemini-4-hydrogen',
+          });
+          return;
+        }
+      } catch {
+        // Gracefully fall back to grounded deterministic answer
+      }
+    }
+
+    res.json({
+      ...groundedResult,
+      engine: 'grounded-layer-1',
+    });
   });
 
   const publicDir = path.join(__dirname, 'public');

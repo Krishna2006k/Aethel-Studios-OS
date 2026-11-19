@@ -28,6 +28,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
+  Brain,
 } from 'lucide-react';
 import {
   AethelDatabaseState,
@@ -54,6 +55,7 @@ interface NavbarProps {
     openTickets: number;
     expiringDomains: number;
     pendingTasks?: number;
+    unreadBrain?: number;
   };
   sidebarCollapsed: boolean;
   onToggleSidebar: () => void;
@@ -72,7 +74,7 @@ interface NavGroup {
     label: string;
     shortLabel: string;
     icon: React.ComponentType<{ className?: string }>;
-    badgeKey?: 'followUps' | 'openTickets' | 'expiringDomains' | 'pendingTasks';
+    badgeKey?: 'followUps' | 'openTickets' | 'expiringDomains' | 'pendingTasks' | 'unreadBrain';
   }[];
 }
 
@@ -85,6 +87,13 @@ export const SIDEBAR_GROUPS: NavGroup[] = [
         label: 'Overview',
         shortLabel: 'Overview',
         icon: LayoutDashboard,
+      },
+      {
+        id: 'brain',
+        label: 'Aethel Brain',
+        shortLabel: 'Brain',
+        icon: Brain,
+        badgeKey: 'unreadBrain',
       },
     ],
   },
@@ -192,7 +201,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   const [showNotifications, setShowNotifications] = useState(false);
   const [showAutomationsModal, setShowAutomationsModal] = useState(false);
 
-  const getBadgeValue = (key?: 'followUps' | 'openTickets' | 'expiringDomains' | 'pendingTasks') => {
+  const getBadgeValue = (
+    key?: 'followUps' | 'openTickets' | 'expiringDomains' | 'pendingTasks' | 'unreadBrain'
+  ) => {
     if (!key) return 0;
     return urgentCounts[key] || 0;
   };
@@ -281,13 +292,44 @@ export const Navbar: React.FC<NavbarProps> = ({
           .slice(0, 3)
       : [];
 
+  const matchingBrain =
+    q.length > 0 && dbState
+      ? [
+          ...(dbState.brainDumps || [])
+            .filter(
+              (d) =>
+                d.title.toLowerCase().includes(q) ||
+                d.description.toLowerCase().includes(q) ||
+                d.category.toLowerCase().includes(q)
+            )
+            .map((d) => ({
+              id: d.id,
+              title: `Brain Dump: ${d.title}`,
+              subtitle: `${d.category} · ${d.author}`,
+            })),
+          ...(dbState.brainMemories || [])
+            .filter(
+              (m) =>
+                m.title.toLowerCase().includes(q) ||
+                m.content.toLowerCase().includes(q) ||
+                m.category.toLowerCase().includes(q)
+            )
+            .map((m) => ({
+              id: m.id,
+              title: `Aethel Memory: ${m.title}`,
+              subtitle: `${m.category} · ${m.author}`,
+            })),
+        ].slice(0, 3)
+      : [];
+
   const totalSearchMatches =
     matchingClients.length +
     matchingCampaigns.length +
     matchingDomains.length +
     matchingPayments.length +
     matchingTasks.length +
-    matchingVault.length;
+    matchingVault.length +
+    matchingBrain.length;
 
   const notifications = dbState ? generateStudioNotifications(dbState) : [];
   const criticalNotifCount = notifications.filter((n) => n.severity === 'critical').length;
@@ -795,6 +837,34 @@ export const Navbar: React.FC<NavbarProps> = ({
                             </span>
                             <span className="text-[10px] text-[#2563EB] font-bold ml-2">
                               Encrypted
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 6. Aethel Brain & Institutional Memory */}
+                  {matchingBrain.length > 0 && (
+                    <div className="pt-1 border-t border-[#F1F3F5]">
+                      <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#94A3B8]">
+                        Aethel Brain &amp; Memory ({matchingBrain.length})
+                      </div>
+                      <div className="space-y-0.5">
+                        {matchingBrain.map((b) => (
+                          <button
+                            key={b.id}
+                            onMouseDown={() => {
+                              onSelectModule('brain');
+                              setGlobalSearch('');
+                            }}
+                            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-[#F8F9FA] text-left cursor-pointer"
+                          >
+                            <span className="text-xs font-semibold text-[#0B0F19] truncate">
+                              {b.title}
+                            </span>
+                            <span className="text-[10px] text-[#2563EB] font-bold ml-2">
+                              {b.subtitle}
                             </span>
                           </button>
                         ))}

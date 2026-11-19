@@ -422,4 +422,72 @@ test('Studio Health, Lead Conversion Analytics, Project Templates, and Approval 
   assert.equal(previewGate?.approved, true);
 });
 
+test('Aethel Brain: Weekly Recap Grounding, Institutional Memory Search, and 1-Click Note-to-Task Conversion', async () => {
+  const {
+    generateGroundedWeeklyRecap,
+    queryAethelBrainMemory,
+    autoSuggestBrainCategoryAndTags,
+  } = await import('./calculations');
+  const {
+    convertBrainDumpToTask,
+    convertHandoverItemToTask,
+  } = await import('./syncEngine');
+
+  const reconciled = reconcileDatabaseIntegrity(REAL_STUDIO_FIXTURE);
+
+  // 1. Default Institutional Memories, Daily Logs, Brain Dumps, and Handovers are initialized
+  assert.ok((reconciled.brainMemories?.length || 0) >= 3);
+  assert.ok((reconciled.brainDailyLogs?.length || 0) >= 2);
+  assert.ok((reconciled.brainDumps?.length || 0) >= 2);
+  assert.ok((reconciled.brainHandovers?.length || 0) >= 1);
+
+  // 2. Grounded Weekly Recap strictly separates recorded accomplishments from AI observations
+  const recap = generateGroundedWeeklyRecap(reconciled);
+  assert.ok(recap.executiveSummary.includes('Aethel Studios'));
+  assert.ok(recap.accomplishments.length >= 2);
+  assert.ok(recap.krishnaContributions.length >= 1);
+  assert.ok(recap.vanshContributions.length >= 1);
+  assert.ok(
+    recap.aiObservations.some((obs) => obs.startsWith('Observation:'))
+  );
+
+  // 3. Institutional Memory Query answers pricing and focus questions accurately
+  const pricingAns = queryAethelBrainMemory(reconciled, 'Why did we decide on our pricing?');
+  assert.ok(pricingAns.directAnswer.includes('Pricing'));
+  assert.ok(pricingAns.matches.length > 0);
+
+  const focusAns = queryAethelBrainMemory(reconciled, 'What should I focus on today?');
+  assert.ok(focusAns.focusPriorities.length > 0);
+
+  // 4. AI Auto-Categorize suggests accurate category & tags
+  const suggestion = autoSuggestBrainCategoryAndTags(
+    'Urgent bug fix needed on marriage lawns WhatsApp lead form'
+  );
+  assert.equal(suggestion.category, 'Issues / Things to fix');
+  assert.equal(suggestion.priority, 'Urgent');
+
+  // 5. 1-Click Convert Brain Dump Note to Task
+  const dumpId = reconciled.brainDumps![0].id;
+  const afterConvertDump = convertBrainDumpToTask(reconciled, dumpId, 'Vansh');
+  const convertedDump = afterConvertDump.brainDumps!.find((d) => d.id === dumpId)!;
+  assert.equal(convertedDump.status, 'In Progress');
+  assert.ok(convertedDump.convertedTaskId);
+  assert.equal(
+    afterConvertDump.tasks!.some((t) => t.id === convertedDump.convertedTaskId),
+    true
+  );
+
+  // 6. 1-Click Convert Handover Action Item to Task
+  const handover = afterConvertDump.brainHandovers![0];
+  const actionItemId = handover.actionItems[0].id;
+  const afterConvertHandover = convertHandoverItemToTask(
+    afterConvertDump,
+    handover.id,
+    actionItemId
+  );
+  const updatedItem = afterConvertHandover.brainHandovers![0].actionItems[0];
+  assert.equal(updatedItem.convertedToTask, true);
+});
+
+
 

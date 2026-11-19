@@ -8,6 +8,7 @@ import { TicketsView } from './components/TicketsView';
 import { RnDLabView } from './components/RnDLabView';
 import { StudioFinanceView } from './components/StudioFinanceView';
 import { EncryptedVaultView } from './components/EncryptedVaultView';
+import { AethelBrainView } from './components/AethelBrainView';
 import { SupabaseModal } from './components/SupabaseModal';
 import { QuickActionModal } from './components/QuickActionModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
@@ -30,6 +31,11 @@ import {
   ApprovalCheckpointStage,
   ClientCommunicationLog,
   ClientInvoice,
+  BrainDailyLogEntry,
+  BrainDumpNote,
+  BrainHandoverNote,
+  BrainMemoryEntry,
+  BrainWeeklyRecap,
 } from './types';
 import { SEED_DATA } from './data/seedData';
 import {
@@ -44,6 +50,8 @@ import {
   applyProjectTemplateToClient,
   cascadeClientDelete,
   cascadeClientUpdate,
+  convertBrainDumpToTask,
+  convertHandoverItemToTask,
   convertLeadToActiveProject,
   deleteExpenseAndSyncSource,
   deletePaymentAndSyncClient,
@@ -465,6 +473,142 @@ export default function App() {
     }));
   };
 
+  // Aethel Brain Handlers
+  const handleAddDailyLog = (entry: BrainDailyLogEntry) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      brainDailyLogs: [entry, ...(prev.brainDailyLogs || [])],
+      activityLogs: appendActivityLog(prev, {
+        actor: entry.author,
+        action: `Logged Daily Update: ${entry.content.slice(0, 60)}`,
+        targetName: entry.linkedClientName || 'Aethel Brain',
+        category: 'Brain',
+      }),
+    }));
+  };
+
+  const handleUpdateDailyLog = (updated: BrainDailyLogEntry) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      brainDailyLogs: (prev.brainDailyLogs || []).map((l) =>
+        l.id === updated.id ? updated : l
+      ),
+    }));
+  };
+
+  const handleDeleteDailyLog = (id: string) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      brainDailyLogs: (prev.brainDailyLogs || []).filter((l) => l.id !== id),
+    }));
+  };
+
+  const handleAddBrainDump = (note: BrainDumpNote) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      brainDumps: [note, ...(prev.brainDumps || [])],
+      activityLogs: appendActivityLog(prev, {
+        actor: note.author,
+        action: `Captured Brain Dump [${note.category}]: ${note.title}`,
+        targetName: note.linkedClientName || 'Aethel Brain',
+        category: 'Brain',
+      }),
+    }));
+  };
+
+  const handleUpdateBrainDump = (updated: BrainDumpNote) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      brainDumps: (prev.brainDumps || []).map((n) =>
+        n.id === updated.id ? updated : n
+      ),
+    }));
+  };
+
+  const handleDeleteBrainDump = (id: string) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      brainDumps: (prev.brainDumps || []).filter((n) => n.id !== id),
+    }));
+  };
+
+  const handleConvertBrainDumpToTask = (noteId: string, assignedTo?: FounderName) => {
+    persistUpdate((prev) => convertBrainDumpToTask(prev, noteId, assignedTo));
+  };
+
+  const handleAddHandover = (handover: BrainHandoverNote) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      brainHandovers: [handover, ...(prev.brainHandovers || [])],
+      activityLogs: appendActivityLog(prev, {
+        actor: handover.from,
+        action: `Left Handover Note for @${handover.to}: "${handover.title}"`,
+        targetName: handover.linkedClientName || 'Aethel Brain',
+        category: 'Brain',
+      }),
+    }));
+  };
+
+  const handleUpdateHandover = (updated: BrainHandoverNote) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      brainHandovers: (prev.brainHandovers || []).map((h) =>
+        h.id === updated.id ? updated : h
+      ),
+    }));
+  };
+
+  const handleDeleteHandover = (id: string) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      brainHandovers: (prev.brainHandovers || []).filter((h) => h.id !== id),
+    }));
+  };
+
+  const handleConvertHandoverItemToTask = (handoverId: string, actionItemId: string) => {
+    persistUpdate((prev) => convertHandoverItemToTask(prev, handoverId, actionItemId));
+  };
+
+  const handleAddMemory = (entry: BrainMemoryEntry) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      brainMemories: [entry, ...(prev.brainMemories || [])],
+      activityLogs: appendActivityLog(prev, {
+        actor: entry.author === 'Both' ? 'Krishna' : entry.author,
+        action: `Documented in Aethel Memory [${entry.category}]: ${entry.title}`,
+        targetName: 'Aethel Memory',
+        category: 'Brain',
+      }),
+    }));
+  };
+
+  const handleUpdateMemory = (updated: BrainMemoryEntry) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      brainMemories: (prev.brainMemories || []).map((m) =>
+        m.id === updated.id ? updated : m
+      ),
+    }));
+  };
+
+  const handleDeleteMemory = (id: string) => {
+    persistUpdate((prev) => ({
+      ...prev,
+      brainMemories: (prev.brainMemories || []).filter((m) => m.id !== id),
+    }));
+  };
+
+  const handleSaveWeeklyRecap = (recap: BrainWeeklyRecap) => {
+    persistUpdate((prev) => {
+      const existing = prev.brainWeeklyRecaps || [];
+      const filtered = existing.filter((r) => r.weekRange !== recap.weekRange);
+      return {
+        ...prev,
+        brainWeeklyRecaps: [recap, ...filtered],
+      };
+    });
+  };
+
   const handleResetDemoData = async () => {
     try {
       await fetch('/api/db/reset', { method: 'POST' });
@@ -491,6 +635,7 @@ export default function App() {
       (w) => calculateDaysUntilExpiry(w.expiryDate) <= 45
     ).length,
     pendingTasks: (dbState.tasks || []).filter((t) => t.status !== 'Completed').length,
+    unreadBrain: (dbState.brainHandovers || []).filter((h) => h.status === 'Unread').length,
   };
 
   const activeClientContext = selectedClient360Id
@@ -535,6 +680,30 @@ export default function App() {
               onOpenClient360={handleOpenClient360}
               onToggleMilestone={handleToggleMilestone}
               onToggleTaskStatus={handleToggleTaskStatus}
+            />
+          )}
+
+          {activeModule === 'brain' && (
+            <AethelBrainView
+              dbState={dbState}
+              activeFounderFilter={activeFounderFilter}
+              onAddDailyLog={handleAddDailyLog}
+              onUpdateDailyLog={handleUpdateDailyLog}
+              onDeleteDailyLog={handleDeleteDailyLog}
+              onAddBrainDump={handleAddBrainDump}
+              onUpdateBrainDump={handleUpdateBrainDump}
+              onDeleteBrainDump={handleDeleteBrainDump}
+              onConvertBrainDumpToTask={handleConvertBrainDumpToTask}
+              onAddHandover={handleAddHandover}
+              onUpdateHandover={handleUpdateHandover}
+              onDeleteHandover={handleDeleteHandover}
+              onConvertHandoverItemToTask={handleConvertHandoverItemToTask}
+              onAddMemory={handleAddMemory}
+              onUpdateMemory={handleUpdateMemory}
+              onDeleteMemory={handleDeleteMemory}
+              onSaveWeeklyRecap={handleSaveWeeklyRecap}
+              onOpenClient360={handleOpenClient360}
+              onNavigateModule={setActiveModule}
             />
           )}
 
@@ -693,6 +862,8 @@ export default function App() {
         onAddCampaign={handleAddCampaign}
         onAddWebsite={handleAddWebsite}
         onAddTask={handleAddTask}
+        onAddBrainDump={handleAddBrainDump}
+        onAddDailyLog={handleAddDailyLog}
         onOpenClient360={handleOpenClient360}
       />
 

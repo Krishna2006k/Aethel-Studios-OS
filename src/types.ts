@@ -1,5 +1,6 @@
 export type ModuleId =
   | 'command-center'
+  | 'brain'
   | 'pipeline'
   | 'tickets'
   | 'tasks'
@@ -209,7 +210,7 @@ export interface ActivityLogEntry {
   actor: FounderName | 'Studio System';
   action: string;
   targetName: string;
-  category: 'CRM' | 'Project' | 'Finance' | 'Growth' | 'Domain' | 'Vault';
+  category: 'CRM' | 'Project' | 'Finance' | 'Growth' | 'Domain' | 'Vault' | 'Brain';
   timestamp: string;
 }
 
@@ -301,7 +302,7 @@ export interface StudioNotification {
   title: string;
   description: string;
   severity: 'critical' | 'warning' | 'info' | 'success';
-  category: 'Finance' | 'Project' | 'Domain' | 'Task' | 'CRM' | 'Growth';
+  category: 'Finance' | 'Project' | 'Domain' | 'Task' | 'CRM' | 'Growth' | 'Brain';
   targetModule: ModuleId;
   clientId?: string;
   timestamp: string;
@@ -317,6 +318,117 @@ export interface AutomationRule {
   category: 'Finance' | 'CRM' | 'Project' | 'Domain';
 }
 
+export interface BrainDailyLogEntry {
+  id: string;
+  author: 'Krishna' | 'Vansh';
+  content: string;
+  date: string;
+  time: string;
+  linkedClientId?: string;
+  linkedClientName?: string;
+  linkedTaskId?: string;
+  mentions: ('Krishna' | 'Vansh')[];
+  reactions: string[];
+  pinned?: boolean;
+}
+
+export type BrainDumpCategory =
+  | 'Ideas'
+  | 'Things to do'
+  | 'Thoughts'
+  | 'Important information'
+  | 'Issues / Things to fix'
+  | 'Business opportunities'
+  | 'Client-related'
+  | 'Future plans';
+
+export interface BrainDumpNote {
+  id: string;
+  title: string;
+  description: string;
+  author: 'Krishna' | 'Vansh';
+  date: string;
+  category: BrainDumpCategory;
+  priority: 'Urgent' | 'High' | 'Normal' | 'Low';
+  linkedClientId?: string;
+  linkedClientName?: string;
+  status: 'Unsorted' | 'In Progress' | 'Archived';
+  pinned?: boolean;
+  convertedTaskId?: string;
+  tags: string[];
+}
+
+export interface BrainHandoverActionItem {
+  id: string;
+  text: string;
+  completed?: boolean;
+  convertedToTask?: boolean;
+}
+
+export interface BrainHandoverReply {
+  id: string;
+  author: 'Krishna' | 'Vansh';
+  text: string;
+  timestamp: string;
+}
+
+export interface BrainHandoverNote {
+  id: string;
+  from: 'Krishna' | 'Vansh';
+  to: 'Krishna' | 'Vansh';
+  date: string;
+  time: string;
+  title: string;
+  content: string;
+  actionItems: BrainHandoverActionItem[];
+  linkedClientId?: string;
+  linkedClientName?: string;
+  status: 'Unread' | 'Read' | 'Acknowledged';
+  replies: BrainHandoverReply[];
+  reactions: string[];
+}
+
+export type BrainMemoryCategory =
+  | 'Decisions'
+  | 'Processes & SOPs'
+  | 'Pricing & Packages'
+  | 'Lessons Learned'
+  | 'Tech Stack & Architecture'
+  | 'Marketing Playbooks';
+
+export interface BrainMemoryEntry {
+  id: string;
+  title: string;
+  category: BrainMemoryCategory;
+  content: string;
+  reasoning?: string;
+  author: FounderName;
+  date: string;
+  pinned?: boolean;
+  tags: string[];
+}
+
+export interface BrainWeeklyRecap {
+  id: string;
+  weekRange: string;
+  generatedAt: string;
+  executiveSummary: string;
+  accomplishments: string[];
+  krishnaContributions: string[];
+  vanshContributions: string[];
+  pendingItems: string[];
+  importantDiscussions: string[];
+  nextWeekPriorities: string[];
+  aiObservations: string[];
+  metrics: {
+    logsCount: number;
+    tasksCompleted: number;
+    tasksPending: number;
+    handoversCount: number;
+    newIdeasCount: number;
+  };
+}
+
 export interface AethelDatabaseState {
   clients: ClientLead[];
   metaCampaigns: MetaAdCampaign[];
@@ -330,5 +442,11 @@ export interface AethelDatabaseState {
   invoices?: ClientInvoice[];
   automationRules?: AutomationRule[];
   activityLogs?: ActivityLogEntry[];
+  brainDailyLogs?: BrainDailyLogEntry[];
+  brainDumps?: BrainDumpNote[];
+  brainHandovers?: BrainHandoverNote[];
+  brainMemories?: BrainMemoryEntry[];
+  brainWeeklyRecaps?: BrainWeeklyRecap[];
   lastUpdated: string;
 }
+

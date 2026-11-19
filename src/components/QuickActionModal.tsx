@@ -14,9 +14,13 @@ import {
   MessageSquare,
   Command,
   CreditCard,
+  Brain,
 } from 'lucide-react';
 import {
   AethelDatabaseState,
+  BrainDailyLogEntry,
+  BrainDumpCategory,
+  BrainDumpNote,
   ClientLead,
   StudioExpense,
   ClientPayment,
@@ -27,6 +31,7 @@ import {
   ExpensePaidBy,
   StudioTask,
 } from '../types';
+import { autoSuggestBrainCategoryAndTags } from '../utils/calculations';
 
 interface QuickActionModalProps {
   isOpen: boolean;
@@ -40,10 +45,21 @@ interface QuickActionModalProps {
   onAddCampaign: (campaign: MetaAdCampaign) => void;
   onAddWebsite: (website: HostedWebsite) => void;
   onAddTask?: (task: StudioTask) => void;
+  onAddBrainDump?: (note: BrainDumpNote) => void;
+  onAddDailyLog?: (entry: BrainDailyLogEntry) => void;
   onOpenClient360?: (clientId: string) => void;
 }
 
-type ActionTab = 'palette' | 'lead' | 'payment' | 'expense' | 'ticket' | 'task' | 'campaign' | 'domain';
+type ActionTab =
+  | 'palette'
+  | 'brain'
+  | 'lead'
+  | 'payment'
+  | 'expense'
+  | 'ticket'
+  | 'task'
+  | 'campaign'
+  | 'domain';
 
 export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   isOpen,
@@ -57,6 +73,8 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   onAddCampaign,
   onAddWebsite,
   onAddTask,
+  onAddBrainDump,
+  onAddDailyLog,
   onOpenClient360,
 }) => {
   const [activeTab, setActiveTab] = useState<ActionTab>('palette');
@@ -128,6 +146,14 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
   const [domRegistrar, setDomRegistrar] = useState<HostedWebsite['registrar']>('Hostinger');
   const [domPlatform, setDomPlatform] = useState<HostedWebsite['hostingPlatform']>('Vercel');
   const [domCost, setDomCost] = useState(1499);
+
+  // Quick Brain Note / Daily Log State
+  const [brainMode, setBrainMode] = useState<'daily-log' | 'brain-dump'>('daily-log');
+  const [brainAuthor, setBrainAuthor] = useState<'Krishna' | 'Vansh'>('Krishna');
+  const [brainTitle, setBrainTitle] = useState('');
+  const [brainContent, setBrainContent] = useState('');
+  const [brainCategory, setBrainCategory] = useState<BrainDumpCategory>('Ideas');
+  const [brainClient, setBrainClient] = useState(defaultClientName);
 
   useEffect(() => {
     if (isOpen) {
@@ -295,7 +321,61 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
     onClose();
   };
 
+  const handleBrainSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!brainContent.trim() && !brainTitle.trim()) return;
+    const matchedClient = dbState.clients.find(
+      (c) => c.businessName.toLowerCase() === brainClient.trim().toLowerCase()
+    );
+
+    if (brainMode === 'daily-log' && onAddDailyLog) {
+      const text = brainContent.trim() || brainTitle.trim();
+      const mentions: ('Krishna' | 'Vansh')[] = [];
+      if (text.toLowerCase().includes('@krishna')) mentions.push('Krishna');
+      if (text.toLowerCase().includes('@vansh')) mentions.push('Vansh');
+      onAddDailyLog({
+        id: `blog-${Date.now()}`,
+        author: brainAuthor,
+        content: text,
+        date: today,
+        time: new Date().toLocaleTimeString('en-IN', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+        }),
+        linkedClientId: matchedClient?.id,
+        linkedClientName: matchedClient?.businessName || (brainClient.trim() || undefined),
+        mentions,
+        reactions: [],
+      });
+    } else if (onAddBrainDump) {
+      const suggestion = autoSuggestBrainCategoryAndTags(`${brainTitle} ${brainContent}`);
+      onAddBrainDump({
+        id: `bdump-${Date.now()}`,
+        title: brainTitle.trim() || brainContent.trim().slice(0, 60),
+        description: brainContent.trim() || brainTitle.trim(),
+        author: brainAuthor,
+        date: today,
+        category: brainCategory || suggestion.category,
+        priority: suggestion.priority,
+        linkedClientId: matchedClient?.id,
+        linkedClientName: matchedClient?.businessName || (brainClient.trim() || undefined),
+        status: 'Unsorted',
+        tags: suggestion.tags,
+      });
+    }
+    onClose();
+  };
+
   const commandItems = [
+    {
+      id: 'cmd-brain',
+      title: 'Quick Capture to Aethel Brain (Daily Log or Brain Dump)',
+      subtitle: 'Record what you did today, dump an idea, or leave a note for Krishna / Vansh',
+      category: 'AETHEL BRAIN',
+      icon: Brain,
+      action: () => setActiveTab('brain'),
+    },
     {
       id: 'cmd-lead',
       title: 'Create a new Client / Sales Lead',
@@ -434,6 +514,7 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
         <div className="px-4 py-2.5 bg-[#F8F9FA] border-b border-[#EAECEF] flex items-center gap-1.5 overflow-x-auto no-scrollbar">
           {[
             { id: 'palette', label: '⌘ Search Commands', icon: Search },
+            { id: 'brain', label: '+ Brain Note', icon: Brain },
             { id: 'lead', label: '+ Client Lead', icon: Users },
             { id: 'payment', label: '+ Payment', icon: CreditCard },
             { id: 'task', label: '+ Task', icon: CheckSquare },
@@ -1363,6 +1444,141 @@ export const QuickActionModal: React.FC<QuickActionModalProps> = ({
                     className="flex items-center gap-1.5 px-6 py-2.5 rounded-full text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-sm cursor-pointer"
                   >
                     <CheckCircle2 className="w-4 h-4" /> Add Domain to Vault
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {activeTab === 'brain' && (
+              <form onSubmit={handleBrainSubmit} className="space-y-4">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 bg-[#F8F9FA] p-1 rounded-xl border border-[#EAECEF]">
+                    <button
+                      type="button"
+                      onClick={() => setBrainMode('daily-log')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
+                        brainMode === 'daily-log'
+                          ? 'bg-[#0B0F19] text-white'
+                          : 'text-[#64748B]'
+                      }`}
+                    >
+                      1. Daily Log ("What happened today?")
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBrainMode('brain-dump')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
+                        brainMode === 'brain-dump'
+                          ? 'bg-[#2563EB] text-white'
+                          : 'text-[#64748B]'
+                      }`}
+                    >
+                      2. Brain Dump Note / Idea
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1 bg-[#F8F9FA] p-1 rounded-xl border border-[#EAECEF]">
+                    {(['Krishna', 'Vansh'] as const).map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => setBrainAuthor(f)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer ${
+                          brainAuthor === f ? 'bg-[#0B0F19] text-white' : 'text-[#64748B]'
+                        }`}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {brainMode === 'brain-dump' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                        Idea / Note Title *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={brainTitle}
+                        onChange={(e) => setBrainTitle(e.target.value)}
+                        placeholder="e.g., Target hospitals with ABDM demo"
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                        Category
+                      </label>
+                      <select
+                        value={brainCategory}
+                        onChange={(e) =>
+                          setBrainCategory(e.target.value as BrainDumpCategory)
+                        }
+                        className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm bg-white"
+                      >
+                        <option value="Ideas">💡 Ideas</option>
+                        <option value="Things to do">⚡ Things to do</option>
+                        <option value="Thoughts">🧠 Thoughts</option>
+                        <option value="Important information">📌 Important information</option>
+                        <option value="Issues / Things to fix">🐛 Issues / Things to fix</option>
+                        <option value="Business opportunities">💰 Business opportunities</option>
+                        <option value="Client-related">🤝 Client-related</option>
+                        <option value="Future plans">🔮 Future plans</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                    {brainMode === 'daily-log'
+                      ? "What's on your mind? (Daily Log Update) *"
+                      : 'Detailed Note / Brain Dump *'}
+                  </label>
+                  <textarea
+                    rows={3}
+                    required
+                    value={brainContent}
+                    onChange={(e) => setBrainContent(e.target.value)}
+                    placeholder={
+                      brainMode === 'daily-log'
+                        ? 'e.g., Worked on Aethel Studios website redesign / Contacted 3 potential clients...'
+                        : 'Write your idea, bug to fix, or observation...'
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#EAECEF] text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#475569] mb-1">
+                    Optional Linked Client
+                  </label>
+                  <input
+                    type="text"
+                    list="quick-action-client-list"
+                    value={brainClient}
+                    onChange={(e) => setBrainClient(e.target.value)}
+                    placeholder="Select client..."
+                    className="w-full px-3.5 py-2 rounded-xl border border-[#EAECEF] text-sm"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('palette')}
+                    className="px-4 py-2.5 rounded-full text-xs font-semibold text-[#64748B] hover:bg-[#F1F5F9]"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex items-center gap-1.5 px-6 py-2.5 rounded-full text-xs font-bold bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-sm cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" /> Save to Aethel Brain
                   </button>
                 </div>
               </form>

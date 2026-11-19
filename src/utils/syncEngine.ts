@@ -3,6 +3,10 @@ import {
   AethelDatabaseState,
   ApprovalCheckpointStage,
   AutomationRule,
+  BrainDailyLogEntry,
+  BrainDumpNote,
+  BrainHandoverNote,
+  BrainMemoryEntry,
   ClientCommunicationLog,
   ClientInvoice,
   ClientLead,
@@ -18,6 +22,7 @@ import {
   StudioTask,
 } from '../types';
 import {
+  generateGroundedWeeklyRecap,
   getDefaultApprovalsForStage,
   getDefaultMilestonesForStage,
   getDefaultSubtasksForMilestone,
@@ -658,7 +663,142 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
       ? state.automationRules
       : DEFAULT_AUTOMATION_RULES;
 
-  return {
+  const defaultMemories: BrainMemoryEntry[] = [
+    {
+      id: 'mem-pricing-tiers',
+      title: 'Standardized Website & Growth Package Pricing',
+      category: 'Pricing & Packages',
+      content:
+        'Basic Website Package (₹7,999–₹9,999), Standard Multi-Section Package (₹14,999), and Custom Website + Meta Ads Funnel (₹22,000+ with separate pass-through ad spend).',
+      reasoning:
+        'Provides clear entry points for Banquet/Lawns, Retail/Mobiles, and Clinics while keeping Meta Ad Spend strictly pass-through.',
+      author: 'Both',
+      date: today,
+      pinned: true,
+      tags: ['Pricing', 'Packages', 'Positioning'],
+    },
+    {
+      id: 'mem-delivery-sop',
+      title: '6-Stage Delivery & 5-Gate Client Approval SOP',
+      category: 'Processes & SOPs',
+      content:
+        'Every confirmed project progresses through Requirements → Design → Development → Testing → Deployment → Handover, with 50% advance before build and final balance upon live preview approval.',
+      reasoning:
+        'Eliminates scope creep and ensures 100% alignment between CRM Pipeline, Deliveries, and Finance Ledger.',
+      author: 'Krishna',
+      date: today,
+      pinned: true,
+      tags: ['SOP', 'Delivery', 'Milestones'],
+    },
+    {
+      id: 'mem-founder-split',
+      title: 'Co-Founder 50/50 Profit Split & Out-of-Pocket Reimbursement Policy',
+      category: 'Decisions',
+      content:
+        'Net studio profit is split 50/50 between Vansh Khakole and Krishna Khakole after reimbursing any personal out-of-pocket expenses (domains, hosting, ad spend) paid by either founder.',
+      reasoning:
+        'Guarantees transparent co-founder accounting regardless of whether client UPI payments land in Vansh, Krishna, or Studio Account.',
+      author: 'Both',
+      date: today,
+      pinned: true,
+      tags: ['Finance', 'Governance', '50/50 Split'],
+    },
+  ];
+
+  const brainMemories: BrainMemoryEntry[] =
+    state.brainMemories !== undefined ? state.brainMemories : defaultMemories;
+
+  const brainDailyLogs: BrainDailyLogEntry[] =
+    state.brainDailyLogs !== undefined
+      ? state.brainDailyLogs
+      : [
+          {
+            id: 'blog-init-1',
+            author: 'Krishna',
+            content:
+              'Synchronized Aethel OS relational engine across CRM Pipeline, Domains, Meta Ads, and Studio Finance Ledger.',
+            date: today,
+            time: '10:30 AM',
+            mentions: ['Vansh'],
+            reactions: ['🔥', '✅'],
+            pinned: true,
+          },
+          {
+            id: 'blog-init-2',
+            author: 'Vansh',
+            content:
+              'Reviewed active client domains, follow-up schedule, and hyper-local Meta Ad campaigns.',
+            date: today,
+            time: '12:15 PM',
+            mentions: ['Krishna'],
+            reactions: ['👍'],
+          },
+        ];
+
+  const brainDumps: BrainDumpNote[] =
+    state.brainDumps !== undefined
+      ? state.brainDumps
+      : [
+          {
+            id: 'bdump-init-1',
+            title: 'Create dedicated Wedding Season Banquet & Lawns Meta Ads bundle',
+            description:
+              'Bundle a high-conversion 3D/Gallery Lawn showcase website with a 30-day WhatsApp Lead Generation Meta Ads campaign for marriage lawns in Maharashtra.',
+            author: 'Vansh',
+            date: today,
+            category: 'Business opportunities',
+            priority: 'High',
+            status: 'Unsorted',
+            pinned: true,
+            tags: ['Banquet/Lawns', 'Meta Ads', 'Growth'],
+          },
+          {
+            id: 'bdump-init-2',
+            title: 'Productize ABDM-Integrated Clinic & Hospital Management Prototype',
+            description:
+              'Package our R&D Lab ABDM HMS prototype into a ready-to-demo pitch deck for multi-specialty clinics and hospitals.',
+            author: 'Krishna',
+            date: today,
+            category: 'Ideas',
+            priority: 'High',
+            status: 'In Progress',
+            pinned: true,
+            tags: ['Hospitals', 'R&D Lab', 'Product Idea'],
+          },
+        ];
+
+  const brainHandovers: BrainHandoverNote[] =
+    state.brainHandovers !== undefined
+      ? state.brainHandovers
+      : [
+          {
+            id: 'bhand-init-1',
+            from: 'Krishna',
+            to: 'Vansh',
+            date: today,
+            time: '02:00 PM',
+            title: 'Domain & Payment Follow-up Check-in',
+            content:
+              '@Vansh I have updated the live ledger and domain expiry sync. Please check pending client follow-ups and confirm once the next advance payment lands.',
+            actionItems: [
+              {
+                id: 'act-item-1',
+                text: 'Verify pending client follow-ups in CRM Pipeline',
+                completed: false,
+              },
+              {
+                id: 'act-item-2',
+                text: 'Confirm domain renewal status for active hosted sites',
+                completed: false,
+              },
+            ],
+            status: 'Unread',
+            replies: [],
+            reactions: ['👀'],
+          },
+        ];
+
+  const baseReconciled: AethelDatabaseState = {
     ...state,
     clients: finalClients,
     payments: autoSyncedPayments,
@@ -672,7 +812,21 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
     invoices: generatedInvoices,
     automationRules,
     activityLogs,
+    brainDailyLogs,
+    brainDumps,
+    brainHandovers,
+    brainMemories,
     lastUpdated: new Date().toISOString(),
+  };
+
+  const brainWeeklyRecaps =
+    state.brainWeeklyRecaps && state.brainWeeklyRecaps.length > 0
+      ? state.brainWeeklyRecaps
+      : [generateGroundedWeeklyRecap(baseReconciled)];
+
+  return {
+    ...baseReconciled,
+    brainWeeklyRecaps,
   };
 }
 
@@ -1560,3 +1714,124 @@ export function updatePaymentAndSyncClient(
     lastUpdated: new Date().toISOString(),
   });
 }
+
+/**
+ * AETHEL BRAIN — 1-Click Convert Brain Dump Note into an Actionable Studio Task
+ */
+export function convertBrainDumpToTask(
+  state: AethelDatabaseState,
+  noteId: string,
+  assignedTo?: FounderName
+): AethelDatabaseState {
+  const note = (state.brainDumps || []).find((n) => n.id === noteId);
+  if (!note) return state;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const dueDate = new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+  const taskId = `task-brain-${Date.now()}`;
+
+  const newTask: StudioTask = {
+    id: taskId,
+    clientId: note.linkedClientId,
+    clientName: note.linkedClientName || 'Aethel Studio',
+    title: note.title,
+    type: note.linkedClientName ? 'Follow-up' : 'Internal',
+    category:
+      note.category === 'Issues / Things to fix'
+        ? 'Website Development'
+        : note.category === 'Business opportunities'
+        ? 'Sales'
+        : note.category === 'Client-related'
+        ? 'Client Communication'
+        : 'Internal',
+    recurrence: 'None',
+    priority: note.priority === 'Low' ? 'Normal' : note.priority,
+    status: 'Pending',
+    assignedTo: assignedTo || note.author,
+    dueDate,
+    notes: `[Converted from Aethel Brain · ${note.category} by ${note.author}]: ${note.description}`,
+    createdAt: today,
+  };
+
+  const nextBrainDumps = (state.brainDumps || []).map((n) =>
+    n.id === noteId
+      ? { ...n, status: 'In Progress' as const, convertedTaskId: taskId }
+      : n
+  );
+
+  const nextLogs = appendActivityLog(state, {
+    actor: note.author,
+    action: `Converted Brain Dump note to Task: "${note.title}"`,
+    targetName: note.linkedClientName || 'Aethel Brain',
+    category: 'Brain',
+  });
+
+  return reconcileDatabaseIntegrity({
+    ...state,
+    tasks: [newTask, ...(state.tasks || [])],
+    brainDumps: nextBrainDumps,
+    activityLogs: nextLogs,
+    lastUpdated: new Date().toISOString(),
+  });
+}
+
+/**
+ * AETHEL BRAIN — 1-Click Convert Handover Action Item into a Studio Task
+ */
+export function convertHandoverItemToTask(
+  state: AethelDatabaseState,
+  handoverId: string,
+  actionItemId: string
+): AethelDatabaseState {
+  const handover = (state.brainHandovers || []).find((h) => h.id === handoverId);
+  if (!handover) return state;
+
+  const item = handover.actionItems.find((a) => a.id === actionItemId);
+  if (!item) return state;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const dueDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+
+  const newTask: StudioTask = {
+    id: `task-handover-${Date.now()}`,
+    clientId: handover.linkedClientId,
+    clientName: handover.linkedClientName || 'Aethel Studio',
+    title: item.text,
+    type: handover.linkedClientName ? 'Follow-up' : 'Internal',
+    category: 'Internal',
+    recurrence: 'None',
+    priority: 'High',
+    status: 'Pending',
+    assignedTo: handover.to,
+    dueDate,
+    notes: `[Handover from ${handover.from} → ${handover.to}: "${handover.title}"] ${handover.content}`,
+    createdAt: today,
+  };
+
+  const nextHandovers = (state.brainHandovers || []).map((h) =>
+    h.id === handoverId
+      ? {
+          ...h,
+          actionItems: h.actionItems.map((a) =>
+            a.id === actionItemId ? { ...a, convertedToTask: true } : a
+          ),
+        }
+      : h
+  );
+
+  const nextLogs = appendActivityLog(state, {
+    actor: handover.to,
+    action: `Converted handover instruction to Task: "${item.text}"`,
+    targetName: handover.linkedClientName || 'Aethel Brain',
+    category: 'Brain',
+  });
+
+  return reconcileDatabaseIntegrity({
+    ...state,
+    tasks: [newTask, ...(state.tasks || [])],
+    brainHandovers: nextHandovers,
+    activityLogs: nextLogs,
+    lastUpdated: new Date().toISOString(),
+  });
+}
+
