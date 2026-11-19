@@ -9,7 +9,8 @@ export type ModuleId =
   | 'finance'
   | 'analytics'
   | 'rnd-lab'
-  | 'vault';
+  | 'vault'
+  | 'settings';
 
 export type FounderName = 'Vansh' | 'Krishna' | 'Both';
 export type ExpensePaidBy = 'Vansh' | 'Krishna' | 'Studio Account';

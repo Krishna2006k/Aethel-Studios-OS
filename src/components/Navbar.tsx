@@ -9,20 +9,16 @@ import {
   Wallet,
   ShieldCheck,
   Plus,
-  Cloud,
-  HardDrive,
   CheckSquare,
   BarChart3,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
   Settings,
-  HelpCircle,
   Menu,
   X,
   ArrowUpRight,
   Command,
-  Sparkles,
   Bell,
   Zap,
   AlertTriangle,
@@ -40,8 +36,6 @@ import {
   formatINR,
   generateStudioNotifications,
 } from '../utils/calculations';
-import { DEFAULT_AUTOMATION_RULES } from '../utils/syncEngine';
-import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   activeModule: ModuleId;
@@ -181,8 +175,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeModule,
   onSelectModule,
   syncMode,
-  isSyncing,
-  onOpenSupabaseModal,
   onOpenQuickAction,
   urgentCounts,
   sidebarCollapsed,
@@ -192,14 +184,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   clients = [],
   dbState,
   onOpenClient360,
-  onToggleAutomationRule,
 }) => {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
-  const [showHelpModal, setShowHelpModal] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [showAutomationsModal, setShowAutomationsModal] = useState(false);
 
   const getBadgeValue = (
     key?: 'followUps' | 'openTickets' | 'expiringDomains' | 'pendingTasks' | 'unreadBrain'
@@ -209,13 +198,19 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   const activeNavMeta =
-    SIDEBAR_GROUPS.flatMap((g) =>
-      g.items.map((item) => ({ ...item, category: g.category }))
-    ).find((i) => i.id === activeModule) || {
-      id: 'command-center',
-      label: 'Overview',
-      category: 'WORKSPACE',
-    };
+    activeModule === 'settings'
+      ? {
+          id: 'settings' as ModuleId,
+          label: 'Settings',
+          category: 'SYSTEM',
+        }
+      : SIDEBAR_GROUPS.flatMap((g) =>
+          g.items.map((item) => ({ ...item, category: g.category }))
+        ).find((i) => i.id === activeModule) || {
+          id: 'command-center',
+          label: 'Overview',
+          category: 'WORKSPACE',
+        };
 
   // Universal Search across Clients, Campaigns, Domains, Payments, Tasks, Vault
   const q = globalSearch.trim().toLowerCase();
@@ -333,10 +328,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const notifications = dbState ? generateStudioNotifications(dbState) : [];
   const criticalNotifCount = notifications.filter((n) => n.severity === 'critical').length;
-  const automationRules =
-    dbState?.automationRules && dbState.automationRules.length > 0
-      ? dbState.automationRules
-      : DEFAULT_AUTOMATION_RULES;
 
   return (
     <>
@@ -466,57 +457,35 @@ export const Navbar: React.FC<NavbarProps> = ({
           ))}
         </nav>
 
-        {/* Bottom Section: Automations, Install App, Settings, Help & Support, Krishna / Vansh Profile */}
-        <div className="p-2.5 border-t border-[#EAECEF] space-y-1 bg-[#FAFBFC]">
-          <PWAInstallButton variant="sidebar" collapsed={sidebarCollapsed} />
-
+        {/* Bottom Section: Single Clean Settings Tab + Krishna / Vansh Profile */}
+        <div className="p-2.5 border-t border-[#EAECEF] space-y-1.5 bg-[#FAFBFC]">
           <button
-            onClick={() => setShowAutomationsModal(true)}
-            title="Studio Automation Engine"
+            onClick={() => onSelectModule('settings')}
+            title="Settings — Cloud Sync, SQL Schema, Automations, Install App & Help"
             className={`w-full flex items-center ${
-              sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-2.5'
-            } py-1.5 rounded-lg text-xs font-medium text-[#475569] hover:text-[#0B0F19] hover:bg-white transition-colors cursor-pointer`}
+              sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'justify-between px-2.5 py-2'
+            } rounded-xl text-xs font-semibold transition-all cursor-pointer relative ${
+              activeModule === 'settings'
+                ? 'bg-[#EFF6FF] text-[#2563EB] font-bold shadow-2xs'
+                : 'text-[#475569] hover:text-[#0B0F19] hover:bg-white'
+            }`}
           >
-            <span className="flex items-center gap-2 truncate">
-              <Zap className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
-              {!sidebarCollapsed && <span>Automations</span>}
-            </span>
-            {!sidebarCollapsed && (
-              <span className="text-[10px] font-mono font-bold text-[#059669] bg-[#D1FAE5] px-1.5 py-0.2 rounded">
-                {automationRules.filter((r) => r.enabled).length} ON
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={onOpenSupabaseModal}
-            title="Database & Cloud Settings"
-            className={`w-full flex items-center ${
-              sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-2.5'
-            } py-1.5 rounded-lg text-xs font-medium text-[#475569] hover:text-[#0B0F19] hover:bg-white transition-colors cursor-pointer`}
-          >
-            <span className="flex items-center gap-2 truncate">
-              <Settings className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
-              {!sidebarCollapsed && <span>Settings & Cloud DB</span>}
+            <span className="flex items-center gap-2.5 truncate">
+              <Settings
+                className={`w-4 h-4 shrink-0 ${
+                  activeModule === 'settings' ? 'text-[#2563EB]' : 'text-[#64748B]'
+                }`}
+              />
+              {!sidebarCollapsed && <span>Settings</span>}
             </span>
             {!sidebarCollapsed && (
               <span
+                title={syncMode === 'supabase' ? 'Supabase Cloud Synced' : 'Studio Server Engine'}
                 className={`w-2 h-2 rounded-full ${
                   syncMode === 'supabase' ? 'bg-[#059669]' : 'bg-amber-500'
                 }`}
               />
             )}
-          </button>
-
-          <button
-            onClick={() => setShowHelpModal(true)}
-            title="Help & OS Architecture Guide"
-            className={`w-full flex items-center ${
-              sidebarCollapsed ? 'justify-center px-0' : ' gap-2 px-2.5'
-            } py-1.5 rounded-lg text-xs font-medium text-[#475569] hover:text-[#0B0F19] hover:bg-white transition-colors cursor-pointer`}
-          >
-            <HelpCircle className="w-3.5 h-3.5 text-[#64748B] shrink-0" />
-            {!sidebarCollapsed && <span>Help & Architecture</span>}
           </button>
 
           {/* Persistent Workspace Switcher */}
@@ -1004,7 +973,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   <button
                     onClick={() => {
                       setShowNotifications(false);
-                      setShowAutomationsModal(true);
+                      onSelectModule('settings');
                     }}
                     className="text-[11px] font-bold text-[#2563EB] hover:underline flex items-center gap-1 cursor-pointer"
                   >
@@ -1017,32 +986,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               </div>
             )}
           </div>
-
-          <PWAInstallButton variant="header" />
-
-          <button
-            onClick={onOpenSupabaseModal}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold border transition-all cursor-pointer ${
-              syncMode === 'supabase'
-                ? 'bg-[#D1FAE5]/60 text-[#059669] border-[#A7F3D0] hover:bg-[#D1FAE5]'
-                : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-            }`}
-            title="Configure Supabase Cloud Persistence & View SQL Schema"
-          >
-            {syncMode === 'supabase' ? (
-              <>
-                <Cloud className={`w-3.5 h-3.5 ${isSyncing ? 'animate-bounce' : ''}`} />
-                <span className="hidden md:inline">
-                  {isSyncing ? 'Syncing...' : 'Cloud Synced'}
-                </span>
-              </>
-            ) : (
-              <>
-                <HardDrive className="w-3.5 h-3.5" />
-                <span className="hidden md:inline">Local Engine</span>
-              </>
-            )}
-          </button>
 
           <button
             onClick={onOpenQuickAction}
@@ -1128,7 +1071,27 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
 
             <div className="p-3 border-t border-[#EAECEF] bg-[#F8F9FA] space-y-2.5">
-              <PWAInstallButton variant="mobile-drawer" />
+              <button
+                onClick={() => {
+                  onSelectModule('settings');
+                  setMobileDrawerOpen(false);
+                }}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                  activeModule === 'settings'
+                    ? 'bg-[#EFF6FF] text-[#2563EB] font-bold'
+                    : 'bg-white border border-[#EAECEF] text-[#0B0F19]'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <Settings className="w-4 h-4 text-[#2563EB]" />
+                  <span>Settings (Cloud, App, Automations &amp; Help)</span>
+                </span>
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    syncMode === 'supabase' ? 'bg-[#059669]' : 'bg-amber-500'
+                  }`}
+                />
+              </button>
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-wider text-[#64748B] mb-1.5">
                   Founder Workspace Filter
@@ -1149,142 +1112,6 @@ export const Navbar: React.FC<NavbarProps> = ({
                   ))}
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* PART 11 — AUTOMATION ENGINE RULES MODAL */}
-      {showAutomationsModal && (
-        <div className="fixed inset-0 z-50 bg-[#0B0F19]/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#EAECEF] max-w-2xl w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5" /> Proactive Operations Engine
-                </div>
-                <h3 className="text-lg font-extrabold text-[#0B0F19] mt-0.5">
-                  Aethel OS — Automated Studio Workflows
-                </h3>
-                <p className="text-xs text-[#64748B] mt-0.5">
-                  Deterministic relational triggers that keep CRM, Deliveries, Domains, and Finance synchronized in real time.
-                </p>
-              </div>
-              <button
-                onClick={() => setShowAutomationsModal(false)}
-                className="w-8 h-8 rounded-full bg-[#F8F9FA] flex items-center justify-center text-[#64748B] hover:text-[#0B0F19] cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-2.5">
-              {automationRules.map((rule) => (
-                <div
-                  key={rule.id}
-                  className="p-4 rounded-2xl border border-[#EAECEF] bg-[#F8F9FA] flex items-start justify-between gap-4"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-extrabold text-[#0B0F19]">
-                        {rule.name}
-                      </span>
-                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white border border-[#EAECEF] text-[#475569]">
-                        {rule.category}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-[#475569]">
-                      <strong className="text-[#0B0F19]">IF:</strong> {rule.trigger}
-                    </div>
-                    <div className="text-[11px] text-[#2563EB] font-medium">
-                      <strong>THEN:</strong> {rule.action}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    <button
-                      onClick={() =>
-                        onToggleAutomationRule && onToggleAutomationRule(rule.id)
-                      }
-                      className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
-                        rule.enabled
-                          ? 'bg-[#059669] text-white'
-                          : 'bg-[#E2E8F0] text-[#64748B]'
-                      }`}
-                    >
-                      {rule.enabled ? 'Active' : 'Paused'}
-                    </button>
-                    <span className="text-[10px] font-mono text-[#64748B]">
-                      Active across studio
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="pt-2 flex items-center justify-between border-t border-[#EAECEF]">
-              <span className="text-[11px] text-[#64748B]">
-                All rules execute atomically inside the relational sync engine.
-              </span>
-              <button
-                onClick={() => setShowAutomationsModal(false)}
-                className="px-4 py-2 rounded-xl bg-[#0B0F19] text-white text-xs font-bold cursor-pointer"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* HELP & OS ARCHITECTURE MODAL */}
-      {showHelpModal && (
-        <div className="fixed inset-0 z-50 bg-[#0B0F19]/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl border border-[#EAECEF] max-w-xl w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5" /> Aethel OS v4.0 — Unified Agency ERP
-                </div>
-                <h3 className="text-lg font-extrabold text-[#0B0F19] mt-0.5">
-                  One Client. One Central Source of Truth.
-                </h3>
-              </div>
-              <button
-                onClick={() => setShowHelpModal(false)}
-                className="w-8 h-8 rounded-full bg-[#F8F9FA] flex items-center justify-center text-[#64748B] hover:text-[#0B0F19]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs text-[#475569] leading-relaxed">
-              <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
-                <div className="font-bold text-[#0B0F19] mb-1">
-                  1. 9-Tab Unified Client 360° Workspace
-                </div>
-                Click any client row in <strong>CRM & Pipeline</strong> or search from the top bar to open their 9-tab Client 360° Workspace (Overview, Projects & Approvals, Payments & Invoices, Tasks, Marketing, Domains, Documents & Vault, Communication Log, and Activity Timeline).
-              </div>
-              <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
-                <div className="font-bold text-[#0B0F19] mb-1">
-                  2. Single Financial Source of Truth & Co-Founder Ledger
-                </div>
-                Every payment recorded in <strong>CRM Pipeline</strong>, <strong>Client 360°</strong>, or <strong>Finance & Ledger</strong> automatically reconciles through the canonical financial engine, updating Co-Founder 50/50 profit shares, personal reimbursements, and numbered client invoices.
-              </div>
-              <div className="p-3.5 rounded-2xl bg-[#F8F9FA] border border-[#EAECEF]">
-                <div className="font-bold text-[#0B0F19] mb-1">
-                  3. Universal Search & Command Palette (Ctrl+K)
-                </div>
-                Use the top search bar to query across all entities (clients, projects, invoices, Meta campaigns, domains, tasks, and vault credentials) or press <kbd className="px-1.5 py-0.5 bg-white border rounded font-mono">Ctrl+K</kbd> anywhere.
-              </div>
-            </div>
-
-            <div className="pt-2 flex justify-end">
-              <button
-                onClick={() => setShowHelpModal(false)}
-                className="px-4 py-2 rounded-xl bg-[#0B0F19] text-white text-xs font-bold cursor-pointer"
-              >
-                Got it, back to work
-              </button>
             </div>
           </div>
         </div>

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aethel-os-pwa-v1';
+const CACHE_NAME = 'aethel-os-pwa-v3';
 const APP_SHELL_ASSETS = [
   '/',
   '/index.html',
@@ -35,13 +35,14 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Network-first with offline cache fallback (required by Android Chrome for PWA installability)
+// Network-first for same-origin static assets only; never intercept external APIs (e.g. Supabase) or /api/ routes
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
-  if (url.pathname.startsWith('/api/')) {
+  // Strictly ignore cross-origin requests (Supabase, external APIs, CDNs) and local /api/ routes
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) {
     return;
   }
 
@@ -56,6 +57,13 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match('/')))
+      .catch(async () => {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+        if (request.mode === 'navigate') {
+          return caches.match('/');
+        }
+        throw new Error('Network request failed while offline');
+      })
   );
 });

@@ -9,6 +9,7 @@ import { RnDLabView } from './components/RnDLabView';
 import { StudioFinanceView } from './components/StudioFinanceView';
 import { EncryptedVaultView } from './components/EncryptedVaultView';
 import { AethelBrainView } from './components/AethelBrainView';
+import { SettingsView } from './components/SettingsView';
 import { SupabaseModal } from './components/SupabaseModal';
 import { QuickActionModal } from './components/QuickActionModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
@@ -815,6 +816,17 @@ export default function App() {
               onAddVaultItem={handleAddVaultItem}
               onUpdateVaultItem={handleUpdateVaultItem}
               onDeleteVaultItem={handleDeleteVaultItem}
+            />
+          )}
+
+          {activeModule === 'settings' && (
+            <SettingsView
+              dbState={dbState}
+              syncMode={syncMode}
+              isSyncing={isSyncing}
+              onConnectionChanged={refreshFromSource}
+              onResetDemoData={handleResetDemoData}
+              onToggleAutomationRule={handleToggleAutomationRule}
             />
           )}
         </main>

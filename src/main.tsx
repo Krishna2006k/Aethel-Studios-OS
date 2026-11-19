@@ -7,6 +7,9 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker
       .register('/sw.js', { scope: '/' })
+      .then((reg) => {
+        reg.update().catch(() => {});
+      })
       .catch(() => {
         // Ignore service worker registration errors in restricted preview sandboxes
       });
