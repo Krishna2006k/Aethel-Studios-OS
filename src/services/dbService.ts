@@ -281,7 +281,7 @@ export function saveToLocalStorage(state: AethelDatabaseState): void {
 }
 
 export const SUPABASE_COMPLETE_SQL_SCHEMA = `-- ============================================================================
--- AETHEL OS v2.0 — COMPLETE ENTERPRISE & AETHEL BRAIN PostgreSQL SCHEMA
+-- AETHEL OS v3.0 — COMPLETE ENTERPRISE, FINANCE ENGINE & AETHEL BRAIN SCHEMA
 -- Founders: Vansh Khakole & Krishna Khakole (aethelstudios.in@gmail.com)
 -- Safe to run on BOTH new and existing Supabase databases (100% Idempotent)
 -- ============================================================================
@@ -424,50 +424,147 @@ create table if not exists public.tickets (
   created_at timestamptz default now()
 );
 
--- 6. Financial Ledger: Invoices, Verified Client Payments & Operational Expenses
+-- 6. Financial Operating Engine: Invoices, Line Items, Quotations, Payments, Expenses, Transactions & Documents
 create table if not exists public.invoices (
   id text primary key,
   client_id text references public.clients(id) on delete cascade,
   client_name text,
+  client_contact_person text,
+  client_email text,
+  client_phone text,
+  client_address text,
   project_title text,
+  invoice_title text,
   invoice_number text not null,
-  invoice_type text default 'Advance Invoice',
+  invoice_type text default 'Standard Invoice',
+  payment_terms text,
+  line_items jsonb default '[]'::jsonb,
+  subtotal numeric not null default 0,
+  discount numeric not null default 0,
   total_amount numeric not null default 0,
   amount_paid numeric not null default 0,
-  status text not null default 'Pending',
+  balance_due numeric not null default 0,
+  status text not null default 'Issued', -- Draft | Issued | Partially Paid | Paid | Overdue | Cancelled
   issue_date date default current_date,
   due_date date,
   notes text,
+  gst_enabled boolean not null default false,
+  gst_rate_percent numeric not null default 0,
+  gst_disclaimer text default 'GST not charged. Supplier is not registered under GST.',
+  template_id text default 'tpl-aethel-editorial',
+  source_quotation_id text,
+  version integer not null default 1,
   created_at timestamptz default now()
 );
 
 alter table public.invoices add column if not exists client_name text;
+alter table public.invoices add column if not exists client_contact_person text;
+alter table public.invoices add column if not exists client_email text;
+alter table public.invoices add column if not exists client_phone text;
+alter table public.invoices add column if not exists client_address text;
 alter table public.invoices add column if not exists project_title text;
-alter table public.invoices add column if not exists invoice_type text default 'Advance Invoice';
+alter table public.invoices add column if not exists invoice_title text;
+alter table public.invoices add column if not exists invoice_type text default 'Standard Invoice';
+alter table public.invoices add column if not exists payment_terms text;
+alter table public.invoices add column if not exists line_items jsonb default '[]'::jsonb;
+alter table public.invoices add column if not exists subtotal numeric not null default 0;
+alter table public.invoices add column if not exists discount numeric not null default 0;
+alter table public.invoices add column if not exists balance_due numeric not null default 0;
 alter table public.invoices add column if not exists issue_date date default current_date;
 alter table public.invoices add column if not exists notes text;
+alter table public.invoices add column if not exists gst_enabled boolean not null default false;
+alter table public.invoices add column if not exists gst_rate_percent numeric not null default 0;
+alter table public.invoices add column if not exists gst_disclaimer text default 'GST not charged. Supplier is not registered under GST.';
+alter table public.invoices add column if not exists template_id text default 'tpl-aethel-editorial';
+alter table public.invoices add column if not exists source_quotation_id text;
+alter table public.invoices add column if not exists version integer not null default 1;
+
+create table if not exists public.invoice_items (
+  id text primary key,
+  invoice_id text references public.invoices(id) on delete cascade,
+  service_name text not null,
+  description text,
+  quantity numeric not null default 1,
+  unit_price numeric not null default 0,
+  total numeric not null default 0,
+  sort_order integer not null default 0
+);
+
+create table if not exists public.quotations (
+  id text primary key,
+  quote_number text not null,
+  client_id text references public.clients(id) on delete set null,
+  client_name text not null,
+  client_contact_person text,
+  client_email text,
+  client_phone text,
+  client_address text,
+  project_title text not null,
+  quote_date date default current_date,
+  valid_until date,
+  status text not null default 'Draft', -- Draft | Sent | Accepted | Rejected | Expired
+  line_items jsonb default '[]'::jsonb,
+  subtotal numeric not null default 0,
+  discount numeric not null default 0,
+  total numeric not null default 0,
+  notes text,
+  terms_and_conditions text,
+  converted_invoice_id text,
+  converted_invoice_number text,
+  template_id text default 'tpl-aethel-editorial',
+  created_at timestamptz default now()
+);
+
+create table if not exists public.quotation_items (
+  id text primary key,
+  quotation_id text references public.quotations(id) on delete cascade,
+  service_name text not null,
+  description text,
+  quantity numeric not null default 1,
+  unit_price numeric not null default 0,
+  total numeric not null default 0,
+  sort_order integer not null default 0
+);
 
 create table if not exists public.client_payments (
   id text primary key,
+  receipt_number text,
+  invoice_id text references public.invoices(id) on delete set null,
+  invoice_number text,
   client_id text references public.clients(id) on delete set null,
   client_name text not null,
   project_title text not null,
   total_project_value numeric not null default 0,
   amount_received numeric not null default 0,
   payment_date date,
-  payment_mode text not null,
+  payment_mode text not null, -- UPI | Cash | Bank Transfer | Other
   received_in_account text not null,
   milestone text not null,
+  upi_reference text,
+  notes text,
   created_at timestamptz default now()
 );
 
+alter table public.client_payments add column if not exists receipt_number text;
+alter table public.client_payments add column if not exists invoice_id text;
+alter table public.client_payments add column if not exists invoice_number text;
+alter table public.client_payments add column if not exists upi_reference text;
+alter table public.client_payments add column if not exists notes text;
+
 create table if not exists public.expenses (
   id text primary key,
+  expense_number text,
   title text not null,
-  category text not null,
+  description text,
+  category text not null, -- Hosting | Domains | Software & Subscriptions | Advertising | Client Acquisition | Equipment | Travel | Freelance | Miscellaneous
   amount numeric not null default 0,
+  payment_method text default 'UPI',
+  vendor text,
+  reference_number text,
+  attachment_url text,
   paid_by text not null,
   expense_date date,
+  client_id text references public.clients(id) on delete set null,
   client_related text,
   reimbursed boolean default false,
   notes text,
@@ -476,8 +573,100 @@ create table if not exists public.expenses (
   created_at timestamptz default now()
 );
 
+alter table public.expenses add column if not exists expense_number text;
+alter table public.expenses add column if not exists description text;
+alter table public.expenses add column if not exists payment_method text default 'UPI';
+alter table public.expenses add column if not exists vendor text;
+alter table public.expenses add column if not exists reference_number text;
+alter table public.expenses add column if not exists attachment_url text;
+alter table public.expenses add column if not exists client_id text;
 alter table public.expenses add column if not exists linked_domain_id text;
 alter table public.expenses add column if not exists linked_campaign_id text;
+
+create table if not exists public.finance_transactions (
+  id text primary key,
+  transaction_date date not null default current_date,
+  transaction_type text not null, -- Income | Expense | Refund
+  amount numeric not null default 0,
+  payment_method text not null default 'UPI', -- UPI | Cash | Bank Transfer | Other
+  client_id text references public.clients(id) on delete set null,
+  client_name text,
+  project_title text,
+  invoice_id text,
+  invoice_number text,
+  payment_id text,
+  expense_id text,
+  reference_number text,
+  description text not null,
+  notes text,
+  account text,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.generated_documents (
+  id text primary key,
+  document_number text not null,
+  document_type text not null, -- Quotation | Invoice | Payment Receipt | Statement of Account
+  version integer not null default 1,
+  client_id text references public.clients(id) on delete set null,
+  client_name text not null,
+  project_title text,
+  invoice_id text,
+  quotation_id text,
+  payment_id text,
+  created_date date not null default current_date,
+  amount numeric not null default 0,
+  status text not null,
+  template_id text not null default 'tpl-aethel-editorial',
+  snapshot_payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.document_templates (
+  id text primary key,
+  name text not null,
+  description text,
+  accent_color text not null default '#2563EB',
+  header_style text not null default 'editorial-dark',
+  font_family text not null default 'Plus Jakarta Sans',
+  show_logo boolean not null default true,
+  footer_text text,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.finance_settings (
+  id text primary key default 'studio-finance-settings',
+  studio_name text not null default 'Aethel Studios',
+  contact_person_1 text not null default 'Krishna Khakole',
+  phone_1 text,
+  contact_person_2 text not null default 'Vansh Khakole',
+  phone_2 text,
+  email text not null default 'aethelstudios.in@gmail.com',
+  website text,
+  address text,
+  upi_id text,
+  bank_name text,
+  bank_account_name text,
+  bank_account_number text,
+  bank_ifsc text,
+  gst_registration_status text not null default 'Unregistered',
+  gst_enabled boolean not null default false,
+  gstin text,
+  gst_rate_percent numeric not null default 0,
+  gst_disclaimer text not null default 'GST not charged. Supplier is not registered under GST.',
+  default_template_id text not null default 'tpl-aethel-editorial',
+  invoice_prefix text not null default 'AS-I-',
+  receipt_prefix text not null default 'AS-R-',
+  quotation_prefix text not null default 'AS-Q-',
+  statement_prefix text not null default 'AS-S-',
+  expense_prefix text not null default 'AS-E-',
+  next_invoice_number integer not null default 1,
+  next_receipt_number integer not null default 1,
+  next_quotation_number integer not null default 1,
+  next_statement_number integer not null default 1,
+  next_expense_number integer not null default 1,
+  updated_at timestamptz default now()
+);
 
 -- 7. Growth & Infrastructure: Meta Ad Campaigns & Hosted Domains
 create table if not exists public.meta_campaigns (

@@ -28,6 +28,12 @@ import {
   getDefaultSubtasksForMilestone,
   STANDARD_MILESTONE_STAGES,
 } from './calculations';
+import {
+  calculateInvoiceDerivedState,
+  DEFAULT_DOCUMENT_TEMPLATES,
+  DEFAULT_FINANCE_SETTINGS,
+  deriveUnifiedTransactions,
+} from './financeEngine';
 
 function normalizeName(name: string): string {
   return (name || '').trim().toLowerCase();
@@ -553,58 +559,113 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
   ];
 
   // --------------------------------------------------------------------------
-  // AUTO-SYNC CLIENT INVOICES FROM CONFIRMED CLIENTS & PAYMENTS
+  // FINANCE SETTINGS, SEQUENTIAL NUMBERING & INVOICES / TRANSACTIONS RECONCILIATION
   // --------------------------------------------------------------------------
-  const existingInvoices = state.invoices || [];
-  const generatedInvoices: ClientInvoice[] = [...existingInvoices];
+  const financeSettings = {
+    ...DEFAULT_FINANCE_SETTINGS,
+    ...(state.financeSettings || {}),
+  };
 
-  finalClients.forEach((c, idx) => {
-    const isConfirmed =
-      c.stage === 'In Building' ||
-      c.stage === 'Live / Payment Pending' ||
-      c.stage === 'Delivered / Live' ||
-      c.advancePaid > 0;
-    if (!isConfirmed) return;
+  const documentTemplates =
+    state.documentTemplates && state.documentTemplates.length > 0
+      ? state.documentTemplates
+      : DEFAULT_DOCUMENT_TEMPLATES;
 
-    const invId = `inv-auto-${c.id}`;
-    const existingIdx = generatedInvoices.findIndex(
-      (inv) => inv.id === invId || inv.clientId === c.id
+  // Ensure every payment has a sequential receiptNumber (AS-R-xxx)
+  const numberedPayments: ClientPayment[] = autoSyncedPayments.map((p, idx) => ({
+    ...p,
+    receiptNumber:
+      p.receiptNumber ||
+      `${financeSettings.receiptPrefix}${String(idx + 1).padStart(3, '0')}`,
+  }));
+
+  // Ensure every expense has a sequential expenseNumber (AS-E-xxx)
+  const numberedExpenses: StudioExpense[] = unifiedExpenses.map((e, idx) => ({
+    ...e,
+    expenseNumber:
+      e.expenseNumber ||
+      `${financeSettings.expensePrefix}${String(idx + 1).padStart(3, '0')}`,
+  }));
+
+  const existingInvoices = (state.invoices || []).filter((inv) => !isDemoId(inv.id));
+  const workingInvoices: ClientInvoice[] = [...existingInvoices];
+
+  // Auto-create an initial invoice ONLY for clients with recorded payments that have no existing invoice yet
+  finalClients.forEach((c) => {
+    const hasRecordedAdvance = c.advancePaid > 0 && c.stage !== 'Rejected / Dropped';
+    if (!hasRecordedAdvance) return;
+
+    const hasAnyInvoice = workingInvoices.some(
+      (inv) =>
+        inv.clientId === c.id ||
+        inv.id === `inv-auto-${c.id}` ||
+        normalizeName(inv.clientName) === normalizeName(c.businessName)
     );
-    const pending = Math.max(0, c.finalAgreedPrice - c.advancePaid);
-    const invStatus: ClientInvoice['status'] =
-      pending === 0
-        ? 'Paid'
-        : c.stage === 'Live / Payment Pending'
-        ? 'Overdue'
-        : 'Pending';
+    if (hasAnyInvoice) return;
 
-    const autoInvoice: ClientInvoice = {
-      id: invId,
-      invoiceNumber: `INV-2026-00${idx + 1}`,
+    const nextSeq = workingInvoices.length + 1;
+    const invNum = `${financeSettings.invoicePrefix}${String(nextSeq).padStart(3, '0')}`;
+    workingInvoices.push({
+      id: `inv-auto-${c.id}`,
+      invoiceNumber: invNum,
       clientId: c.id,
       clientName: c.businessName,
+      clientContactPerson: c.contactPerson,
+      clientPhone: c.phone,
+      clientEmail: c.email,
+      clientAddress: c.city,
       projectTitle: c.packageTier,
-      type: pending === 0 ? 'Payment Receipt' : c.advancePaid > 0 ? 'Final Invoice' : 'Advance Invoice',
+      invoiceTitle: `${c.packageTier} — Project Invoice`,
+      paymentTerms: '50% Advance · 50% on Final Delivery',
+      type: 'Standard Invoice',
+      lineItems: [
+        {
+          id: `item-auto-${c.id}-1`,
+          serviceName: c.packageTier,
+          description: `Complete design, development & deployment for ${c.businessName}`,
+          quantity: 1,
+          unitPrice: c.finalAgreedPrice,
+          total: c.finalAgreedPrice,
+        },
+      ],
+      subtotal: c.finalAgreedPrice,
+      discount: 0,
       amount: c.finalAgreedPrice,
       issueDate: c.createdAt || today,
       dueDate: c.followUpDate || today,
-      status: invStatus,
-      notes: `Contract Value: ₹${c.finalAgreedPrice.toLocaleString('en-IN')} · Paid: ₹${c.advancePaid.toLocaleString('en-IN')} · Balance Due: ₹${pending.toLocaleString('en-IN')}`,
-    };
-
-    if (existingIdx >= 0) {
-      generatedInvoices[existingIdx] = {
-        ...generatedInvoices[existingIdx],
-        clientName: c.businessName,
-        projectTitle: c.packageTier,
-        amount: c.finalAgreedPrice,
-        status: invStatus,
-        notes: autoInvoice.notes,
-      };
-    } else {
-      generatedInvoices.push(autoInvoice);
-    }
+      status: 'Issued',
+      notes: `Contract Value: ₹${c.finalAgreedPrice.toLocaleString('en-IN')}`,
+      gstEnabled: false,
+      gstRatePercent: 0,
+      gstDisclaimer: financeSettings.gstDisclaimer,
+      templateId: financeSettings.defaultTemplateId,
+      version: 1,
+      createdAt: new Date().toISOString(),
+    });
   });
+
+  // Derive accurate paid amount, balanceDue, and status for every invoice from payments
+  const generatedInvoices: ClientInvoice[] = workingInvoices.map((inv, idx) => {
+    const normalizedNum =
+      inv.invoiceNumber && !inv.invoiceNumber.startsWith('INV-2026-')
+        ? inv.invoiceNumber
+        : `${financeSettings.invoicePrefix}${String(idx + 1).padStart(3, '0')}`;
+    return calculateInvoiceDerivedState(
+      { ...inv, invoiceNumber: normalizedNum },
+      numberedPayments,
+      today
+    );
+  });
+
+  const unifiedTransactions = deriveUnifiedTransactions(
+    numberedPayments,
+    numberedExpenses,
+    state.transactions || [],
+    generatedInvoices
+  );
+
+  const quotations = state.quotations || [];
+  const generatedDocuments = state.generatedDocuments || [];
 
   const linkedTickets = (state.tickets || [])
     .filter((t) => !isDemoId(t.id))
@@ -801,15 +862,20 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
   const baseReconciled: AethelDatabaseState = {
     ...state,
     clients: finalClients,
-    payments: autoSyncedPayments,
+    payments: numberedPayments,
     metaCampaigns: linkedCampaigns,
     websites: linkedWebsites,
     tickets: linkedTickets,
     rndProjects: cleanRnDProjects,
-    expenses: unifiedExpenses,
+    expenses: numberedExpenses,
     vaultItems: cleanVaultItems,
     tasks,
     invoices: generatedInvoices,
+    quotations,
+    transactions: unifiedTransactions,
+    generatedDocuments,
+    documentTemplates,
+    financeSettings,
     automationRules,
     activityLogs,
     brainDailyLogs,

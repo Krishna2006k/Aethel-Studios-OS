@@ -779,12 +779,18 @@ export default function App() {
 
           {(activeModule === 'finance' || activeModule === 'analytics') && (
             <StudioFinanceView
+              dbState={dbState}
               expenses={dbState.expenses}
               payments={dbState.payments}
               clients={dbState.clients}
               metaCampaigns={dbState.metaCampaigns}
               websites={dbState.websites}
               invoices={dbState.invoices || []}
+              quotations={dbState.quotations || []}
+              transactions={dbState.transactions || []}
+              generatedDocuments={dbState.generatedDocuments || []}
+              documentTemplates={dbState.documentTemplates}
+              financeSettings={dbState.financeSettings}
               initialSubView={activeModule === 'analytics' ? 'analytics' : 'ledger'}
               onUpdateExpense={handleUpdateExpense}
               onAddExpense={handleAddExpense}
@@ -792,9 +798,21 @@ export default function App() {
               onAddPayment={handleAddPayment}
               onUpdatePayment={handleUpdatePayment}
               onDeletePayment={handleDeletePayment}
-              onAddInvoice={handleAddInvoice}
-              onUpdateInvoice={handleUpdateInvoice}
-              onDeleteInvoice={handleDeleteInvoice}
+              onUpdateInvoices={(invoices) =>
+                persistUpdate((prev) => ({ ...prev, invoices }))
+              }
+              onUpdateQuotations={(quotations) =>
+                persistUpdate((prev) => ({ ...prev, quotations }))
+              }
+              onUpdateTransactions={(transactions) =>
+                persistUpdate((prev) => ({ ...prev, transactions }))
+              }
+              onUpdateGeneratedDocuments={(generatedDocuments) =>
+                persistUpdate((prev) => ({ ...prev, generatedDocuments }))
+              }
+              onUpdateFinanceSettings={(financeSettings) =>
+                persistUpdate((prev) => ({ ...prev, financeSettings }))
+              }
               onOpenClient360={handleOpenClient360}
             />
           )}

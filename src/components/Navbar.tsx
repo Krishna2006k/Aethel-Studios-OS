@@ -140,7 +140,7 @@ export const SIDEBAR_GROUPS: NavGroup[] = [
     items: [
       {
         id: 'finance',
-        label: 'Finance & Ledger',
+        label: 'Finance',
         shortLabel: 'Finance',
         icon: Wallet,
       },
@@ -254,14 +254,58 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const matchingPayments =
     q.length > 0 && dbState
-      ? dbState.payments
-          .filter(
-            (p) =>
-              p.clientName.toLowerCase().includes(q) ||
-              p.projectTitle.toLowerCase().includes(q) ||
-              p.milestone.toLowerCase().includes(q)
-          )
-          .slice(0, 3)
+      ? [
+          ...dbState.payments
+            .filter(
+              (p) =>
+                p.clientName.toLowerCase().includes(q) ||
+                p.projectTitle.toLowerCase().includes(q) ||
+                p.milestone.toLowerCase().includes(q) ||
+                (p.receiptNumber || '').toLowerCase().includes(q) ||
+                (p.invoiceNumber || '').toLowerCase().includes(q)
+            )
+            .map((p) => ({
+              id: p.id,
+              clientName: p.clientName,
+              milestone: `${p.receiptNumber ? `${p.receiptNumber} · ` : ''}${p.milestone}`,
+              paymentDate: p.paymentDate,
+              paymentMode: p.paymentMode,
+              receivedInAccount: p.receivedInAccount,
+              amountReceived: p.amountReceived,
+            })),
+          ...(dbState.invoices || [])
+            .filter(
+              (inv) =>
+                inv.invoiceNumber.toLowerCase().includes(q) ||
+                inv.clientName.toLowerCase().includes(q) ||
+                inv.projectTitle.toLowerCase().includes(q)
+            )
+            .map((inv) => ({
+              id: inv.id,
+              clientName: inv.clientName,
+              milestone: `Invoice ${inv.invoiceNumber} (${inv.status})`,
+              paymentDate: inv.issueDate,
+              paymentMode: 'UPI' as const,
+              receivedInAccount: 'Studio Account' as const,
+              amountReceived: inv.amount,
+            })),
+          ...(dbState.quotations || [])
+            .filter(
+              (qt) =>
+                qt.quoteNumber.toLowerCase().includes(q) ||
+                qt.clientName.toLowerCase().includes(q) ||
+                qt.projectTitle.toLowerCase().includes(q)
+            )
+            .map((qt) => ({
+              id: qt.id,
+              clientName: qt.clientName,
+              milestone: `Quotation ${qt.quoteNumber} (${qt.status})`,
+              paymentDate: qt.date,
+              paymentMode: 'UPI' as const,
+              receivedInAccount: 'Studio Account' as const,
+              amountReceived: qt.total,
+            })),
+        ].slice(0, 5)
       : [];
 
   const matchingTasks =

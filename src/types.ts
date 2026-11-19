@@ -229,45 +229,249 @@ export interface RnDProject {
   linkedClientIds?: string[];
 }
 
+export type FinancePaymentMethod =
+  | 'UPI'
+  | 'Cash'
+  | 'Bank Transfer'
+  | 'Bank NEFT/IMPS'
+  | 'Other';
+
+export type ExpenseCategory =
+  | 'Hosting'
+  | 'Domains'
+  | 'Software & Subscriptions'
+  | 'Advertising'
+  | 'Client Acquisition'
+  | 'Equipment'
+  | 'Travel'
+  | 'Freelance'
+  | 'Miscellaneous'
+  | 'Domain & Hosting'
+  | 'Software / SaaS'
+  | 'Meta Ad Spend'
+  | 'Marketing & Samples'
+  | 'Operations / Travel';
+
 export interface StudioExpense {
   id: string;
+  expenseNumber?: string;
   title: string;
-  category: 'Domain & Hosting' | 'Software / SaaS' | 'Meta Ad Spend' | 'Marketing & Samples' | 'Operations / Travel' | 'Equipment';
+  description?: string;
+  category: ExpenseCategory;
   amount: number;
+  paymentMethod?: FinancePaymentMethod;
+  vendor?: string;
+  referenceNumber?: string;
+  attachmentUrl?: string;
   paidBy: ExpensePaidBy;
   date: string;
+  clientId?: string;
   clientRelated?: string;
   reimbursed: boolean;
   notes: string;
+  createdAt?: string;
   linkedDomainId?: string;
   linkedCampaignId?: string;
 }
 
 export interface ClientPayment {
   id: string;
+  receiptNumber?: string;
+  invoiceId?: string;
+  invoiceNumber?: string;
   clientId?: string;
   clientName: string;
   projectTitle: string;
   totalProjectValue: number;
   amountReceived: number;
   paymentDate: string;
-  paymentMode: 'UPI' | 'Bank NEFT/IMPS' | 'Cash';
+  paymentMode: FinancePaymentMethod;
   receivedInAccount: ExpensePaidBy;
-  milestone: 'Advance (50%)' | 'Final Delivery (50%)' | 'Full Upfront' | 'Meta Ads Retainer' | 'Domain Renewal';
+  milestone:
+    | 'Advance (50%)'
+    | 'Final Delivery (50%)'
+    | 'Full Upfront'
+    | 'Meta Ads Retainer'
+    | 'Domain Renewal'
+    | 'Partial Payment'
+    | 'Invoice Settlement';
+  upiReference?: string;
+  notes?: string;
+  createdAt?: string;
 }
+
+export interface InvoiceLineItem {
+  id: string;
+  serviceName: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+export type InvoiceStatus =
+  | 'Draft'
+  | 'Issued'
+  | 'Partially Paid'
+  | 'Paid'
+  | 'Overdue'
+  | 'Cancelled'
+  | 'Pending';
 
 export interface ClientInvoice {
   id: string;
   invoiceNumber: string;
   clientId?: string;
   clientName: string;
+  clientContactPerson?: string;
+  clientEmail?: string;
+  clientPhone?: string;
+  clientAddress?: string;
   projectTitle: string;
-  type: 'Advance Invoice' | 'Milestone Invoice' | 'Final Invoice' | 'Payment Receipt';
+  invoiceTitle?: string;
+  paymentTerms?: string;
+  type:
+    | 'Advance Invoice'
+    | 'Milestone Invoice'
+    | 'Final Invoice'
+    | 'Payment Receipt'
+    | 'Standard Invoice';
+  lineItems?: InvoiceLineItem[];
+  subtotal?: number;
+  discount?: number;
   amount: number;
+  amountPaid?: number;
+  balanceDue?: number;
   issueDate: string;
   dueDate: string;
-  status: 'Paid' | 'Pending' | 'Overdue';
+  status: InvoiceStatus;
   notes: string;
+  gstEnabled?: boolean;
+  gstRatePercent?: number;
+  gstDisclaimer?: string;
+  templateId?: string;
+  sourceQuotationId?: string;
+  version?: number;
+  createdAt?: string;
+}
+
+export type QuotationStatus = 'Draft' | 'Sent' | 'Accepted' | 'Rejected' | 'Expired';
+
+export interface ClientQuotation {
+  id: string;
+  quoteNumber: string;
+  clientId?: string;
+  clientName: string;
+  clientContactPerson?: string;
+  clientEmail?: string;
+  clientPhone?: string;
+  clientAddress?: string;
+  projectTitle: string;
+  date: string;
+  validUntil: string;
+  status: QuotationStatus;
+  lineItems: InvoiceLineItem[];
+  subtotal: number;
+  discount: number;
+  total: number;
+  notes: string;
+  termsAndConditions: string;
+  convertedInvoiceId?: string;
+  convertedInvoiceNumber?: string;
+  templateId?: string;
+  createdAt: string;
+}
+
+export interface FinanceTransaction {
+  id: string;
+  transactionDate: string;
+  type: 'Income' | 'Expense' | 'Refund';
+  amount: number;
+  paymentMethod: FinancePaymentMethod;
+  clientId?: string;
+  clientName?: string;
+  projectTitle?: string;
+  invoiceId?: string;
+  invoiceNumber?: string;
+  paymentId?: string;
+  expenseId?: string;
+  referenceNumber?: string;
+  description: string;
+  notes?: string;
+  account?: ExpensePaidBy;
+  createdAt: string;
+}
+
+export type FinanceDocumentType =
+  | 'Quotation'
+  | 'Invoice'
+  | 'Payment Receipt'
+  | 'Statement of Account';
+
+export interface GeneratedDocument {
+  id: string;
+  documentNumber: string;
+  documentType: FinanceDocumentType;
+  version: number;
+  clientId?: string;
+  clientName: string;
+  projectTitle?: string;
+  invoiceId?: string;
+  quotationId?: string;
+  paymentId?: string;
+  createdDate: string;
+  amount: number;
+  status: string;
+  templateId: string;
+  snapshotPayload: Record<string, unknown>;
+}
+
+export interface DocumentTemplate {
+  id: string;
+  name: string;
+  description: string;
+  accentColor: string;
+  headerStyle: 'editorial-dark' | 'minimal-clean' | 'bold-accent';
+  fontFamily: 'Plus Jakarta Sans' | 'Inter' | 'JetBrains Mono';
+  showLogo: boolean;
+  footerText: string;
+}
+
+export interface FinanceSettings {
+  studioName: string;
+  contactPerson1: string;
+  phone1: string;
+  contactPerson2: string;
+  phone2: string;
+  email: string;
+  website: string;
+  address: string;
+  upiId: string;
+  bankName?: string;
+  bankAccountName?: string;
+  bankAccountNumber?: string;
+  bankIfsc?: string;
+  preferredPaymentMethods: FinancePaymentMethod[];
+  logoText: string;
+  accentColor: string;
+  headerStyle: 'editorial-dark' | 'minimal-clean' | 'bold-accent';
+  footerText: string;
+  defaultTemplateId: string;
+  gstRegistrationStatus: 'Unregistered' | 'Registered';
+  gstEnabled: boolean;
+  gstin: string;
+  gstRatePercent: number;
+  gstDisclaimer: string;
+  invoicePrefix: string;
+  receiptPrefix: string;
+  quotationPrefix: string;
+  statementPrefix: string;
+  expensePrefix: string;
+  nextInvoiceNumber: number;
+  nextReceiptNumber: number;
+  nextQuotationNumber: number;
+  nextStatementNumber: number;
+  nextExpenseNumber: number;
 }
 
 export type VaultCategory =
@@ -441,6 +645,11 @@ export interface AethelDatabaseState {
   vaultItems: EncryptedVaultItem[];
   tasks?: StudioTask[];
   invoices?: ClientInvoice[];
+  quotations?: ClientQuotation[];
+  transactions?: FinanceTransaction[];
+  generatedDocuments?: GeneratedDocument[];
+  documentTemplates?: DocumentTemplate[];
+  financeSettings?: FinanceSettings;
   automationRules?: AutomationRule[];
   activityLogs?: ActivityLogEntry[];
   brainDailyLogs?: BrainDailyLogEntry[];
