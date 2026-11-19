@@ -813,6 +813,9 @@ export default function App() {
               onUpdateFinanceSettings={(financeSettings) =>
                 persistUpdate((prev) => ({ ...prev, financeSettings }))
               }
+              onUpdateDocumentTemplates={(documentTemplates) =>
+                persistUpdate((prev) => ({ ...prev, documentTemplates }))
+              }
               onOpenClient360={handleOpenClient360}
             />
           )}

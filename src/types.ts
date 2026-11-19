@@ -328,6 +328,7 @@ export interface ClientInvoice {
   clientPhone?: string;
   clientAddress?: string;
   projectTitle: string;
+  packageSubtitle?: string;
   invoiceTitle?: string;
   paymentTerms?: string;
   type:
@@ -367,6 +368,8 @@ export interface ClientQuotation {
   clientPhone?: string;
   clientAddress?: string;
   projectTitle: string;
+  packageSubtitle?: string;
+  paymentTerms?: string;
   date: string;
   validUntil: string;
   status: QuotationStatus;
@@ -429,16 +432,21 @@ export interface GeneratedDocument {
 export interface DocumentTemplate {
   id: string;
   name: string;
+  documentType?: FinanceDocumentType | 'All';
   description: string;
   accentColor: string;
   headerStyle: 'editorial-dark' | 'minimal-clean' | 'bold-accent';
-  fontFamily: 'Plus Jakarta Sans' | 'Inter' | 'JetBrains Mono';
+  fontFamily: 'Plus Jakarta Sans' | 'Inter' | 'JetBrains Mono' | 'Playfair Display';
   showLogo: boolean;
   footerText: string;
+  isActive?: boolean;
+  isDefault?: boolean;
+  referenceImageUrl?: string;
 }
 
 export interface FinanceSettings {
   studioName: string;
+  tagline?: string;
   contactPerson1: string;
   phone1: string;
   contactPerson2: string;

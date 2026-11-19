@@ -64,6 +64,7 @@ interface StudioFinanceViewProps {
   onUpdateTransactions?: (transactions: FinanceTransaction[]) => void;
   onUpdateGeneratedDocuments?: (docs: GeneratedDocument[]) => void;
   onUpdateFinanceSettings?: (settings: FinanceSettings) => void;
+  onUpdateDocumentTemplates?: (templates: DocumentTemplate[]) => void;
   onOpenClient360?: (clientId: string) => void;
 }
 
@@ -109,6 +110,7 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
   onUpdateTransactions,
   onUpdateGeneratedDocuments,
   onUpdateFinanceSettings,
+  onUpdateDocumentTemplates,
   onOpenClient360
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<FinanceSubTab>(
@@ -198,6 +200,9 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
       payment.receiptNumber ||
       generateNextDocumentNumber('Receipt', dbState).formatted;
     const linkedInv = invoice || invoices.find((i) => i.id === payment.invoiceId);
+    const linkedClient = clients.find(
+      (c) => c.id === payment.clientId || c.businessName === payment.clientName
+    );
     const totalVal = linkedInv ? linkedInv.amount : payment.totalProjectValue || payment.amountReceived;
     const totalReceivedToDate = linkedInv
       ? linkedInv.amountPaid || payment.amountReceived
@@ -215,16 +220,23 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
       {
         payment: { ...payment, receiptNumber: receiptNo },
         invoiceNumber: linkedInv?.invoiceNumber || payment.invoiceNumber,
+        clientAddress: linkedInv?.clientAddress || linkedClient?.city || '',
+        clientContactPerson: linkedInv?.clientContactPerson || linkedClient?.contactPerson || '',
+        clientEmail: linkedInv?.clientEmail || linkedClient?.email || '',
+        clientPhone: linkedInv?.clientPhone || linkedClient?.phone || '',
+        packageSubtitle:
+          linkedInv?.packageSubtitle ||
+          (linkedClient?.packageTier ? `${linkedClient.packageTier} Package` : 'Professional Package'),
         totalProjectOrInvoiceValue: totalVal,
         totalReceivedToDate,
         outstandingRemaining
       },
       {
         clientId: payment.clientId,
-        projectTitle: payment.projectTitle,
+        projectTitle: linkedInv?.projectTitle || payment.projectTitle,
         invoiceId: linkedInv?.id,
         paymentId: payment.id,
-        templateId: financeSettings.defaultTemplateId,
+        templateId: 'tpl-aethel-receipt',
         existingDocuments: generatedDocuments
       }
     );
@@ -249,6 +261,47 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
       }
     );
     archiveAndPreviewDocument(snap);
+  };
+
+  const handleDeleteInvoice = (
+    invoice: ClientInvoice,
+    options: { deleteLinkedPayments: boolean; deleteLinkedDocuments: boolean }
+  ) => {
+    onUpdateInvoices?.(invoices.filter((i) => i.id !== invoice.id));
+
+    if (options.deleteLinkedDocuments && onUpdateGeneratedDocuments) {
+      onUpdateGeneratedDocuments(
+        generatedDocuments.filter(
+          (doc) => doc.invoiceId !== invoice.id && doc.documentNumber !== invoice.invoiceNumber
+        )
+      );
+    }
+
+    if (options.deleteLinkedPayments) {
+      const linkedPays = payments.filter(
+        (p) => p.invoiceId === invoice.id || p.invoiceNumber === invoice.invoiceNumber
+      );
+      linkedPays.forEach((p) => onDeletePayment(p.id));
+    }
+  };
+
+  const handleDeleteQuotation = (
+    quotation: ClientQuotation,
+    options: { deleteLinkedDocuments: boolean }
+  ) => {
+    onUpdateQuotations?.(quotations.filter((q) => q.id !== quotation.id));
+
+    if (options.deleteLinkedDocuments && onUpdateGeneratedDocuments) {
+      onUpdateGeneratedDocuments(
+        generatedDocuments.filter(
+          (doc) => doc.quotationId !== quotation.id && doc.documentNumber !== quotation.quoteNumber
+        )
+      );
+    }
+  };
+
+  const handleDeleteDocument = (docId: string) => {
+    onUpdateGeneratedDocuments?.(generatedDocuments.filter((d) => d.id !== docId));
   };
 
   const navItems: { id: FinanceSubTab; label: string; badge?: number }[] = [
@@ -816,7 +869,10 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
           onGenerateInvoicePdf={handleGenerateInvoicePdf}
           onGenerateQuotationPdf={handleGenerateQuotationPdf}
           onGenerateReceiptPdf={handleGenerateReceiptPdf}
+          onPreviewDraftDocument={(doc) => setPreviewDoc(doc)}
           onSelectClient={onOpenClient360}
+          onDeleteInvoice={handleDeleteInvoice}
+          onDeleteQuotation={handleDeleteQuotation}
         />
       )}
 
@@ -837,7 +893,10 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
           onGenerateInvoicePdf={handleGenerateInvoicePdf}
           onGenerateQuotationPdf={handleGenerateQuotationPdf}
           onGenerateReceiptPdf={handleGenerateReceiptPdf}
+          onPreviewDraftDocument={(doc) => setPreviewDoc(doc)}
           onSelectClient={onOpenClient360}
+          onDeleteInvoice={handleDeleteInvoice}
+          onDeleteQuotation={handleDeleteQuotation}
         />
       )}
 
@@ -875,11 +934,14 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
           payments={payments}
           clients={clients}
           onPreviewDocument={(doc) => setPreviewDoc(doc)}
+          onArchiveTestDocument={archiveAndPreviewDocument}
           onGenerateInvoiceDoc={handleGenerateInvoicePdf}
           onGenerateQuotationDoc={handleGenerateQuotationPdf}
           onGenerateReceiptDoc={handleGenerateReceiptPdf}
           onGenerateStatementDoc={handleGenerateStatementPdf}
           onUpdateFinanceSettings={(s) => onUpdateFinanceSettings?.(s)}
+          onUpdateDocumentTemplates={(tpls) => onUpdateDocumentTemplates?.(tpls)}
+          onDeleteDocument={handleDeleteDocument}
         />
       )}
 
@@ -895,11 +957,13 @@ export const StudioFinanceView: React.FC<StudioFinanceViewProps> = ({
           payments={payments}
           clients={clients}
           onPreviewDocument={(doc) => setPreviewDoc(doc)}
+          onArchiveTestDocument={archiveAndPreviewDocument}
           onGenerateInvoiceDoc={handleGenerateInvoicePdf}
           onGenerateQuotationDoc={handleGenerateQuotationPdf}
           onGenerateReceiptDoc={handleGenerateReceiptPdf}
           onGenerateStatementDoc={handleGenerateStatementPdf}
           onUpdateFinanceSettings={(s) => onUpdateFinanceSettings?.(s)}
+          onUpdateDocumentTemplates={(tpls) => onUpdateDocumentTemplates?.(tpls)}
         />
       )}
 

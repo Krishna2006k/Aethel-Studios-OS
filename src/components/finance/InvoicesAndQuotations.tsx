@@ -10,7 +10,8 @@ import {
   QuotationStatus,
   FinancePaymentMethod,
   FinanceSettings,
-  ExpensePaidBy
+  ExpensePaidBy,
+  GeneratedDocument
 } from '../../types';
 import { formatINR } from '../../utils/calculations';
 import {
@@ -53,7 +54,16 @@ interface InvoicesAndQuotationsProps {
   onGenerateInvoicePdf: (invoice: ClientInvoice) => void;
   onGenerateQuotationPdf: (quotation: ClientQuotation) => void;
   onGenerateReceiptPdf: (payment: ClientPayment, invoice?: ClientInvoice) => void;
+  onPreviewDraftDocument?: (doc: GeneratedDocument) => void;
   onSelectClient?: (clientId: string) => void;
+  onDeleteInvoice?: (
+    invoice: ClientInvoice,
+    options: { deleteLinkedPayments: boolean; deleteLinkedDocuments: boolean }
+  ) => void;
+  onDeleteQuotation?: (
+    quotation: ClientQuotation,
+    options: { deleteLinkedDocuments: boolean }
+  ) => void;
 }
 
 const PAYMENT_METHODS: FinancePaymentMethod[] = ['UPI', 'Cash', 'Bank Transfer', 'Other'];
@@ -73,7 +83,10 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
   onGenerateInvoicePdf,
   onGenerateQuotationPdf,
   onGenerateReceiptPdf,
-  onSelectClient
+  onPreviewDraftDocument,
+  onSelectClient,
+  onDeleteInvoice,
+  onDeleteQuotation
 }) => {
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -91,6 +104,7 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
   const [invClientPhone, setInvClientPhone] = useState('');
   const [invClientAddress, setInvClientAddress] = useState('');
   const [invProjectTitle, setInvProjectTitle] = useState('');
+  const [invPackageSubtitle, setInvPackageSubtitle] = useState('Professional Package');
   const [invIssueDate, setInvIssueDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [invDueDate, setInvDueDate] = useState('');
   const [invPaymentTerms, setInvPaymentTerms] = useState('Due within 7 days of issue');
@@ -122,6 +136,15 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
   const [cancelTargetInv, setCancelTargetInv] = useState<ClientInvoice | null>(null);
   const [cancelReason, setCancelReason] = useState('');
 
+  // Delete Invoice Confirmation
+  const [deleteTargetInv, setDeleteTargetInv] = useState<ClientInvoice | null>(null);
+  const [deleteInvLinkedPayments, setDeleteInvLinkedPayments] = useState(false);
+  const [deleteInvLinkedDocs, setDeleteInvLinkedDocs] = useState(true);
+
+  // Delete Quotation Confirmation
+  const [deleteTargetQuo, setDeleteTargetQuo] = useState<ClientQuotation | null>(null);
+  const [deleteQuoLinkedDocs, setDeleteQuoLinkedDocs] = useState(true);
+
   // Quotation Create/Edit Modal
   const [isQuoModalOpen, setIsQuoModalOpen] = useState(false);
   const [editingQuo, setEditingQuo] = useState<ClientQuotation | null>(null);
@@ -133,6 +156,7 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
   const [quoClientPhone, setQuoClientPhone] = useState('');
   const [quoClientAddress, setQuoClientAddress] = useState('');
   const [quoProjectTitle, setQuoProjectTitle] = useState('');
+  const [quoPackageSubtitle, setQuoPackageSubtitle] = useState('Professional Package');
   const [quoIssueDate, setQuoIssueDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [quoValidUntil, setQuoValidUntil] = useState('');
   const [quoItems, setQuoItems] = useState<InvoiceLineItem[]>([
@@ -190,8 +214,9 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
       setInvClientEmail(found.email || '');
       setInvClientPhone(found.phone || '');
       setInvClientAddress(found.city || '');
+      setInvPackageSubtitle(found.packageTier ? `${found.packageTier} Package` : 'Professional Package');
       if (!invProjectTitle) {
-        setInvProjectTitle(`${found.businessName} — ${found.packageTier || 'Digital Architecture'}`);
+        setInvProjectTitle('Website Design & Development');
       }
     }
   };
@@ -206,8 +231,9 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
       setQuoClientEmail(found.email || '');
       setQuoClientPhone(found.phone || '');
       setQuoClientAddress(found.city || '');
+      setQuoPackageSubtitle(found.packageTier ? `${found.packageTier} Package` : 'Professional Package');
       if (!quoProjectTitle) {
-        setQuoProjectTitle(`${found.businessName} — Proposal`);
+        setQuoProjectTitle('Website Design & Development');
       }
     }
   };
@@ -264,7 +290,8 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
       setInvClientEmail(first.email || '');
       setInvClientPhone(first.phone || '');
       setInvClientAddress(first.city || '');
-      setInvProjectTitle(`${first.businessName} — ${first.packageTier || 'Digital Package'}`);
+      setInvProjectTitle('Website Design & Development');
+      setInvPackageSubtitle(first.packageTier ? `${first.packageTier} Package` : 'Professional Package');
       const defaultRate = first.finalAgreedPrice > 0 ? first.finalAgreedPrice : 10000;
       setInvItems([
         {
@@ -283,7 +310,8 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
       setInvClientEmail('');
       setInvClientPhone('');
       setInvClientAddress('');
-      setInvProjectTitle('Digital Website & Growth Package');
+      setInvProjectTitle('Website Design & Development');
+      setInvPackageSubtitle('Professional Package');
       setInvItems([
         {
           id: `item-${Date.now()}`,
@@ -309,6 +337,7 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
     setInvClientPhone(inv.clientPhone || '');
     setInvClientAddress(inv.clientAddress || '');
     setInvProjectTitle(inv.projectTitle || '');
+    setInvPackageSubtitle(inv.packageSubtitle || 'Professional Package');
     setInvIssueDate(inv.issueDate);
     setInvDueDate(inv.dueDate);
     setInvPaymentTerms(inv.paymentTerms || 'Due within 7 days');
@@ -367,7 +396,8 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
         clientEmail: invClientEmail.trim() || undefined,
         clientPhone: invClientPhone.trim() || undefined,
         clientAddress: invClientAddress.trim() || undefined,
-        projectTitle: invProjectTitle.trim() || editingInv.projectTitle || 'Digital Services',
+        projectTitle: invProjectTitle.trim() || editingInv.projectTitle || 'Website Design & Development',
+        packageSubtitle: invPackageSubtitle.trim() || undefined,
         issueDate: invIssueDate,
         dueDate: invDueDate || invIssueDate,
         paymentTerms: invPaymentTerms.trim() || undefined,
@@ -394,7 +424,8 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
         clientEmail: invClientEmail.trim() || undefined,
         clientPhone: invClientPhone.trim() || undefined,
         clientAddress: invClientAddress.trim() || undefined,
-        projectTitle: invProjectTitle.trim() || 'Digital Agency Services',
+        projectTitle: invProjectTitle.trim() || 'Website Design & Development',
+        packageSubtitle: invPackageSubtitle.trim() || undefined,
         type: 'Standard Invoice',
         issueDate: invIssueDate,
         dueDate: invDueDate || invIssueDate,
@@ -418,6 +449,67 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
       onUpdateInvoices([recalculated, ...invoices]);
     }
     setIsInvModalOpen(false);
+  };
+
+  // Section 9: In-Editor Live A4 Preview for Unsaved Invoice Draft
+  const handlePreviewDraftInvoice = () => {
+    const subtotal = invItems.reduce((s, item) => s + (Number(item.total) || 0), 0);
+    const discountNum = Math.max(0, Math.round(Number(invDiscount) || 0));
+    const totalAmount = Math.max(0, subtotal - discountNum);
+    const paidAmount = editingInv?.amountPaid || 0;
+    const balanceAmount = Math.max(0, totalAmount - paidAmount);
+
+    const draftInvoice: ClientInvoice = {
+      id: editingInv?.id || 'draft-invoice-preview',
+      invoiceNumber: invNumber.trim() || 'AS-I-DRAFT',
+      clientId: invClientId || 'draft-client',
+      clientName: invClientName.trim() || 'Client Name',
+      clientContactPerson: invContactPerson.trim() || undefined,
+      clientEmail: invClientEmail.trim() || undefined,
+      clientPhone: invClientPhone.trim() || undefined,
+      clientAddress: invClientAddress.trim() || undefined,
+      projectTitle: invProjectTitle.trim() || 'Website Design & Development',
+      packageSubtitle: invPackageSubtitle.trim() || undefined,
+      type: editingInv?.type || 'Standard Invoice',
+      issueDate: invIssueDate,
+      dueDate: invDueDate || invIssueDate,
+      paymentTerms: invPaymentTerms.trim() || undefined,
+      lineItems: invItems,
+      subtotal,
+      discount: discountNum,
+      amount: totalAmount,
+      amountPaid: paidAmount,
+      balanceDue: balanceAmount,
+      status: editingInv?.status || 'Draft',
+      notes: invNotes.trim() || financeSettings.gstDisclaimer,
+      gstEnabled: financeSettings.gstEnabled,
+      gstRatePercent: financeSettings.gstEnabled ? financeSettings.gstRatePercent : 0,
+      gstDisclaimer: financeSettings.gstDisclaimer,
+      templateId: editingInv?.templateId || 'tpl-aethel-editorial',
+      version: editingInv?.version || 1
+    };
+
+    const previewDoc: GeneratedDocument = {
+      id: `draft-preview-inv-${Date.now()}`,
+      documentNumber: draftInvoice.invoiceNumber,
+      documentType: 'Invoice',
+      clientId: draftInvoice.clientId,
+      clientName: draftInvoice.clientName,
+      projectTitle: draftInvoice.projectTitle,
+      invoiceId: draftInvoice.id,
+      createdDate: draftInvoice.issueDate,
+      amount: draftInvoice.amount,
+      status: 'Draft',
+      version: draftInvoice.version || 1,
+      templateId: draftInvoice.templateId || 'tpl-aethel-editorial',
+      snapshotPayload: draftInvoice as unknown as Record<string, unknown>
+    };
+
+    if (onPreviewDraftDocument) {
+      onPreviewDraftDocument(previewDoc);
+    } else {
+      onGenerateInvoicePdf(draftInvoice);
+    }
   };
 
   // Open Record Payment Modal
@@ -512,6 +604,48 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
     setCancelReason('');
   };
 
+  // Delete Invoice
+  const openDeleteInvoiceModal = (inv: ClientInvoice) => {
+    setDeleteTargetInv(inv);
+    setDeleteInvLinkedPayments(false);
+    setDeleteInvLinkedDocs(true);
+  };
+
+  const handleConfirmDeleteInvoice = () => {
+    if (!deleteTargetInv) return;
+    if (onDeleteInvoice) {
+      onDeleteInvoice(deleteTargetInv, {
+        deleteLinkedPayments: deleteInvLinkedPayments,
+        deleteLinkedDocuments: deleteInvLinkedDocs
+      });
+    } else {
+      onUpdateInvoices(invoices.filter((i) => i.id !== deleteTargetInv.id));
+    }
+    setDeleteTargetInv(null);
+    setIsInvModalOpen(false);
+    setEditingInv(null);
+  };
+
+  // Delete Quotation
+  const openDeleteQuotationModal = (quo: ClientQuotation) => {
+    setDeleteTargetQuo(quo);
+    setDeleteQuoLinkedDocs(true);
+  };
+
+  const handleConfirmDeleteQuotation = () => {
+    if (!deleteTargetQuo) return;
+    if (onDeleteQuotation) {
+      onDeleteQuotation(deleteTargetQuo, {
+        deleteLinkedDocuments: deleteQuoLinkedDocs
+      });
+    } else {
+      onUpdateQuotations(quotations.filter((q) => q.id !== deleteTargetQuo.id));
+    }
+    setDeleteTargetQuo(null);
+    setIsQuoModalOpen(false);
+    setEditingQuo(null);
+  };
+
   // Quotation Modal handlers
   const openCreateQuotationModal = () => {
     setEditingQuo(null);
@@ -534,7 +668,8 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
       setQuoClientEmail(first.email || '');
       setQuoClientPhone(first.phone || '');
       setQuoClientAddress(first.city || '');
-      setQuoProjectTitle(`${first.businessName} — Proposal`);
+      setQuoProjectTitle('Website Design & Development');
+      setQuoPackageSubtitle(first.packageTier ? `${first.packageTier} Package` : 'Professional Package');
       const rate = first.finalAgreedPrice > 0 ? first.finalAgreedPrice : 15000;
       setQuoItems([
         {
@@ -553,7 +688,8 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
       setQuoClientEmail('');
       setQuoClientPhone('');
       setQuoClientAddress('');
-      setQuoProjectTitle('Digital Transformation Proposal');
+      setQuoProjectTitle('Website Design & Development');
+      setQuoPackageSubtitle('Professional Package');
       setQuoItems([
         {
           id: `q-item-${Date.now()}`,
@@ -578,6 +714,7 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
     setQuoClientPhone(quo.clientPhone || '');
     setQuoClientAddress(quo.clientAddress || '');
     setQuoProjectTitle(quo.projectTitle || '');
+    setQuoPackageSubtitle(quo.packageSubtitle || 'Professional Package');
     setQuoIssueDate(quo.date);
     setQuoValidUntil(quo.validUntil);
     setQuoItems(quo.lineItems);
@@ -604,7 +741,8 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
         clientEmail: quoClientEmail.trim() || undefined,
         clientPhone: quoClientPhone.trim() || undefined,
         clientAddress: quoClientAddress.trim() || undefined,
-        projectTitle: quoProjectTitle.trim() || 'Proposal',
+        projectTitle: quoProjectTitle.trim() || 'Website Design & Development',
+        packageSubtitle: quoPackageSubtitle.trim() || undefined,
         date: quoIssueDate,
         validUntil: quoValidUntil || quoIssueDate,
         lineItems: quoItems,
@@ -626,7 +764,8 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
         clientEmail: quoClientEmail.trim() || undefined,
         clientPhone: quoClientPhone.trim() || undefined,
         clientAddress: quoClientAddress.trim() || undefined,
-        projectTitle: quoProjectTitle.trim() || 'Proposal',
+        projectTitle: quoProjectTitle.trim() || 'Website Design & Development',
+        packageSubtitle: quoPackageSubtitle.trim() || undefined,
         date: quoIssueDate,
         validUntil: quoValidUntil || quoIssueDate,
         lineItems: quoItems,
@@ -636,12 +775,65 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
         status: statusOverride || quoStatus,
         notes: quoNotes.trim() || financeSettings.gstDisclaimer,
         termsAndConditions: quoTerms.trim(),
-        templateId: financeSettings.defaultTemplateId,
+        templateId: 'tpl-aethel-quotation',
         createdAt: new Date().toISOString()
       };
       onUpdateQuotations([created, ...quotations]);
     }
     setIsQuoModalOpen(false);
+  };
+
+  // Section 9: In-Editor Live A4 Preview for Unsaved Quotation Draft
+  const handlePreviewDraftQuotation = () => {
+    const subtotal = quoItems.reduce((s, i) => s + (Number(i.total) || 0), 0);
+    const discountNum = Math.max(0, Math.round(Number(quoDiscount) || 0));
+    const totalAmount = Math.max(0, subtotal - discountNum);
+
+    const draftQuotation: ClientQuotation = {
+      id: editingQuo?.id || 'draft-quotation-preview',
+      quoteNumber: quoNumber.trim() || 'AS-Q-DRAFT',
+      clientId: quoClientId || 'draft-client',
+      clientName: quoClientName.trim() || 'Client Name',
+      clientContactPerson: quoContactPerson.trim() || undefined,
+      clientEmail: quoClientEmail.trim() || undefined,
+      clientPhone: quoClientPhone.trim() || undefined,
+      clientAddress: quoClientAddress.trim() || undefined,
+      projectTitle: quoProjectTitle.trim() || 'Website Design & Development',
+      packageSubtitle: quoPackageSubtitle.trim() || undefined,
+      date: quoIssueDate,
+      validUntil: quoValidUntil || quoIssueDate,
+      lineItems: quoItems,
+      subtotal,
+      discount: discountNum,
+      total: totalAmount,
+      status: quoStatus,
+      notes: quoNotes.trim() || financeSettings.gstDisclaimer,
+      termsAndConditions: quoTerms.trim(),
+      templateId: editingQuo?.templateId || 'tpl-aethel-quotation',
+      createdAt: editingQuo?.createdAt || new Date().toISOString()
+    };
+
+    const previewDoc: GeneratedDocument = {
+      id: `draft-preview-quo-${Date.now()}`,
+      documentNumber: draftQuotation.quoteNumber,
+      documentType: 'Quotation',
+      clientId: draftQuotation.clientId,
+      clientName: draftQuotation.clientName,
+      projectTitle: draftQuotation.projectTitle,
+      quotationId: draftQuotation.id,
+      createdDate: draftQuotation.date,
+      amount: draftQuotation.total,
+      status: 'Draft',
+      version: 1,
+      templateId: draftQuotation.templateId || 'tpl-aethel-quotation',
+      snapshotPayload: draftQuotation as unknown as Record<string, unknown>
+    };
+
+    if (onPreviewDraftDocument) {
+      onPreviewDraftDocument(previewDoc);
+    } else {
+      onGenerateQuotationPdf(draftQuotation);
+    }
   };
 
   const handleConvertQuotationToInvoice = (quo: ClientQuotation) => {
@@ -916,11 +1108,18 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
                               <button
                                 onClick={() => setCancelTargetInv(inv)}
                                 title="Cancel Invoice"
-                                className="p-1.5 rounded-lg text-[#DC2626] hover:bg-[#FEF2F2] transition-colors cursor-pointer"
+                                className="p-1.5 rounded-lg text-[#D97706] hover:bg-[#FEF3C7] transition-colors cursor-pointer"
                               >
                                 <Ban className="w-3.5 h-3.5" />
                               </button>
                             )}
+                            <button
+                              onClick={() => openDeleteInvoiceModal(inv)}
+                              title="Delete Invoice"
+                              className="p-1.5 rounded-lg text-[#DC2626] hover:bg-[#FEF2F2] transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -1018,6 +1217,13 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
                             className="p-1.5 rounded-lg text-[#475569] hover:bg-[#F1F5F9] transition-colors cursor-pointer"
                           >
                             <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => openDeleteQuotationModal(quo)}
+                            title="Delete Quotation"
+                            className="p-1.5 rounded-lg text-[#DC2626] hover:bg-[#FEF2F2] transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
@@ -1178,9 +1384,9 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
               </div>
             </div>
 
-            {/* Project Title, Dates & Terms */}
+            {/* Project Title, Package Subtitle, Dates */}
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-              <div className="sm:col-span-2">
+              <div>
                 <label className="block font-mono text-[10px] uppercase text-[#64748B] mb-1">
                   Project / Invoice Title
                 </label>
@@ -1188,7 +1394,19 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
                   type="text"
                   value={invProjectTitle}
                   onChange={(e) => setInvProjectTitle(e.target.value)}
-                  placeholder="e.g. Custom Web Platform & Growth Funnel"
+                  placeholder="e.g. Website Design & Development"
+                  className="w-full px-3 py-2 bg-[#F8F9FA] border border-[#E2E8F0] rounded-xl text-xs text-[#0B0F19]"
+                />
+              </div>
+              <div>
+                <label className="block font-mono text-[10px] uppercase text-[#64748B] mb-1">
+                  Package Subtitle
+                </label>
+                <input
+                  type="text"
+                  value={invPackageSubtitle}
+                  onChange={(e) => setInvPackageSubtitle(e.target.value)}
+                  placeholder="e.g. Professional Package"
                   className="w-full px-3 py-2 bg-[#F8F9FA] border border-[#E2E8F0] rounded-xl text-xs text-[#0B0F19]"
                 />
               </div>
@@ -1388,28 +1606,50 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center justify-end gap-2.5 pt-3 border-t border-[#E2E8F0]">
-              <button
-                type="button"
-                onClick={() => setIsInvModalOpen(false)}
-                className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-xs font-bold text-[#475569] hover:bg-[#F8F9FA] cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSaveInvoice('Draft')}
-                className="px-4 py-2 rounded-xl border border-[#CBD5E1] bg-white hover:bg-[#F8F9FA] text-xs font-bold text-[#0B0F19] cursor-pointer"
-              >
-                Save as Draft
-              </button>
-              <button
-                type="button"
-                onClick={() => handleSaveInvoice('Issued')}
-                className="px-5 py-2 rounded-xl bg-[#0B0F19] hover:bg-[#1E293B] text-white text-xs font-bold cursor-pointer"
-              >
-                {editingInv ? 'Save & Update Invoice' : 'Issue Invoice'}
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-[#E2E8F0]">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePreviewDraftInvoice}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#1D4ED8] text-xs font-bold cursor-pointer transition-colors"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  Preview A4 Document
+                </button>
+                {editingInv && (
+                  <button
+                    type="button"
+                    onClick={() => openDeleteInvoiceModal(editingInv)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[#FECACA] bg-[#FEF2F2] hover:bg-[#FEE2E2] text-[#DC2626] text-xs font-bold cursor-pointer transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete Invoice
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsInvModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-xs font-bold text-[#475569] hover:bg-[#F8F9FA] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveInvoice('Draft')}
+                  className="px-4 py-2 rounded-xl border border-[#CBD5E1] bg-white hover:bg-[#F8F9FA] text-xs font-bold text-[#0B0F19] cursor-pointer"
+                >
+                  Save as Draft
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveInvoice('Issued')}
+                  className="px-5 py-2 rounded-xl bg-[#0B0F19] hover:bg-[#1E293B] text-white text-xs font-bold cursor-pointer"
+                >
+                  {editingInv ? 'Save & Update Invoice' : 'Issue Invoice'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1621,6 +1861,142 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
         </div>
       )}
 
+      {/* Delete Invoice Confirmation Modal */}
+      {deleteTargetInv && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setDeleteTargetInv(null)}
+        >
+          <div
+            className="bg-white border border-[#E2E8F0] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#FEF2F2] border border-[#FECACA] flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5 text-[#DC2626]" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-[#0B0F19]">
+                  Delete Invoice {deleteTargetInv.invoiceNumber}?
+                </h4>
+                <p className="text-xs text-[#64748B] mt-1">
+                  Permanently remove invoice <span className="font-mono font-bold text-[#0B0F19]">{deleteTargetInv.invoiceNumber}</span> for{' '}
+                  <span className="font-bold text-[#0B0F19]">{deleteTargetInv.clientName}</span> ({formatINR(deleteTargetInv.amount)}).
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5 bg-[#F8F9FA] border border-[#E2E8F0] rounded-xl p-3.5 text-xs">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={deleteInvLinkedDocs}
+                  onChange={(e) => setDeleteInvLinkedDocs(e.target.checked)}
+                  className="mt-0.5 rounded border-[#CBD5E1]"
+                />
+                <span className="text-[#334155]">
+                  Also remove archived PDF snapshots for <span className="font-mono font-bold">{deleteTargetInv.invoiceNumber}</span> from the Documents Library
+                </span>
+              </label>
+
+              {payments.some(
+                (p) => p.invoiceId === deleteTargetInv.id || p.invoiceNumber === deleteTargetInv.invoiceNumber
+              ) && (
+                <label className="flex items-start gap-2.5 cursor-pointer pt-2 border-t border-[#E2E8F0]">
+                  <input
+                    type="checkbox"
+                    checked={deleteInvLinkedPayments}
+                    onChange={(e) => setDeleteInvLinkedPayments(e.target.checked)}
+                    className="mt-0.5 rounded border-[#CBD5E1]"
+                  />
+                  <span className="text-[#991B1B] font-medium">
+                    Also delete payment records linked directly to this invoice (leave unchecked to preserve client payment history)
+                  </span>
+                </label>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#E2E8F0]">
+              <button
+                type="button"
+                onClick={() => setDeleteTargetInv(null)}
+                className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-xs font-bold text-[#475569] hover:bg-[#F8F9FA] cursor-pointer"
+              >
+                Keep Invoice
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteInvoice}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete Invoice
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Quotation Confirmation Modal */}
+      {deleteTargetQuo && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setDeleteTargetQuo(null)}
+        >
+          <div
+            className="bg-white border border-[#E2E8F0] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#FEF2F2] border border-[#FECACA] flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5 text-[#DC2626]" />
+              </div>
+              <div>
+                <h4 className="text-base font-bold text-[#0B0F19]">
+                  Delete Quotation {deleteTargetQuo.quoteNumber}?
+                </h4>
+                <p className="text-xs text-[#64748B] mt-1">
+                  Permanently remove quotation <span className="font-mono font-bold text-[#0B0F19]">{deleteTargetQuo.quoteNumber}</span> for{' '}
+                  <span className="font-bold text-[#0B0F19]">{deleteTargetQuo.clientName}</span> ({formatINR(deleteTargetQuo.total)}).
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-[#F8F9FA] border border-[#E2E8F0] rounded-xl p-3.5 text-xs">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={deleteQuoLinkedDocs}
+                  onChange={(e) => setDeleteQuoLinkedDocs(e.target.checked)}
+                  className="mt-0.5 rounded border-[#CBD5E1]"
+                />
+                <span className="text-[#334155]">
+                  Also remove archived PDF snapshots for <span className="font-mono font-bold">{deleteTargetQuo.quoteNumber}</span> from the Documents Library
+                </span>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#E2E8F0]">
+              <button
+                type="button"
+                onClick={() => setDeleteTargetQuo(null)}
+                className="px-4 py-2 rounded-xl border border-[#E2E8F0] text-xs font-bold text-[#475569] hover:bg-[#F8F9FA] cursor-pointer"
+              >
+                Keep Quotation
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteQuotation}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#DC2626] hover:bg-[#B91C1C] text-white text-xs font-bold cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete Quotation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Create / Edit Quotation Modal */}
       {isQuoModalOpen && (
         <div
@@ -1690,7 +2066,59 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
               </div>
             </div>
 
+            {/* Editable Client Contact & Address Details for Quotation */}
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div>
+                <label className="block font-mono text-[10px] uppercase text-[#64748B] mb-1">
+                  Contact Person
+                </label>
+                <input
+                  type="text"
+                  value={quoContactPerson}
+                  onChange={(e) => setQuoContactPerson(e.target.value)}
+                  placeholder="Contact Name"
+                  className="w-full px-3 py-2 bg-[#F8F9FA] border border-[#E2E8F0] rounded-xl text-xs text-[#0B0F19]"
+                />
+              </div>
+              <div>
+                <label className="block font-mono text-[10px] uppercase text-[#64748B] mb-1">
+                  Client Phone
+                </label>
+                <input
+                  type="text"
+                  value={quoClientPhone}
+                  onChange={(e) => setQuoClientPhone(e.target.value)}
+                  placeholder="+91..."
+                  className="w-full px-3 py-2 bg-[#F8F9FA] border border-[#E2E8F0] rounded-xl text-xs text-[#0B0F19]"
+                />
+              </div>
+              <div>
+                <label className="block font-mono text-[10px] uppercase text-[#64748B] mb-1">
+                  Client Email
+                </label>
+                <input
+                  type="email"
+                  value={quoClientEmail}
+                  onChange={(e) => setQuoClientEmail(e.target.value)}
+                  placeholder="client@domain.com"
+                  className="w-full px-3 py-2 bg-[#F8F9FA] border border-[#E2E8F0] rounded-xl text-xs text-[#0B0F19]"
+                />
+              </div>
+              <div>
+                <label className="block font-mono text-[10px] uppercase text-[#64748B] mb-1">
+                  City / Billing Address
+                </label>
+                <input
+                  type="text"
+                  value={quoClientAddress}
+                  onChange={(e) => setQuoClientAddress(e.target.value)}
+                  placeholder="Nanded, Maharashtra"
+                  className="w-full px-3 py-2 bg-[#F8F9FA] border border-[#E2E8F0] rounded-xl text-xs text-[#0B0F19]"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
               <div>
                 <label className="block font-mono text-[10px] uppercase text-[#64748B] mb-1">
                   Project Title
@@ -1699,6 +2127,19 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
                   type="text"
                   value={quoProjectTitle}
                   onChange={(e) => setQuoProjectTitle(e.target.value)}
+                  placeholder="Website Design & Development"
+                  className="w-full px-3 py-2 bg-[#F8F9FA] border border-[#E2E8F0] rounded-xl text-xs text-[#0B0F19]"
+                />
+              </div>
+              <div>
+                <label className="block font-mono text-[10px] uppercase text-[#64748B] mb-1">
+                  Package Subtitle
+                </label>
+                <input
+                  type="text"
+                  value={quoPackageSubtitle}
+                  onChange={(e) => setQuoPackageSubtitle(e.target.value)}
+                  placeholder="Professional Package"
                   className="w-full px-3 py-2 bg-[#F8F9FA] border border-[#E2E8F0] rounded-xl text-xs text-[#0B0F19]"
                 />
               </div>
@@ -1775,15 +2216,24 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
                   key={item.id}
                   className="grid grid-cols-1 sm:grid-cols-12 gap-2 p-3 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] items-center"
                 >
-                  <div className="sm:col-span-6">
+                  <div className="sm:col-span-5 space-y-1">
                     <input
                       type="text"
                       value={item.serviceName}
                       onChange={(e) =>
                         updateLineItem(quoItems, setQuoItems, idx, { serviceName: e.target.value })
                       }
-                      placeholder="Deliverable title"
+                      placeholder="Service / Deliverable title"
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-lg text-xs font-bold text-[#0B0F19]"
+                    />
+                    <input
+                      type="text"
+                      value={item.description || ''}
+                      onChange={(e) =>
+                        updateLineItem(quoItems, setQuoItems, idx, { description: e.target.value })
+                      }
+                      placeholder="Optional service description..."
+                      className="w-full px-2.5 py-1 bg-white border border-[#E2E8F0] rounded-lg text-[11px] text-[#64748B]"
                     />
                   </div>
                   <div className="sm:col-span-2">
@@ -1808,10 +2258,26 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E8F0] rounded-lg text-xs font-mono text-right text-[#0B0F19]"
                     />
                   </div>
-                  <div className="sm:col-span-2 flex items-center justify-end gap-2">
-                    <span className="font-mono text-xs font-bold text-[#0B0F19]">
-                      {formatINR(item.total)}
-                    </span>
+                  <div className="sm:col-span-2 text-right font-mono text-xs font-bold text-[#0B0F19] px-1">
+                    {formatINR(item.total)}
+                  </div>
+                  <div className="sm:col-span-1 flex items-center justify-end gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => moveLineItem(quoItems, setQuoItems, idx, 'up')}
+                      disabled={idx === 0}
+                      className="p-1 text-[#64748B] hover:text-[#0B0F19] disabled:opacity-30 cursor-pointer"
+                    >
+                      <ArrowUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveLineItem(quoItems, setQuoItems, idx, 'down')}
+                      disabled={idx === quoItems.length - 1}
+                      className="p-1 text-[#64748B] hover:text-[#0B0F19] disabled:opacity-30 cursor-pointer"
+                    >
+                      <ArrowDown className="w-3.5 h-3.5" />
+                    </button>
                     {quoItems.length > 1 && (
                       <button
                         type="button"
@@ -1826,12 +2292,70 @@ export const InvoicesAndQuotations: React.FC<InvoicesAndQuotationsProps> = ({
               ))}
             </div>
 
-            <div className="flex items-center justify-between pt-3 border-t border-[#E2E8F0]">
-              <div className="text-xs text-[#64748B]">
-                Proposal Total:{' '}
-                <span className="font-mono text-base font-bold text-[#0B0F19]">
-                  {formatINR(quoGrandTotal)}
-                </span>
+            {/* Quotation Terms, Notes & Totals */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-[#E2E8F0]">
+              <div className="space-y-2">
+                <label className="block font-mono text-[10px] uppercase text-[#64748B]">
+                  Payment Terms & Notes
+                </label>
+                <input
+                  type="text"
+                  value={quoTerms}
+                  onChange={(e) => setQuoTerms(e.target.value)}
+                  placeholder="Payment terms / validity terms..."
+                  className="w-full px-3 py-1.5 bg-[#F8F9FA] border border-[#E2E8F0] rounded-xl text-xs text-[#0B0F19]"
+                />
+                <textarea
+                  rows={2}
+                  value={quoNotes}
+                  onChange={(e) => setQuoNotes(e.target.value)}
+                  placeholder="Notes or Non-GST disclaimer..."
+                  className="w-full px-3 py-1.5 bg-[#F8F9FA] border border-[#E2E8F0] rounded-xl text-xs text-[#475569]"
+                />
+              </div>
+
+              <div className="bg-[#F8F9FA] border border-[#E2E8F0] rounded-2xl p-4 space-y-2.5">
+                <div className="flex justify-between text-xs text-[#475569]">
+                  <span>Subtotal</span>
+                  <span className="font-mono font-bold text-[#0B0F19]">{formatINR(quoSubtotal)}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-[#475569]">
+                  <span>Discount (₹)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={quoDiscount}
+                    onChange={(e) => setQuoDiscount(e.target.value)}
+                    className="w-28 px-2.5 py-1 bg-white border border-[#E2E8F0] rounded-lg text-right font-mono text-xs text-[#0B0F19]"
+                  />
+                </div>
+                <div className="flex justify-between text-sm font-bold text-[#0B0F19] pt-2 border-t border-[#E2E8F0]">
+                  <span>Proposal Grand Total</span>
+                  <span className="font-mono text-base text-[#2563EB]">{formatINR(quoGrandTotal)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3 border-t border-[#E2E8F0]">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePreviewDraftQuotation}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#1D4ED8] text-xs font-bold cursor-pointer transition-colors"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  Preview A4 Document
+                </button>
+                {editingQuo && (
+                  <button
+                    type="button"
+                    onClick={() => openDeleteQuotationModal(editingQuo)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-[#FECACA] bg-[#FEF2F2] hover:bg-[#FEE2E2] text-[#DC2626] text-xs font-bold cursor-pointer transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete Quotation
+                  </button>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button

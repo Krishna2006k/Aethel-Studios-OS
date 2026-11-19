@@ -10,6 +10,7 @@ import {
   FinanceDocumentType
 } from '../../types';
 import { formatINR } from '../../utils/calculations';
+import { DEFAULT_DOCUMENT_TEMPLATES } from '../../utils/financeEngine';
 import {
   FileText,
   Search,
@@ -22,11 +23,17 @@ import {
   Palette,
   Hash,
   Receipt,
-  BookOpen
+  BookOpen,
+  RotateCcw,
+  Upload,
+  Sparkles,
+  Check,
+  Trash2
 } from 'lucide-react';
 import {
   downloadDocumentFile,
-  buildWhatsAppDocumentShareUrl
+  buildWhatsAppDocumentShareUrl,
+  createSampleTestDocumentForTemplate
 } from '../../utils/pdfDocumentEngine';
 
 interface DocumentsAndSettingsProps {
@@ -39,11 +46,14 @@ interface DocumentsAndSettingsProps {
   payments: ClientPayment[];
   clients: ClientLead[];
   onPreviewDocument: (doc: GeneratedDocument) => void;
+  onArchiveTestDocument?: (doc: GeneratedDocument) => void;
   onGenerateInvoiceDoc: (invoice: ClientInvoice) => void;
   onGenerateQuotationDoc: (quotation: ClientQuotation) => void;
   onGenerateReceiptDoc: (payment: ClientPayment, invoice?: ClientInvoice) => void;
   onGenerateStatementDoc: (client: ClientLead) => void;
   onUpdateFinanceSettings: (settings: FinanceSettings) => void;
+  onUpdateDocumentTemplates?: (templates: DocumentTemplate[]) => void;
+  onDeleteDocument?: (docId: string) => void;
 }
 
 export const DocumentsAndSettings: React.FC<DocumentsAndSettingsProps> = ({
@@ -56,11 +66,14 @@ export const DocumentsAndSettings: React.FC<DocumentsAndSettingsProps> = ({
   payments,
   clients,
   onPreviewDocument,
+  onArchiveTestDocument,
   onGenerateInvoiceDoc,
   onGenerateQuotationDoc,
   onGenerateReceiptDoc,
   onGenerateStatementDoc,
-  onUpdateFinanceSettings
+  onUpdateFinanceSettings,
+  onUpdateDocumentTemplates,
+  onDeleteDocument
 }) => {
   // Documents Library Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -71,6 +84,16 @@ export const DocumentsAndSettings: React.FC<DocumentsAndSettingsProps> = ({
   // Finance Settings Form State
   const [formSettings, setFormSettings] = useState<FinanceSettings>(financeSettings);
   const [savedBanner, setSavedBanner] = useState(false);
+  const [templateActionFeedback, setTemplateActionFeedback] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    setFormSettings(financeSettings);
+  }, [financeSettings]);
+
+  const showTemplateToast = (msg: string) => {
+    setTemplateActionFeedback(msg);
+    setTimeout(() => setTemplateActionFeedback(null), 3500);
+  };
 
   const filteredDocs = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -93,6 +116,73 @@ export const DocumentsAndSettings: React.FC<DocumentsAndSettingsProps> = ({
     onUpdateFinanceSettings(formSettings);
     setSavedBanner(true);
     setTimeout(() => setSavedBanner(false), 3500);
+  };
+
+  const handleSetTemplateAsDefault = (tpl: DocumentTemplate) => {
+    const updatedSettings: FinanceSettings = {
+      ...formSettings,
+      defaultTemplateId: tpl.id,
+      accentColor: tpl.accentColor,
+      headerStyle: tpl.headerStyle
+    };
+    setFormSettings(updatedSettings);
+    onUpdateFinanceSettings(updatedSettings);
+
+    if (onUpdateDocumentTemplates) {
+      const nextTemplates = documentTemplates.map((item) => ({
+        ...item,
+        isDefault: item.id === tpl.id || item.documentType === tpl.documentType
+      }));
+      onUpdateDocumentTemplates(nextTemplates);
+    }
+    showTemplateToast(`"${tpl.name}" set as default template for ${tpl.documentType || 'Documents'}.`);
+  };
+
+  const handlePreviewTemplate = (tpl: DocumentTemplate) => {
+    const sampleDoc = createSampleTestDocumentForTemplate(tpl, formSettings);
+    onPreviewDocument(sampleDoc);
+  };
+
+  const handleGenerateTestDocument = (tpl: DocumentTemplate) => {
+    const sampleDoc = createSampleTestDocumentForTemplate(tpl, formSettings);
+    if (onArchiveTestDocument) {
+      onArchiveTestDocument(sampleDoc);
+    } else {
+      onPreviewDocument(sampleDoc);
+    }
+    showTemplateToast(`Generated and archived test ${sampleDoc.documentType} (${sampleDoc.documentNumber}) using "${tpl.name}".`);
+  };
+
+  const handleReplaceReferenceDesign = (tpl: DocumentTemplate, file: File | undefined) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!dataUrl) return;
+      if (onUpdateDocumentTemplates) {
+        const nextTemplates = documentTemplates.map((item) =>
+          item.id === tpl.id ? { ...item, referenceImageUrl: dataUrl } : item
+        );
+        onUpdateDocumentTemplates(nextTemplates);
+      }
+      showTemplateToast(`Updated reference design image for "${tpl.name}".`);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRestoreConfiguredTemplate = (tpl: DocumentTemplate) => {
+    const canonical =
+      DEFAULT_DOCUMENT_TEMPLATES.find(
+        (d) => d.id === tpl.id || d.documentType === tpl.documentType
+      ) || DEFAULT_DOCUMENT_TEMPLATES[0];
+
+    if (onUpdateDocumentTemplates) {
+      const nextTemplates = documentTemplates.map((item) =>
+        item.id === tpl.id ? { ...canonical, id: tpl.id } : item
+      );
+      onUpdateDocumentTemplates(nextTemplates);
+    }
+    showTemplateToast(`Restored "${tpl.name}" to official Aethel Studios reference configuration.`);
   };
 
   if (mode === 'documents') {
@@ -309,6 +399,15 @@ export const DocumentsAndSettings: React.FC<DocumentsAndSettingsProps> = ({
                             >
                               <Share2 className="w-3.5 h-3.5" />
                             </a>
+                            {onDeleteDocument && (
+                              <button
+                                onClick={() => onDeleteDocument(doc.id)}
+                                title="Delete Archived Document"
+                                className="p-1.5 rounded-lg text-[#DC2626] hover:bg-[#FEF2F2] transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -323,7 +422,7 @@ export const DocumentsAndSettings: React.FC<DocumentsAndSettingsProps> = ({
     );
   }
 
-  // Mode 2: 15. Finance Settings & 16. Canva-Inspired Templates
+  // Mode 2: Finance Settings & Section 8 Document Template Management
   return (
     <form onSubmit={handleSaveSettings} className="space-y-6">
       {savedBanner && (
@@ -333,57 +432,167 @@ export const DocumentsAndSettings: React.FC<DocumentsAndSettingsProps> = ({
         </div>
       )}
 
-      {/* 16. Canva-Inspired Document Templates */}
-      <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-4">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center">
-            <Palette className="w-4 h-4" />
+      {templateActionFeedback && (
+        <div className="bg-[#EFF6FF] border border-[#BFDBFE] rounded-2xl p-4 flex items-center gap-3 text-xs font-bold text-[#1D4ED8]">
+          <Check className="w-4 h-4 shrink-0" />
+          <span>{templateActionFeedback}</span>
+        </div>
+      )}
+
+      {/* Section 8: Document Template Management */}
+      <div className="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-xs space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-[#EFF6FF] text-[#2563EB] flex items-center justify-center">
+              <Palette className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="font-mono text-[10px] uppercase tracking-widest text-[#2563EB] font-bold">
+                DOCUMENT TEMPLATES • APPROVED AETHEL STUDIOS IDENTITY
+              </span>
+              <h3 className="text-base font-bold text-[#0B0F19]">
+                Dynamic Quotation, Invoice & Payment Receipt A4 Templates
+              </h3>
+            </div>
           </div>
-          <div>
-            <span className="font-mono text-[10px] uppercase tracking-widest text-[#2563EB] font-bold">
-              16. CANVA-INSPIRED STUDIO TEMPLATES
-            </span>
-            <h3 className="text-base font-bold text-[#0B0F19]">
-              A4 PDF Document Layout & Visual Direction
-            </h3>
-          </div>
+          <span className="px-3 py-1 rounded-xl bg-[#F8F9FA] border border-[#E2E8F0] font-mono text-[10px] text-[#475569] font-bold">
+            3 Active Templates Configured
+          </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {documentTemplates.map((tpl) => {
-            const isSelected = formSettings.defaultTemplateId === tpl.id;
+            const isDefault =
+              formSettings.defaultTemplateId === tpl.id || Boolean(tpl.isDefault);
+            const docTypeBadge =
+              tpl.documentType ||
+              (tpl.id.includes('quotation')
+                ? 'Quotation'
+                : tpl.id.includes('receipt')
+                  ? 'Payment Receipt'
+                  : 'Invoice');
+
             return (
-              <button
-                type="button"
+              <div
                 key={tpl.id}
-                onClick={() =>
-                  setFormSettings({
-                    ...formSettings,
-                    defaultTemplateId: tpl.id,
-                    accentColor: tpl.accentColor,
-                    headerStyle: tpl.headerStyle
-                  })
-                }
-                className={`text-left p-4 rounded-2xl border-2 transition-all cursor-pointer ${
-                  isSelected
-                    ? 'border-[#2563EB] bg-[#EFF6FF]/40 shadow-xs'
-                    : 'border-[#E2E8F0] hover:border-[#CBD5E1] bg-white'
+                className={`rounded-2xl border-2 transition-all flex flex-col justify-between overflow-hidden ${
+                  isDefault
+                    ? 'border-[#2563EB] bg-[#EFF6FF]/25 shadow-xs'
+                    : 'border-[#E2E8F0] bg-white'
                 }`}
               >
-                <div className="flex items-center justify-between mb-2">
-                  <span
-                    className="w-5 h-5 rounded-full border border-white shadow-xs"
-                    style={{ backgroundColor: tpl.accentColor }}
-                  />
-                  {isSelected && (
-                    <span className="px-2 py-0.5 rounded bg-[#2563EB] text-white font-mono text-[9px] font-bold uppercase">
-                      Active Template
-                    </span>
-                  )}
+                {/* Reference Design Visual Preview Header */}
+                <div>
+                  <div className="relative h-44 bg-[#0B1325] border-b border-[#E2E8F0] overflow-hidden flex items-center justify-center p-3">
+                    {tpl.referenceImageUrl ? (
+                      <img
+                        src={tpl.referenceImageUrl}
+                        alt={`${tpl.name} Reference`}
+                        className="h-full w-auto object-contain rounded-lg shadow-md border border-white/15"
+                      />
+                    ) : (
+                      <div className="text-xs font-mono text-white/70">
+                        {tpl.name}
+                      </div>
+                    )}
+                    <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
+                      <span className="px-2.5 py-0.5 rounded-md bg-[#0B1325]/90 backdrop-blur-xs text-white border border-white/15 font-mono text-[10px] font-bold">
+                        {docTypeBadge}
+                      </span>
+                    </div>
+                    <div className="absolute top-2.5 right-2.5">
+                      <span
+                        className={`px-2.5 py-0.5 rounded-md font-mono text-[9px] font-bold uppercase ${
+                          tpl.isActive !== false
+                            ? 'bg-[#16A34A] text-white'
+                            : 'bg-[#64748B] text-white'
+                        }`}
+                      >
+                        {isDefault ? 'Active • Default' : 'Active'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Template Info */}
+                  <div className="p-4 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="font-bold text-sm text-[#0B0F19]">{tpl.name}</h4>
+                      <span
+                        className="w-4 h-4 rounded-full border border-white shadow-xs shrink-0"
+                        style={{ backgroundColor: tpl.accentColor }}
+                        title={`Accent: ${tpl.accentColor}`}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 text-[11px] font-mono text-[#475569]">
+                      <span>Type: <strong>{docTypeBadge}</strong></span>
+                      <span>•</span>
+                      <span>Font: <strong>{tpl.fontFamily}</strong></span>
+                    </div>
+                    <p className="text-xs text-[#64748B] leading-relaxed">
+                      {tpl.description}
+                    </p>
+                  </div>
                 </div>
-                <div className="font-bold text-sm text-[#0B0F19]">{tpl.name}</div>
-                <p className="text-xs text-[#64748B] mt-1">{tpl.description}</p>
-              </button>
+
+                {/* Template Management Actions (Section 8) */}
+                <div className="p-4 pt-0 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handlePreviewTemplate(tpl)}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-[#0B0F19] hover:bg-[#1E293B] text-white text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      Preview Template
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateTestDocument(tpl)}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#1D4ED8] text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Generate Test Doc
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSetTemplateAsDefault(tpl)}
+                      className={`inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition-colors cursor-pointer ${
+                        formSettings.defaultTemplateId === tpl.id
+                          ? 'border-[#2563EB] bg-[#2563EB] text-white'
+                          : 'border-[#E2E8F0] bg-[#F8F9FA] hover:bg-[#F1F5F9] text-[#0B0F19]'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-3 h-3" />
+                      {formSettings.defaultTemplateId === tpl.id ? 'Default Active' : 'Set as Default'}
+                    </button>
+
+                    <label className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-xl border border-[#E2E8F0] bg-[#F8F9FA] hover:bg-[#F1F5F9] text-[#0B0F19] text-[11px] font-bold transition-colors cursor-pointer">
+                      <Upload className="w-3 h-3 text-[#2563EB]" />
+                      <span>Replace Design</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) =>
+                          handleReplaceReferenceDesign(tpl, e.target.files?.[0])
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleRestoreConfiguredTemplate(tpl)}
+                    className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E2E8F0] hover:bg-[#F8F9FA] text-[#64748B] hover:text-[#0B0F19] text-[11px] font-semibold transition-colors cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Restore Configured Template
+                  </button>
+                </div>
+              </div>
             );
           })}
         </div>
@@ -411,12 +620,12 @@ export const DocumentsAndSettings: React.FC<DocumentsAndSettingsProps> = ({
             </div>
             <div>
               <label className="block font-mono text-[10px] uppercase text-[#64748B] mb-1">
-                Logo Header Text
+                Tagline / Subtitle
               </label>
               <input
                 type="text"
-                value={formSettings.logoText}
-                onChange={(e) => setFormSettings({ ...formSettings, logoText: e.target.value })}
+                value={formSettings.tagline || 'Digital experiences. Thoughtfully crafted.'}
+                onChange={(e) => setFormSettings({ ...formSettings, tagline: e.target.value })}
                 className="w-full px-3 py-2 bg-[#F8F9FA] border border-[#E2E8F0] rounded-xl text-xs text-[#0B0F19]"
               />
             </div>
@@ -488,12 +697,12 @@ export const DocumentsAndSettings: React.FC<DocumentsAndSettingsProps> = ({
             </div>
             <div>
               <label className="block font-mono text-[10px] uppercase text-[#64748B] mb-1">
-                Bank Name
+                Website Domain
               </label>
               <input
                 type="text"
-                value={formSettings.bankName || ''}
-                onChange={(e) => setFormSettings({ ...formSettings, bankName: e.target.value })}
+                value={formSettings.website || 'aethelstudios.in'}
+                onChange={(e) => setFormSettings({ ...formSettings, website: e.target.value })}
                 className="w-full px-3 py-2 bg-[#F8F9FA] border border-[#E2E8F0] rounded-xl text-xs text-[#0B0F19]"
               />
             </div>

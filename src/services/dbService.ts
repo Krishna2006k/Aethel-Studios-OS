@@ -502,6 +502,20 @@ begin
     alter table public.expenses alter column id drop default;
     alter table public.expenses alter column id type text using id::text;
   end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'invoice_items' and column_name = 'invoice_id' and data_type = 'uuid'
+  ) then
+    alter table public.invoice_items alter column invoice_id type text using invoice_id::text;
+  end if;
+
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'quotation_items' and column_name = 'quotation_id' and data_type = 'uuid'
+  ) then
+    alter table public.quotation_items alter column quotation_id type text using quotation_id::text;
+  end if;
 end $$;
 
 create table if not exists public.invoices (
@@ -513,6 +527,7 @@ create table if not exists public.invoices (
   client_phone text,
   client_address text,
   project_title text,
+  package_subtitle text default 'Professional Package',
   invoice_title text,
   invoice_number text not null,
   invoice_type text default 'Standard Invoice',
@@ -542,6 +557,7 @@ alter table public.invoices add column if not exists client_email text;
 alter table public.invoices add column if not exists client_phone text;
 alter table public.invoices add column if not exists client_address text;
 alter table public.invoices add column if not exists project_title text;
+alter table public.invoices add column if not exists package_subtitle text default 'Professional Package';
 alter table public.invoices add column if not exists invoice_title text;
 alter table public.invoices add column if not exists invoice_type text default 'Standard Invoice';
 alter table public.invoices add column if not exists payment_terms text;
@@ -579,6 +595,7 @@ create table if not exists public.quotations (
   client_phone text,
   client_address text,
   project_title text not null,
+  package_subtitle text default 'Professional Package',
   quote_date date default current_date,
   valid_until date,
   status text not null default 'Draft', -- Draft | Sent | Accepted | Rejected | Expired
@@ -590,9 +607,18 @@ create table if not exists public.quotations (
   terms_and_conditions text,
   converted_invoice_id text,
   converted_invoice_number text,
-  template_id text default 'tpl-aethel-editorial',
+  template_id text default 'tpl-aethel-quotation',
   created_at timestamptz default now()
 );
+
+alter table public.quotations add column if not exists client_contact_person text;
+alter table public.quotations add column if not exists client_email text;
+alter table public.quotations add column if not exists client_phone text;
+alter table public.quotations add column if not exists client_address text;
+alter table public.quotations add column if not exists package_subtitle text default 'Professional Package';
+alter table public.quotations add column if not exists converted_invoice_id text;
+alter table public.quotations add column if not exists converted_invoice_number text;
+alter table public.quotations add column if not exists template_id text default 'tpl-aethel-quotation';
 
 create table if not exists public.quotation_items (
   id text primary key,
@@ -704,26 +730,33 @@ create table if not exists public.generated_documents (
 create table if not exists public.document_templates (
   id text primary key,
   name text not null,
+  document_type text default 'Invoice', -- Quotation | Invoice | Payment Receipt | Statement of Account
   description text,
-  accent_color text not null default '#2563EB',
+  accent_color text not null default '#0C1220',
   header_style text not null default 'editorial-dark',
   font_family text not null default 'Plus Jakarta Sans',
   show_logo boolean not null default true,
+  is_default boolean not null default true,
+  reference_image_url text,
   footer_text text,
   created_at timestamptz default now()
 );
+
+alter table public.document_templates add column if not exists document_type text default 'Invoice';
+alter table public.document_templates add column if not exists is_default boolean not null default true;
+alter table public.document_templates add column if not exists reference_image_url text;
 
 create table if not exists public.finance_settings (
   id text primary key default 'studio-finance-settings',
   studio_name text not null default 'Aethel Studios',
   contact_person_1 text not null default 'Krishna Khakole',
-  phone_1 text,
+  phone_1 text default '+91 9309970761',
   contact_person_2 text not null default 'Vansh Khakole',
-  phone_2 text,
-  email text not null default 'aethelstudios.in@gmail.com',
-  website text,
-  address text,
-  upi_id text,
+  phone_2 text default '+91 9763274410',
+  email text not null default 'hello@aethelstudios.in',
+  website text default 'aethelstudios.in',
+  address text default 'Nanded, Maharashtra',
+  upi_id text default 'aethelstudios@okicici',
   bank_name text,
   bank_account_name text,
   bank_account_number text,

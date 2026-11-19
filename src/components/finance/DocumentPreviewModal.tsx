@@ -55,6 +55,12 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   );
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
+  React.useEffect(() => {
+    if (activeDoc?.templateId) {
+      setSelectedTemplateId(activeDoc.templateId);
+    }
+  }, [activeDoc?.id, activeDoc?.templateId]);
+
   if (!activeDoc) return null;
 
   const docWithTemplate: GeneratedDocument = {
@@ -102,7 +108,7 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#0B0F19]/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
+    <div className="fixed inset-0 z-[90] bg-[#0B0F19]/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4">
       <div className="bg-white rounded-3xl border border-[#EAECEF] max-w-5xl w-full h-[92vh] flex flex-col justify-between shadow-2xl overflow-hidden">
         {/* Top Action Bar */}
         <div className="bg-[#0B0F19] text-white px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
@@ -226,12 +232,12 @@ export const DocumentPreviewModal: React.FC<DocumentPreviewModalProps> = ({
         )}
 
         {/* Embedded A4 Sheet Preview */}
-        <div className="flex-1 bg-[#E2E8F0] p-3 sm:p-6 overflow-y-auto flex justify-center">
-          <div className="w-full max-w-[210mm] bg-white rounded-2xl shadow-xl overflow-hidden border border-[#CBD5E1] min-h-[760px]">
+        <div className="flex-1 bg-[#E2E8F0] p-3 sm:p-6 overflow-y-auto flex justify-center items-start">
+          <div className="w-full max-w-[210mm] bg-white rounded-2xl shadow-xl overflow-hidden border border-[#CBD5E1] shrink-0">
             <iframe
               title={`A4 Preview ${activeDoc.documentNumber}`}
               srcDoc={htmlPreview}
-              className="w-full h-[760px] border-0"
+              className="w-full h-[1125px] border-0 block"
             />
           </div>
         </div>

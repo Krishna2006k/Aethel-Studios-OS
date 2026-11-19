@@ -25,53 +25,62 @@ export type FinanceDateFilterPreset =
 
 export const DEFAULT_DOCUMENT_TEMPLATES: DocumentTemplate[] = [
   {
-    id: 'tpl-aethel-editorial',
-    name: 'Aethel Editorial Monograph',
+    id: 'tpl-aethel-quotation',
+    name: 'Aethel Quotation Template',
+    documentType: 'Quotation',
     description:
-      'Signature Aethel Studios dark obsidian header with cobalt precision accents and editorial typography.',
+      'Approved Aethel Studios Modern Quotation layout with midnight navy wave banner, official AS ribbon logo, Playfair Display serif typography, and dark navy total pill.',
+    accentColor: '#2563EB',
+    headerStyle: 'editorial-dark',
+    fontFamily: 'Playfair Display',
+    showLogo: true,
+    isActive: true,
+    isDefault: true,
+    referenceImageUrl: '/assets/aistudio/Aethel_Studios_Modern_Invoice_065cd68b.png',
+    footerText: 'BUILD • DESIGN • GROW',
+  },
+  {
+    id: 'tpl-aethel-editorial',
+    name: 'Aethel Invoice Template',
+    documentType: 'Invoice',
+    description:
+      'Approved Aethel Studios Modern Invoice identity with midnight navy wave header, official AS ribbon logo, rounded Bill To & Project cards, navy line-item table, and Non-GST compliance pill.',
+    accentColor: '#2563EB',
+    headerStyle: 'editorial-dark',
+    fontFamily: 'Playfair Display',
+    showLogo: true,
+    isActive: true,
+    isDefault: true,
+    referenceImageUrl: '/assets/aistudio/Aethel_Studios_Modern_Invoice_065cd68b.png',
+    footerText: 'BUILD • DESIGN • GROW',
+  },
+  {
+    id: 'tpl-aethel-receipt',
+    name: 'Aethel Payment Receipt Template',
+    documentType: 'Payment Receipt',
+    description:
+      'Approved Aethel Studios Payment Receipt identity with circular navy AS badge, porcelain card layout, 6-row colon-aligned reconciliation ledger, official EST. 2026 blue seal stamp, and dark navy contact footer.',
     accentColor: '#2563EB',
     headerStyle: 'editorial-dark',
     fontFamily: 'Plus Jakarta Sans',
     showLogo: true,
-    footerText:
-      'Aethel Studios · Digital Experience, Web Engineering & Growth Systems · Pune, Maharashtra',
-  },
-  {
-    id: 'tpl-aethel-minimal',
-    name: 'Aethel Executive Minimal',
-    description:
-      'Clean white architectural sheet with hairline borders and high-contrast monochrome hierarchy for print.',
-    accentColor: '#0B0F19',
-    headerStyle: 'minimal-clean',
-    fontFamily: 'Plus Jakarta Sans',
-    showLogo: true,
-    footerText:
-      'Thank you for partnering with Aethel Studios · aethelstudios.in@gmail.com',
-  },
-  {
-    id: 'tpl-aethel-bold',
-    name: 'Aethel Studio Cobalt',
-    description:
-      'Modern agency statement layout with royal cobalt header band and structured financial summary blocks.',
-    accentColor: '#1D4ED8',
-    headerStyle: 'bold-accent',
-    fontFamily: 'Plus Jakarta Sans',
-    showLogo: true,
-    footerText:
-      'Aethel Studios · Co-Founded by Vansh Khakole & Krishna Khakole · Pune, India',
+    isActive: true,
+    isDefault: true,
+    referenceImageUrl: '/assets/aistudio/Aethel_Studios_Payment_Receipt_e4b1d20e.png',
+    footerText: 'Digital experiences. Thoughtfully crafted.',
   },
 ];
 
 export const DEFAULT_FINANCE_SETTINGS: FinanceSettings = {
   studioName: 'Aethel Studios',
   contactPerson1: 'Krishna Khakole',
-  phone1: '+91 98765 43210',
+  phone1: '+91 9309970761',
   contactPerson2: 'Vansh Khakole',
-  phone2: '+91 98765 43211',
-  email: 'aethelstudios.in@gmail.com',
-  website: 'https://aethelstudios.in',
-  address: 'Pune, Maharashtra, India',
-  upiId: 'aethelstudios@upi',
+  phone2: '+91 9763274410',
+  email: 'hello@aethelstudios.in',
+  website: 'aethelstudios.in',
+  address: 'Nanded, Maharashtra',
+  upiId: 'aethelstudios@okicici',
   bankName: 'HDFC Bank',
   bankAccountName: 'Aethel Studios',
   bankAccountNumber: '',
@@ -80,8 +89,7 @@ export const DEFAULT_FINANCE_SETTINGS: FinanceSettings = {
   logoText: 'AETHEL STUDIOS',
   accentColor: '#2563EB',
   headerStyle: 'editorial-dark',
-  footerText:
-    'Aethel Studios · Boutique Digital Agency & Growth Engineering · Pune, Maharashtra, India',
+  footerText: 'BUILD • DESIGN • GROW',
   defaultTemplateId: 'tpl-aethel-editorial',
   gstRegistrationStatus: 'Unregistered',
   gstEnabled: false,

@@ -775,7 +775,272 @@ test('Finance Engine Acceptance Tests 1–9: Invoice Creation, Partial UPI/Cash 
     new Date('2026-11-19T12:00:00Z')
   );
   assert.equal(lastMonthMetrics.totalReceived, 0);
+
+  // TEST 10 — Delete Invoice permanently removes it without auto-resurrection
+  assert.equal(state.invoices!.length, 2);
+  // Delete inv-1002
+  state = reconcileDatabaseIntegrity({
+    ...state,
+    invoices: state.invoices!.filter((i) => i.id !== 'inv-1002'),
+  });
+  assert.equal(state.invoices!.length, 1);
+  assert.equal(state.invoices![0].id, 'inv-1001');
+
+  // Delete remaining inv-1001 even though client has recorded payments (advancePaid > 0)
+  state = reconcileDatabaseIntegrity({
+    ...state,
+    invoices: state.invoices!.filter((i) => i.id !== 'inv-1001'),
+  });
+  assert.equal(state.invoices!.length, 0);
+  const afterDeleteMetrics = calculateFinanceOverviewMetrics(state, 'All Time');
+  assert.equal(afterDeleteMetrics.totalInvoicedRevenue, 0);
+  assert.equal(afterDeleteMetrics.outstandingPayments, 0);
 });
+
+test('Section 12: Aethel Custom Document Template Integration (Quotation, Invoice, Payment Receipt) — All 12 Scenarios', async () => {
+  const {
+    DEFAULT_FINANCE_SETTINGS,
+    DEFAULT_DOCUMENT_TEMPLATES,
+    createDocumentSnapshot,
+  } = await import('./financeEngine');
+  const {
+    renderDocumentToA4Html,
+    mapInvoiceToTemplateData,
+    mapQuotationToTemplateData,
+    mapReceiptToTemplateData,
+    createSampleTestDocumentForTemplate,
+  } = await import('./pdfDocumentEngine');
+
+  // Verify all 3 approved templates exist in DEFAULT_DOCUMENT_TEMPLATES
+  assert.equal(DEFAULT_DOCUMENT_TEMPLATES.length, 3);
+  const quoTpl = DEFAULT_DOCUMENT_TEMPLATES.find((t) => t.documentType === 'Quotation');
+  const invTpl = DEFAULT_DOCUMENT_TEMPLATES.find((t) => t.documentType === 'Invoice');
+  const recTpl = DEFAULT_DOCUMENT_TEMPLATES.find((t) => t.documentType === 'Payment Receipt');
+  assert.ok(quoTpl && invTpl && recTpl);
+
+  // Verify sample test document generation for each template
+  for (const tpl of DEFAULT_DOCUMENT_TEMPLATES) {
+    const sampleDoc = createSampleTestDocumentForTemplate(tpl, DEFAULT_FINANCE_SETTINGS);
+    const sampleHtml = renderDocumentToA4Html(sampleDoc, DEFAULT_FINANCE_SETTINGS, DEFAULT_DOCUMENT_TEMPLATES);
+    assert.ok(sampleHtml.includes('data:image/png;base64,'), `Official logo asset embedded for ${tpl.name}`);
+    assert.ok(sampleHtml.includes('GST not charged. Supplier is not registered under GST.'));
+    assert.ok(!sampleHtml.includes('undefined'));
+    assert.ok(!sampleHtml.includes('NaN'));
+  }
+
+  // Case 1, 3, 6, 8: Short client name, 1 service item, zero discount, Invoice with 0 payments
+  const invCase1 = createDocumentSnapshot(
+    'Invoice',
+    'AS-I-101',
+    'ABC Café',
+    8000,
+    'Issued',
+    {
+      id: 'inv-c1',
+      invoiceNumber: 'AS-I-101',
+      clientId: 'cli-c1',
+      clientName: 'ABC Café',
+      clientAddress: 'Nanded, Maharashtra',
+      projectTitle: 'Website Design',
+      packageSubtitle: 'Starter Package',
+      issueDate: '2026-11-19',
+      dueDate: '2026-11-26',
+      lineItems: [
+        { id: '1', serviceName: 'Website Design & Development', description: '', quantity: 1, unitPrice: 8000, total: 8000 },
+      ],
+      subtotal: 8000,
+      discount: 0,
+      amount: 8000,
+      amountPaid: 0,
+      balanceDue: 8000,
+      status: 'Issued',
+    }
+  );
+  const invData1 = mapInvoiceToTemplateData(invCase1, DEFAULT_FINANCE_SETTINGS, []);
+  assert.equal(invData1.client.businessName, 'ABC Café');
+  assert.equal(invData1.items.length, 1);
+  assert.equal(invData1.totals.discount, 0);
+  assert.equal(invData1.paymentSummary.amountReceived, 0);
+  const htmlCase1 = renderDocumentToA4Html(invCase1, DEFAULT_FINANCE_SETTINGS, DEFAULT_DOCUMENT_TEMPLATES, []);
+  assert.ok(htmlCase1.includes('I N V O I C E'));
+  assert.ok(htmlCase1.includes('ABC Café'));
+  assert.ok(htmlCase1.includes('—')); // zero discount renders em-dash
+  assert.ok(!htmlCase1.includes('PAID TO DATE')); // 0 payment does not clutter summary
+
+  // Case 2, 4, 5, 7: Long client name, 10 service items, long service descriptions, non-zero discount on Quotation
+  const tenItems = Array.from({ length: 10 }, (_, idx) => ({
+    id: `item-${idx + 1}`,
+    serviceName: `Enterprise Digital Module #${idx + 1}: Multi-Region Architecture & Conversion Funnel`,
+    description:
+      'Comprehensive UI/UX research, custom responsive components, automated WhatsApp lead capture, performance optimization, and deployment pipeline.',
+    quantity: 2,
+    unitPrice: 2500,
+    total: 5000,
+  }));
+  const quoCase2 = createDocumentSnapshot(
+    'Quotation',
+    'AS-Q-202',
+    'Shri Siddhivinayak International Grand Heritage Banquet & Convention Centre Pvt. Ltd.',
+    45000,
+    'Sent',
+    {
+      id: 'quo-c2',
+      quoteNumber: 'AS-Q-202',
+      clientId: 'cli-c2',
+      clientName: 'Shri Siddhivinayak International Grand Heritage Banquet & Convention Centre Pvt. Ltd.',
+      clientContactPerson: 'Vikramaditya Deshmukh',
+      clientAddress: 'Plot 44, MIDC Industrial Estate, Nanded, Maharashtra – 431603',
+      clientEmail: 'director@siddhivinayakbanquets.co.in',
+      clientPhone: '+91 98220 99887',
+      projectTitle: 'Full-Stack Booking & Hospitality ERP Platform',
+      packageSubtitle: 'Enterprise Custom Package',
+      date: '2026-11-19',
+      validUntil: '2026-12-05',
+      lineItems: tenItems,
+      subtotal: 50000,
+      discount: 5000,
+      total: 45000,
+      status: 'Sent',
+      termsAndConditions: '50% advance to initiate build, 50% prior to production deployment.',
+    }
+  );
+  const quoData2 = mapQuotationToTemplateData(quoCase2, DEFAULT_FINANCE_SETTINGS);
+  assert.equal(quoData2.items.length, 10);
+  assert.equal(quoData2.totals.subtotal, 50000);
+  assert.equal(quoData2.totals.discount, 5000);
+  assert.equal(quoData2.totals.grandTotal, 45000);
+  const htmlCase2 = renderDocumentToA4Html(quoCase2, DEFAULT_FINANCE_SETTINGS, DEFAULT_DOCUMENT_TEMPLATES);
+  assert.ok(htmlCase2.includes('Q U O T A T I O N'));
+  assert.ok(htmlCase2.includes('PREPARED FOR'));
+  assert.ok(htmlCase2.includes('Valid Until'));
+  assert.ok(htmlCase2.includes('-₹5,000'));
+  assert.ok(htmlCase2.includes('Enterprise Digital Module #10'));
+
+  // Case 9 & 10: Invoice with partial payment vs full payment
+  const partialInvDoc = createDocumentSnapshot(
+    'Invoice',
+    'AS-I-109',
+    'ABC Café',
+    11000,
+    'Partially Paid',
+    {
+      id: 'inv-partial',
+      invoiceNumber: 'AS-I-109',
+      clientId: 'cli-abc',
+      clientName: 'ABC Café',
+      projectTitle: 'Website Design & Development',
+      issueDate: '2026-11-19',
+      dueDate: '2026-11-26',
+      lineItems: [{ id: '1', serviceName: 'Website Design', quantity: 1, unitPrice: 11000, total: 11000 }],
+      subtotal: 11000,
+      discount: 0,
+      amount: 11000,
+      amountPaid: 5500,
+      balanceDue: 5500,
+      status: 'Partially Paid',
+    }
+  );
+  const partialHtml = renderDocumentToA4Html(partialInvDoc, DEFAULT_FINANCE_SETTINGS, DEFAULT_DOCUMENT_TEMPLATES);
+  assert.ok(partialHtml.includes('PAID TO DATE'));
+  assert.ok(partialHtml.includes('BALANCE DUE'));
+  assert.ok(partialHtml.includes('₹5,500'));
+
+  const fullInvDoc = createDocumentSnapshot(
+    'Invoice',
+    'AS-I-110',
+    'ABC Café',
+    11000,
+    'Paid',
+    {
+      id: 'inv-full',
+      invoiceNumber: 'AS-I-110',
+      clientId: 'cli-abc',
+      clientName: 'ABC Café',
+      projectTitle: 'Website Design & Development',
+      issueDate: '2026-11-19',
+      dueDate: '2026-11-26',
+      lineItems: [{ id: '1', serviceName: 'Website Design', quantity: 1, unitPrice: 11000, total: 11000 }],
+      subtotal: 11000,
+      discount: 0,
+      amount: 11000,
+      amountPaid: 11000,
+      balanceDue: 0,
+      status: 'Paid',
+    }
+  );
+  const fullData = mapInvoiceToTemplateData(fullInvDoc, DEFAULT_FINANCE_SETTINGS);
+  assert.equal(fullData.paymentSummary.amountReceived, 11000);
+  assert.equal(fullData.paymentSummary.outstandingBalance, 0);
+
+  // Case 11 & 12: Payment Receipt with UPI reference vs without UPI reference
+  const recWithUpi = createDocumentSnapshot(
+    'Payment Receipt',
+    'AS-R-001',
+    'ABC Café',
+    5500,
+    'Issued',
+    {
+      payment: {
+        id: 'pay-upi',
+        receiptNumber: 'AS-R-001',
+        clientId: 'cli-abc',
+        clientName: 'ABC Café',
+        projectTitle: 'Website Design & Development',
+        totalProjectValue: 11000,
+        amountReceived: 5500,
+        paymentDate: '2026-11-19',
+        paymentMode: 'UPI',
+        upiReference: 'UPIRef_238746XXXX',
+        invoiceNumber: 'AS-I-001',
+      },
+      invoiceNumber: 'AS-I-001',
+      clientAddress: '123 Business Park, Nanded, Maharashtra – 431601',
+      packageSubtitle: 'Professional Package',
+      totalProjectOrInvoiceValue: 11000,
+      totalReceivedToDate: 5500,
+      outstandingRemaining: 5500,
+    }
+  );
+  const recHtmlWithUpi = renderDocumentToA4Html(recWithUpi, DEFAULT_FINANCE_SETTINGS, DEFAULT_DOCUMENT_TEMPLATES);
+  assert.ok(recHtmlWithUpi.includes('PAYMENT RECEIPT'));
+  assert.ok(recHtmlWithUpi.includes('Thank you'));
+  assert.ok(recHtmlWithUpi.includes('UPIRef_238746XXXX'));
+  assert.ok(recHtmlWithUpi.includes('TRANSACTION REFERENCE'));
+  assert.ok(recHtmlWithUpi.includes('(Rupees Five Thousand Five Hundred Only)'));
+
+  const recWithoutUpi = createDocumentSnapshot(
+    'Payment Receipt',
+    'AS-R-002',
+    'ABC Café',
+    5500,
+    'Issued',
+    {
+      payment: {
+        id: 'pay-cash',
+        receiptNumber: 'AS-R-002',
+        clientId: 'cli-abc',
+        clientName: 'ABC Café',
+        projectTitle: 'Website Design & Development',
+        totalProjectValue: 11000,
+        amountReceived: 5500,
+        paymentDate: '2026-11-19',
+        paymentMode: 'Cash',
+        upiReference: '',
+        invoiceNumber: 'AS-I-001',
+      },
+      invoiceNumber: 'AS-I-001',
+      totalProjectOrInvoiceValue: 11000,
+      totalReceivedToDate: 11000,
+      outstandingRemaining: 0,
+    }
+  );
+  const recDataWithoutUpi = mapReceiptToTemplateData(recWithoutUpi, DEFAULT_FINANCE_SETTINGS);
+  assert.equal(recDataWithoutUpi.receipt.transactionReference, '');
+  const recHtmlWithoutUpi = renderDocumentToA4Html(recWithoutUpi, DEFAULT_FINANCE_SETTINGS, DEFAULT_DOCUMENT_TEMPLATES);
+  assert.ok(!recHtmlWithoutUpi.includes('TRANSACTION REFERENCE')); // cleanly omitted when blank
+  assert.ok(recHtmlWithoutUpi.includes('Cash'));
+});
+
 
 
 

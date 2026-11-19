@@ -561,15 +561,59 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
   // --------------------------------------------------------------------------
   // FINANCE SETTINGS, SEQUENTIAL NUMBERING & INVOICES / TRANSACTIONS RECONCILIATION
   // --------------------------------------------------------------------------
+  const rawSettings = state.financeSettings || ({} as Partial<typeof DEFAULT_FINANCE_SETTINGS>);
   const financeSettings = {
     ...DEFAULT_FINANCE_SETTINGS,
-    ...(state.financeSettings || {}),
+    ...rawSettings,
+    phone1:
+      !rawSettings.phone1 ||
+      rawSettings.phone1 === '+91 90000 00001' ||
+      rawSettings.phone1 === '+91 98765 43210'
+        ? DEFAULT_FINANCE_SETTINGS.phone1
+        : rawSettings.phone1,
+    phone2:
+      !rawSettings.phone2 ||
+      rawSettings.phone2 === '+91 90000 00002' ||
+      rawSettings.phone2 === '+91 98765 43211'
+        ? DEFAULT_FINANCE_SETTINGS.phone2
+        : rawSettings.phone2,
+    bankName:
+      rawSettings.bankName === 'HDFC Bank' && rawSettings.bankAccountNumber === ''
+        ? ''
+        : rawSettings.bankName || '',
+    email:
+      !rawSettings.email || rawSettings.email === 'aethelstudios.in@gmail.com'
+        ? DEFAULT_FINANCE_SETTINGS.email
+        : rawSettings.email,
+    website:
+      !rawSettings.website || rawSettings.website === 'https://aethelstudios.in'
+        ? DEFAULT_FINANCE_SETTINGS.website
+        : rawSettings.website,
+    address:
+      !rawSettings.address || rawSettings.address === 'Pune, Maharashtra, India'
+        ? DEFAULT_FINANCE_SETTINGS.address
+        : rawSettings.address,
+    upiId:
+      !rawSettings.upiId || rawSettings.upiId === 'aethelstudios@upi'
+        ? DEFAULT_FINANCE_SETTINGS.upiId
+        : rawSettings.upiId,
+    defaultTemplateId:
+      !rawSettings.defaultTemplateId ||
+      rawSettings.defaultTemplateId === 'tpl-aethel-cobalt' ||
+      rawSettings.defaultTemplateId === 'tpl-aethel-minimal'
+        ? DEFAULT_FINANCE_SETTINGS.defaultTemplateId
+        : rawSettings.defaultTemplateId,
   };
 
-  const documentTemplates =
-    state.documentTemplates && state.documentTemplates.length > 0
-      ? state.documentTemplates
-      : DEFAULT_DOCUMENT_TEMPLATES;
+  const hasAllThreeApprovedTemplates =
+    Boolean(state.documentTemplates) &&
+    state.documentTemplates!.some((t) => t.id === 'tpl-aethel-quotation') &&
+    state.documentTemplates!.some((t) => t.id === 'tpl-aethel-editorial' && t.referenceImageUrl) &&
+    state.documentTemplates!.some((t) => t.id === 'tpl-aethel-receipt');
+
+  const documentTemplates = hasAllThreeApprovedTemplates
+    ? state.documentTemplates!
+    : DEFAULT_DOCUMENT_TEMPLATES;
 
   // Ensure every payment has a sequential receiptNumber (AS-R-xxx)
   const numberedPayments: ClientPayment[] = autoSyncedPayments.map((p, idx) => ({
@@ -590,59 +634,62 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
   const existingInvoices = (state.invoices || []).filter((inv) => !isDemoId(inv.id));
   const workingInvoices: ClientInvoice[] = [...existingInvoices];
 
-  // Auto-create an initial invoice ONLY for clients with recorded payments that have no existing invoice yet
-  finalClients.forEach((c) => {
-    const hasRecordedAdvance = c.advancePaid > 0 && c.stage !== 'Rejected / Dropped';
-    if (!hasRecordedAdvance) return;
+  // Auto-create an initial invoice ONLY when migrating legacy state where state.invoices was undefined.
+  // Once state.invoices is initialized, never auto-recreate invoices that the user explicitly deleted.
+  if (state.invoices === undefined) {
+    finalClients.forEach((c) => {
+      const hasRecordedAdvance = c.advancePaid > 0 && c.stage !== 'Rejected / Dropped';
+      if (!hasRecordedAdvance) return;
 
-    const hasAnyInvoice = workingInvoices.some(
-      (inv) =>
-        inv.clientId === c.id ||
-        inv.id === `inv-auto-${c.id}` ||
-        normalizeName(inv.clientName) === normalizeName(c.businessName)
-    );
-    if (hasAnyInvoice) return;
+      const hasAnyInvoice = workingInvoices.some(
+        (inv) =>
+          inv.clientId === c.id ||
+          inv.id === `inv-auto-${c.id}` ||
+          normalizeName(inv.clientName) === normalizeName(c.businessName)
+      );
+      if (hasAnyInvoice) return;
 
-    const nextSeq = workingInvoices.length + 1;
-    const invNum = `${financeSettings.invoicePrefix}${String(nextSeq).padStart(3, '0')}`;
-    workingInvoices.push({
-      id: `inv-auto-${c.id}`,
-      invoiceNumber: invNum,
-      clientId: c.id,
-      clientName: c.businessName,
-      clientContactPerson: c.contactPerson,
-      clientPhone: c.phone,
-      clientEmail: c.email,
-      clientAddress: c.city,
-      projectTitle: c.packageTier,
-      invoiceTitle: `${c.packageTier} — Project Invoice`,
-      paymentTerms: '50% Advance · 50% on Final Delivery',
-      type: 'Standard Invoice',
-      lineItems: [
-        {
-          id: `item-auto-${c.id}-1`,
-          serviceName: c.packageTier,
-          description: `Complete design, development & deployment for ${c.businessName}`,
-          quantity: 1,
-          unitPrice: c.finalAgreedPrice,
-          total: c.finalAgreedPrice,
-        },
-      ],
-      subtotal: c.finalAgreedPrice,
-      discount: 0,
-      amount: c.finalAgreedPrice,
-      issueDate: c.createdAt || today,
-      dueDate: c.followUpDate || today,
-      status: 'Issued',
-      notes: `Contract Value: ₹${c.finalAgreedPrice.toLocaleString('en-IN')}`,
-      gstEnabled: false,
-      gstRatePercent: 0,
-      gstDisclaimer: financeSettings.gstDisclaimer,
-      templateId: financeSettings.defaultTemplateId,
-      version: 1,
-      createdAt: new Date().toISOString(),
+      const nextSeq = workingInvoices.length + 1;
+      const invNum = `${financeSettings.invoicePrefix}${String(nextSeq).padStart(3, '0')}`;
+      workingInvoices.push({
+        id: `inv-auto-${c.id}`,
+        invoiceNumber: invNum,
+        clientId: c.id,
+        clientName: c.businessName,
+        clientContactPerson: c.contactPerson,
+        clientPhone: c.phone,
+        clientEmail: c.email,
+        clientAddress: c.city,
+        projectTitle: c.packageTier,
+        invoiceTitle: `${c.packageTier} — Project Invoice`,
+        paymentTerms: '50% Advance · 50% on Final Delivery',
+        type: 'Standard Invoice',
+        lineItems: [
+          {
+            id: `item-auto-${c.id}-1`,
+            serviceName: c.packageTier,
+            description: `Complete design, development & deployment for ${c.businessName}`,
+            quantity: 1,
+            unitPrice: c.finalAgreedPrice,
+            total: c.finalAgreedPrice,
+          },
+        ],
+        subtotal: c.finalAgreedPrice,
+        discount: 0,
+        amount: c.finalAgreedPrice,
+        issueDate: c.createdAt || today,
+        dueDate: c.followUpDate || today,
+        status: 'Issued',
+        notes: `Contract Value: ₹${c.finalAgreedPrice.toLocaleString('en-IN')}`,
+        gstEnabled: false,
+        gstRatePercent: 0,
+        gstDisclaimer: financeSettings.gstDisclaimer,
+        templateId: financeSettings.defaultTemplateId,
+        version: 1,
+        createdAt: new Date().toISOString(),
+      });
     });
-  });
+  }
 
   // Derive accurate paid amount, balanceDue, and status for every invoice from payments
   const generatedInvoices: ClientInvoice[] = workingInvoices.map((inv, idx) => {
