@@ -234,22 +234,22 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
       resolvedNotes = String(firstLog?.text || '');
     }
 
-    const milestones =
-      rawClient.milestones && rawClient.milestones.length === 6
-        ? rawClient.milestones.map((m) => ({
-            ...m,
-            owner: m.owner || resolvedAssignedTo,
-            subtasks:
-              m.subtasks && m.subtasks.length > 0
-                ? m.subtasks
-                : getDefaultSubtasksForMilestone(m.stage, m.owner || resolvedAssignedTo, m.completed),
-          }))
-        : getDefaultMilestonesForStage(rawClient.stage, resolvedAssignedTo);
+    const milestones = Array.isArray(rawClient.milestones)
+      ? rawClient.milestones.map((m) => ({
+          ...m,
+          owner: m.owner || resolvedAssignedTo,
+          // Preserve an intentionally empty subtask list; only migrate a missing list.
+          subtasks: Array.isArray(m.subtasks)
+            ? m.subtasks
+            : getDefaultSubtasksForMilestone(m.stage, m.owner || resolvedAssignedTo, m.completed),
+        }))
+      : getDefaultMilestonesForStage(rawClient.stage, resolvedAssignedTo);
 
-    const approvals =
-      rawClient.approvals && rawClient.approvals.length === 5
-        ? rawClient.approvals
-        : getDefaultApprovalsForStage(rawClient.stage, rawClient.contactPerson || 'Client');
+    // Keep custom approval workflows of any length instead of replacing them
+    // with the five-step default whenever the count differs.
+    const approvals = Array.isArray(rawClient.approvals)
+      ? rawClient.approvals
+      : getDefaultApprovalsForStage(rawClient.stage, rawClient.contactPerson || 'Client');
 
     const resolvedLeadSource: LeadSource =
       rawClient.leadSource ||
