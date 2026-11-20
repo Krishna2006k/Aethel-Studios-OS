@@ -191,6 +191,28 @@ test('reconcileDatabaseIntegrity strips legacy demo seed IDs while preserving re
   assert.equal(cleaned.clients.some((c) => c.businessName === 'Balaji Lawns'), true);
 });
 
+test('reconciliation preserves custom milestone and approval workflow lengths', () => {
+  const sourceClient = REAL_STUDIO_FIXTURE.clients[0];
+  const customClient = {
+    ...sourceClient,
+    milestones: (sourceClient.milestones || []).slice(0, 2).map((milestone) => ({
+      ...milestone,
+      subtasks: [],
+    })),
+    approvals: (sourceClient.approvals || []).slice(0, 1),
+  };
+
+  const reconciled = reconcileDatabaseIntegrity({
+    ...REAL_STUDIO_FIXTURE,
+    clients: [customClient],
+  });
+  const result = reconciled.clients.find((client) => client.id === customClient.id)!;
+
+  assert.equal(result.milestones?.length, 2);
+  assert.equal(result.milestones?.[0].subtasks?.length, 0);
+  assert.equal(result.approvals?.length, 1);
+});
+
 test('calculateStudioFinances guarantees Confirmed Deal Volume == Collected + Pending Receivables', () => {
   const reconciled = reconcileDatabaseIntegrity(REAL_STUDIO_FIXTURE);
   const fin = calculateStudioFinances(
