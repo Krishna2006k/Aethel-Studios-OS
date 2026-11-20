@@ -97,6 +97,7 @@ export default function App() {
       ) {
         dbStateRef.current = result.state;
         setDbState(result.state);
+        saveToLocalStorage(result.state);
         setSyncMode(result.mode);
       }
       return { mode: result.mode, error: result.error };
@@ -638,14 +639,28 @@ export default function App() {
 
   const handleResetDemoData = async () => {
     try {
-      await fetch('/api/db/reset', { method: 'POST' });
-    } catch {
-      // ignore if offline
+      const response = await fetch('/api/db/reset', {
+        method: 'POST',
+        headers: { 'X-Aethel-Request': 'same-origin' },
+      });
+      if (!response.ok) {
+        throw new Error(`Server rejected workspace reset (${response.status}).`);
+      }
+
+      const emptyState = reconcileDatabaseIntegrity(SEED_DATA);
+      dbStateRef.current = emptyState;
+      const revision = ++mutationRevisionRef.current;
+      setDbState(emptyState);
+      saveToLocalStorage(emptyState);
+
+      const result = await saveDatabaseState(emptyState);
+      if (revision === mutationRevisionRef.current) {
+        setSyncMode(result.synced ? 'supabase' : 'local');
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Workspace reset failed.';
+      window.alert(`Workspace reset failed. No local records were cleared.\n\n${message}`);
     }
-    const emptyState = reconcileDatabaseIntegrity(SEED_DATA);
-    setDbState(emptyState);
-    saveToLocalStorage(emptyState);
-    await saveDatabaseState(emptyState);
   };
 
   // Urgent Badges for Sidebar Navigation
