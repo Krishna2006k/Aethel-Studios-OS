@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
@@ -94,7 +95,9 @@ const AUTH_SESSION_TTL_SECONDS = 60 * 60 * 8;
 const loginAttempts = new Map<string, { count: number; windowStartedAt: number }>();
 
 function authIsRequired(): boolean {
-  return process.env.NODE_ENV === 'production' || process.env.AETHEL_FORCE_AUTH === 'true';
+  // Fail closed when NODE_ENV is missing or unfamiliar; only explicit local
+  // development mode disables the gate.
+  return process.env.NODE_ENV !== 'development' || process.env.AETHEL_FORCE_AUTH === 'true';
 }
 
 function authIsConfigured(): boolean {
