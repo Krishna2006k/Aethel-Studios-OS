@@ -157,7 +157,7 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
       <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] mb-1">
-            GROWTH · META ADS &amp; PERFORMANCE INTELLIGENCE (AUTO-SYNCED TO FINANCE)
+            GROWTH · META ADS CAMPAIGN TRACKER (MANUAL METRICS · FINANCE SYNC)
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
             Client Ad Spend, CTR, CPL &amp; Retainer Tracker
@@ -199,7 +199,7 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#0B0F19] hover:bg-[#1E293B] text-white text-xs font-bold shadow-xs cursor-pointer"
           >
             <Plus className="w-4 h-4 text-[#60A5FA]" />
-            Launch Campaign
+            Add Campaign Tracker
           </button>
         </div>
       </div>
@@ -280,7 +280,7 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
         >
           <div className="flex items-center justify-between border-b border-[#EAECEF] pb-3">
             <h3 className="text-xs font-bold uppercase tracking-wider text-[#2563EB]">
-              + Launch New Meta Ad Campaign (Auto-Syncs to Finance Expenses)
+              + Add Campaign Tracker (Syncs Recorded Spend to Finance)
             </h3>
             <button
               type="button"
@@ -464,13 +464,13 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
             No {statusFilter !== 'All' ? statusFilter : ''} Meta Ad Campaigns Yet
           </h3>
           <p className="text-xs text-[#64748B] leading-relaxed">
-            Launch a campaign for any client in your CRM pipeline to track Ad Spend, CTR, CPC, CPL, and automatically sync the ad spend to Studio Finance Expenses.
+            Campaign details and performance metrics are entered manually. Recorded ad spend is synchronized with Studio Finance expenses; this screen does not create or edit campaigns in Meta Ads Manager.
           </p>
           <button
             onClick={() => setShowAdd(true)}
             className="px-5 py-2.5 rounded-xl bg-[#2563EB] text-white text-xs font-bold cursor-pointer"
           >
-            + Launch First Campaign
+            + Add First Campaign Tracker
           </button>
         </div>
       ) : (
