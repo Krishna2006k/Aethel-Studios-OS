@@ -115,9 +115,9 @@ async function fetchServerMirror(): Promise<AethelDatabaseState | null> {
   return null;
 }
 
-async function pushToServerMirror(state: AethelDatabaseState): Promise<void> {
+async function pushToServerMirror(state: AethelDatabaseState): Promise<boolean> {
   try {
-    await fetch('/api/db', {
+    const response = await fetch('/api/db', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'X-Aethel-Request': 'same-origin' },
       body: JSON.stringify({
@@ -125,8 +125,9 @@ async function pushToServerMirror(state: AethelDatabaseState): Promise<void> {
         supabaseConfig: getSavedSupabaseConfig().url ? getSavedSupabaseConfig() : undefined,
       }),
     });
+    return response.ok;
   } catch {
-    // Ignore offline error
+    return false;
   }
 }
 
@@ -223,6 +224,8 @@ export async function loadDatabaseState(): Promise<{
   return { state: baseFallback, mode: 'local' };
 }
 
+let workspaceWriteQueue: Promise<void> = Promise.resolve();
+
 export async function saveDatabaseState(
   newState: AethelDatabaseState
 ): Promise<{ synced: boolean; error?: string }> {
@@ -231,28 +234,34 @@ export async function saveDatabaseState(
     lastUpdated: new Date().toISOString(),
   });
   saveToLocalStorage(reconciledState);
-  await pushToServerMirror(reconciledState);
 
-  const client = getSupabaseClient();
-  if (!client) {
-    return { synced: false };
-  }
-
-  try {
-    const { error } = await client.from('aethel_os_state').upsert({
-      id: 'studio-primary',
-      payload: reconciledState,
-      updated_at: reconciledState.lastUpdated,
-    });
-
-    if (error) {
-      return { synced: false, error: sanitizeSupabaseError(error.message) };
+  const writeSnapshot = async (): Promise<{ synced: boolean; error?: string }> => {
+    const mirrorSaved = await pushToServerMirror(reconciledState);
+    const client = getSupabaseClient();
+    if (!client) {
+      return mirrorSaved
+        ? { synced: false }
+        : { synced: false, error: 'Workspace is saved in this browser, but the server mirror is unavailable.' };
     }
-    return { synced: true };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Sync failed';
-    return { synced: false, error: sanitizeSupabaseError(message) };
-  }
+
+    try {
+      const { error } = await client.from('aethel_os_state').upsert({
+        id: 'studio-primary',
+        payload: reconciledState,
+        updated_at: reconciledState.lastUpdated,
+      });
+      if (error) return { synced: false, error: sanitizeSupabaseError(error.message) };
+      return { synced: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Sync failed';
+      return { synced: false, error: sanitizeSupabaseError(message) };
+    }
+  };
+
+  // Persist snapshots in call order so delayed older requests cannot win a race.
+  const queuedWrite = workspaceWriteQueue.then(writeSnapshot, writeSnapshot);
+  workspaceWriteQueue = queuedWrite.then(() => undefined, () => undefined);
+  return queuedWrite;
 }
 
 export function loadFromLocalStorage(): AethelDatabaseState {
