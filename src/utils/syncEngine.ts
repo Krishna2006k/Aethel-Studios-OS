@@ -417,8 +417,9 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
         m.clientName
       );
       const cleanBudget = Math.max(0, Number(m.totalBudget) || 0);
-      const rawSpent = Math.max(0, Number(m.amountSpent) || 0);
-      const resolvedSpent = rawSpent === 0 && cleanBudget > 0 ? cleanBudget : rawSpent;
+      // A planned budget is not proof of actual spend. Only recorded spend is a
+      // finance expense; never infer spent money from the budget ceiling.
+      const resolvedSpent = Math.max(0, Number(m.amountSpent) || 0);
 
       const existingMetaExp = existingExpenses.find(
         (e) => e.id === `exp-meta-${m.id}` || e.linkedCampaignId === m.id
@@ -426,12 +427,21 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
       const resolvedPaidBy: ExpensePaidBy =
         m.paidBy || existingMetaExp?.paidBy || 'Vansh';
 
-      const defaultImpressions =
-        m.impressions !== undefined ? Number(m.impressions) : Math.round(resolvedSpent * 18);
-      const defaultReach =
-        m.reach !== undefined ? Number(m.reach) : Math.round(defaultImpressions * 0.76);
-      const defaultClicks =
-        m.clicks !== undefined ? Number(m.clicks) : Math.max(12, Math.round(defaultImpressions * 0.024));
+      const recordedImpressions = Number.isFinite(Number(m.impressions))
+        ? Math.max(0, Number(m.impressions))
+        : 0;
+      const recordedReach = Number.isFinite(Number(m.reach))
+        ? Math.max(0, Number(m.reach))
+        : 0;
+      const recordedClicks = Number.isFinite(Number(m.clicks))
+        ? Math.max(0, Number(m.clicks))
+        : 0;
+      const recordedConversions = Number.isFinite(Number(m.conversions))
+        ? Math.max(0, Number(m.conversions))
+        : Math.max(0, Number(m.leadsGenerated) || 0);
+      const recordedRoas = Number.isFinite(Number(m.roas))
+        ? Math.max(0, Number(m.roas))
+        : 0;
 
       return {
         ...m,
@@ -442,11 +452,11 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
         agencyFee: Math.max(0, Number(m.agencyFee) || 0),
         leadsGenerated: Math.max(0, Number(m.leadsGenerated) || 0),
         paidBy: resolvedPaidBy,
-        impressions: defaultImpressions,
-        reach: defaultReach,
-        clicks: defaultClicks,
-        conversions: m.conversions !== undefined ? Number(m.conversions) : Math.max(0, Number(m.leadsGenerated) || 0),
-        roas: m.roas !== undefined ? Number(m.roas) : 4.2,
+        impressions: recordedImpressions,
+        reach: recordedReach,
+        clicks: recordedClicks,
+        conversions: recordedConversions,
+        roas: recordedRoas,
       };
     });
 
