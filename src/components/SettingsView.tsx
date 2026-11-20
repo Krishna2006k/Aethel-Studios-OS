@@ -462,10 +462,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </span>
                   </div>
                   <div className="text-xs text-[#475569] leading-relaxed">
-                    <strong className="text-[#0B0F19]">IF TRIGGER:</strong> {rule.trigger}
+                    <strong className="text-[#0B0F19]">PLANNED TRIGGER:</strong> {rule.trigger}
                   </div>
                   <div className="text-xs text-[#2563EB] font-medium leading-relaxed">
-                    <strong>THEN ACTION:</strong> {rule.action}
+                    <strong>PLANNED ACTION:</strong> {rule.action}
                   </div>
                 </div>
 
