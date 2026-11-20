@@ -33,3 +33,5 @@ Domain status, SSL status, uptime, response time, and backup status are not auto
 ## Data safety
 
 The factory seed is intentionally empty. Never commit live client records, credentials, API keys, or production snapshots. Vault credentials should be re-added through the encrypted vault with a strong, unique passphrase.
+
+A previous seed fixture remains visible in the repository's Git history and contains credential-like values and personal details. They may have been sample values, but verify whether any correspond to real accounts. Rotate any matching live passwords, access tokens, API keys, and service-role credentials: deleting a value from the latest source tree does not remove it from prior commits. Do not rewrite shared Git history until maintainers have agreed on the recovery plan.
