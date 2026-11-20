@@ -192,7 +192,7 @@ test('reconcileDatabaseIntegrity strips legacy demo seed IDs while preserving re
 });
 
 test('reconciliation preserves custom milestone and approval workflow lengths', () => {
-  const sourceClient = REAL_STUDIO_FIXTURE.clients[0];
+  const sourceClient = reconcileDatabaseIntegrity(REAL_STUDIO_FIXTURE).clients[0];
   const customClient = {
     ...sourceClient,
     milestones: (sourceClient.milestones || []).slice(0, 2).map((milestone) => ({
