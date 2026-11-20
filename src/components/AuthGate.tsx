@@ -17,23 +17,35 @@ export const AuthGate: React.FC<AuthGateProps> = ({ children }) => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  const refreshSession = async () => {
-    setLoading(true);
-    setError('');
+  const refreshSession = async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+      setError('');
+    }
     try {
       const response = await fetch('/api/auth/session', { cache: 'no-store' });
       if (!response.ok) throw new Error('Could not verify the workspace session.');
       setSession((await response.json()) as AuthSession);
+      if (silent) setError('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to reach the workspace server.');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     void refreshSession();
   }, []);
+
+  // Re-check long-lived tabs so an expired server session also locks the UI.
+  useEffect(() => {
+    if (!session?.authRequired || !session.authenticated) return;
+    const intervalId = window.setInterval(() => {
+      void refreshSession(true);
+    }, 60_000);
+    return () => window.clearInterval(intervalId);
+  }, [session?.authRequired, session?.authenticated]);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
