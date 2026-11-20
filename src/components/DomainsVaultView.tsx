@@ -120,7 +120,7 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
       backupStatus: 'Manual Only',
       clientPaymentStatus,
       githubRepo: githubRepo.trim() || `aethel-studios/${cleanDomain.split('.')[0]}`,
-      notes: 'Configured with edge caching, daily Git backup & SSL.',
+      notes: '',
       paidBy,
     });
     setClientName('');
@@ -155,13 +155,13 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
       <div className="bg-white rounded-3xl p-5 sm:p-6 border border-[#EAECEF] shadow-[0_10px_30px_-10px_rgba(11,15,25,0.04)] flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-widest text-[#2563EB] mb-1">
-            GROWTH &amp; INFRASTRUCTURE · DOMAINS, SSL, UPTIME &amp; BACKUPS (AUTO-SYNCED TO FINANCE)
+            GROWTH &amp; INFRASTRUCTURE · DOMAINS &amp; RENEWALS
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0B0F19]">
-            Live Websites, Uptime Monitor &amp; Renewal Calendar
+            Domain Registry &amp; Renewal Calendar
           </h1>
           <p className="text-xs sm:text-sm text-[#64748B] mt-0.5">
-            Monitors <strong>Uptime %</strong>, <strong>SSL Certificates</strong>, <strong>Daily Backups</strong>, and <strong>30/15/7/3-Day Renewal Alerts</strong> while syncing domain expenses 1-to-1 with Finance.
+            Track hosting details, manually recorded verification status, and 30/15/7/3-day renewal alerts. Renewal costs are synchronized with Finance.
           </p>
         </div>
         <button
@@ -173,17 +173,17 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
         </button>
       </div>
 
-      {/* INFRASTRUCTURE HEALTH & UPTIME SUMMARY STRIP */}
+      {/* DOMAIN REGISTRY SUMMARY */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-[#0B0F19] text-white rounded-3xl p-5 flex items-center justify-between">
           <div>
             <div className="text-[10px] font-mono uppercase tracking-widest text-[#34D399]">
-              UPTIME MONITOR
+              WEBSITE STATUS
             </div>
             <div className="text-2xl font-extrabold font-mono mt-1">
               {websites.filter((w) => w.siteStatus === 'Online').length} / {websites.length} Marked Online
             </div>
-            <div className="text-xs text-[#94A3B8] mt-0.5">Avg 99.98% Uptime · Edge SSL Active</div>
+            <div className="text-xs text-[#94A3B8] mt-0.5">Monitoring data appears only after it is verified</div>
           </div>
           <Activity className="w-8 h-8 text-[#34D399]" />
         </div>
@@ -191,12 +191,12 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
         <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex items-center justify-between">
           <div>
             <div className="text-[10px] font-mono uppercase tracking-widest text-[#2563EB]">
-              AUTOMATED GIT &amp; DB BACKUPS
+              BACKUP RECORDS
             </div>
             <div className="text-2xl font-extrabold font-mono text-[#0B0F19] mt-1">
-              100% Verified
+              Manual verification
             </div>
-            <div className="text-xs text-[#64748B] mt-0.5">Daily snapshots + GitHub main branch</div>
+            <div className="text-xs text-[#64748B] mt-0.5">Record the backup method and last verified date per site</div>
           </div>
           <DatabaseBackup className="w-8 h-8 text-[#2563EB]" />
         </div>
@@ -204,12 +204,12 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
         <div className="bg-white rounded-3xl p-5 border border-[#EAECEF] flex items-center justify-between">
           <div>
             <div className="text-[10px] font-mono uppercase tracking-widest text-[#059669]">
-              ANNUAL DOMAIN &amp; DNS SYNC
+              ANNUAL RENEWAL COST
             </div>
             <div className="text-2xl font-extrabold font-mono text-[#059669] mt-1">
               {formatINR(websites.reduce((s, w) => s + w.renewalCostINR, 0))}/yr
             </div>
-            <div className="text-xs text-[#64748B] mt-0.5">Auto-reconciled with Studio Finance</div>
+            <div className="text-xs text-[#64748B] mt-0.5">Calculated from registered renewal costs</div>
           </div>
           <Globe className="w-8 h-8 text-[#059669]" />
         </div>
@@ -414,7 +414,7 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
                 <th className="py-4 px-5">Domain &amp; Live URL</th>
                 <th className="py-4 px-4">Client &amp; Billing</th>
                 <th className="py-4 px-4">Registrar, Host &amp; Plan</th>
-                <th className="py-4 px-4">Uptime, SSL &amp; Backups</th>
+                <th className="py-4 px-4">Recorded Status &amp; Backups</th>
                 <th className="py-4 px-4">Expiry &amp; Alert Tier</th>
                 <th className="py-4 px-4">Paid By (Finance Sync)</th>
                 <th className="py-4 px-4 text-right">Domain Cost (₹)</th>
@@ -531,12 +531,13 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
                           }
                           className="w-full px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-xs font-bold"
                         >
+                          <option value="Unverified">Unverified</option>
                           <option value="Online">Online</option>
                           <option value="Maintenance">Maintenance</option>
-                          <option value="Staging">Staging</option>
+                          <option value="Development">Development</option>
                         </select>
                         <select
-                          value={editDraft.backupStatus || 'Verified Daily'}
+                          value={editDraft.backupStatus || 'Manual Only'}
                           onChange={(e) =>
                             setEditDraft({
                               ...editDraft,
@@ -545,9 +546,9 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
                           }
                           className="w-full px-2 py-1 rounded-lg bg-white border border-[#EAECEF] text-[11px]"
                         >
+                          <option value="Manual Only">Manual Only</option>
                           <option value="Verified Daily">Verified Daily</option>
                           <option value="Weekly Snapshot">Weekly Snapshot</option>
-                          <option value="Manual Git">Manual Git</option>
                         </select>
                       </td>
                       <td className="py-3.5 px-4">
