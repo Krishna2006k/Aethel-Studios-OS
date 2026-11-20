@@ -279,7 +279,7 @@ test('convertLeadToActiveProject, toggleClientMilestone, and cascadeClientUpdate
   assert.equal(afterDelete.clients.some((c) => c.id === 'cli-1794853300739'), false);
 });
 
-test('Domains and Meta Ads automatically sync 1-to-1 into Studio Finance Expenses and Net Profit', () => {
+test('Recorded domain costs and actual Meta ad spend sync to Finance without converting budgets or missing metrics into fake actuals', () => {
   const withDomainsAndAds: AethelDatabaseState = {
     ...REAL_STUDIO_FIXTURE,
     websites: [
@@ -322,7 +322,7 @@ test('Domains and Meta Ads automatically sync 1-to-1 into Studio Finance Expense
         objective: 'Website Traffic',
         status: 'Paused',
         totalBudget: 1652,
-        amountSpent: 0, // Should auto-resolve to 1652
+        amountSpent: 800, // Recorded actual spend
         agencyFee: 0,
         leadsGenerated: 0,
         startDate: '2026-11-18',
@@ -336,7 +336,7 @@ test('Domains and Meta Ads automatically sync 1-to-1 into Studio Finance Expense
         objective: 'Website Traffic',
         status: 'Completed',
         totalBudget: 1652,
-        amountSpent: 0, // Should auto-resolve to 1652
+        amountSpent: 0, // Budget exists, but no spend has been recorded
         agencyFee: 0,
         leadsGenerated: 0,
         startDate: '2026-11-18',
@@ -353,8 +353,11 @@ test('Domains and Meta Ads automatically sync 1-to-1 into Studio Finance Expense
   assert.equal(sagarDomain.clientName, 'New Sagar Mobiles Risod');
   assert.equal(sagarDomain.clientId, 'cli-1794853179793');
 
-  // 4 expenses should be automatically synced (2 domains + 2 Meta Ad campaigns)
-  assert.equal(reconciled.expenses.length, 4);
+  // 3 expenses: 2 domain renewals + 1 campaign with recorded actual spend.
+  assert.equal(reconciled.expenses.length, 3);
+  assert.equal(reconciled.metaCampaigns.find((c) => c.id === 'meta-sagar')?.amountSpent, 0);
+  assert.equal(reconciled.metaCampaigns.find((c) => c.id === 'meta-sagar')?.impressions, 0);
+  assert.equal(reconciled.metaCampaigns.find((c) => c.id === 'meta-sagar')?.roas, 0);
 
   const fin = calculateStudioFinances(
     reconciled.expenses,
@@ -365,11 +368,11 @@ test('Domains and Meta Ads automatically sync 1-to-1 into Studio Finance Expense
     reconciled.tasks || []
   );
 
-  // 1081 + 589 + 1652 + 1652 = 4974
-  assert.equal(fin.totalStudioExpenses, 4974);
-  // 13000 - 4974 = 8026
-  assert.equal(fin.netProfit, 8026);
-  assert.equal(fin.totalClientAdSpendPassThrough, 3304);
+  // 1081 + 589 + 800 actual recorded campaign spend = 2470.
+  assert.equal(fin.totalStudioExpenses, 2470);
+  // 13000 - 2470 = 10530.
+  assert.equal(fin.netProfit, 10530);
+  assert.equal(fin.totalClientAdSpendPassThrough, 800);
 });
 
 test('Studio Health, Lead Conversion Analytics, Project Templates, and Approval Checkpoints compute accurately', async () => {
