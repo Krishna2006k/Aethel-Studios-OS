@@ -148,7 +148,7 @@ export const DEFAULT_AUTOMATION_RULES: AutomationRule[] = [
     trigger: 'When project stage is Live / Payment Pending with balance > ₹0',
     action: 'Surface critical receivable alert & one-click WhatsApp settlement reminder',
     enabled: true,
-    triggeredCount: 2,
+    triggeredCount: 0,
     category: 'Finance',
   },
   {
@@ -157,7 +157,7 @@ export const DEFAULT_AUTOMATION_RULES: AutomationRule[] = [
     trigger: 'When a deal moves to In Building or receives an advance payment',
     action: 'Auto-create 6 delivery milestones, 14 subtasks, 5 approval gates & ledger entry',
     enabled: true,
-    triggeredCount: 3,
+    triggeredCount: 0,
     category: 'CRM',
   },
   {
@@ -166,7 +166,7 @@ export const DEFAULT_AUTOMATION_RULES: AutomationRule[] = [
     trigger: 'When all 6 milestones complete or final balance is settled',
     action: 'Transition stage to Delivered / Live & mark invoice Paid in Finance Ledger',
     enabled: true,
-    triggeredCount: 2,
+    triggeredCount: 0,
     category: 'Project',
   },
   {
@@ -175,7 +175,7 @@ export const DEFAULT_AUTOMATION_RULES: AutomationRule[] = [
     trigger: 'When any hosted domain is within 45 days of expiration',
     action: 'Dispatch notification alert & sync renewal cost to Operational Expenses',
     enabled: true,
-    triggeredCount: 2,
+    triggeredCount: 0,
     category: 'Domain',
   },
 ];
@@ -234,22 +234,22 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
       resolvedNotes = String(firstLog?.text || '');
     }
 
-    const milestones =
-      rawClient.milestones && rawClient.milestones.length === 6
-        ? rawClient.milestones.map((m) => ({
-            ...m,
-            owner: m.owner || resolvedAssignedTo,
-            subtasks:
-              m.subtasks && m.subtasks.length > 0
-                ? m.subtasks
-                : getDefaultSubtasksForMilestone(m.stage, m.owner || resolvedAssignedTo, m.completed),
-          }))
-        : getDefaultMilestonesForStage(rawClient.stage, resolvedAssignedTo);
+    const milestones = Array.isArray(rawClient.milestones)
+      ? rawClient.milestones.map((m) => ({
+          ...m,
+          owner: m.owner || resolvedAssignedTo,
+          // Preserve an intentionally empty subtask list; only migrate a missing list.
+          subtasks: Array.isArray(m.subtasks)
+            ? m.subtasks
+            : getDefaultSubtasksForMilestone(m.stage, m.owner || resolvedAssignedTo, m.completed),
+        }))
+      : getDefaultMilestonesForStage(rawClient.stage, resolvedAssignedTo);
 
-    const approvals =
-      rawClient.approvals && rawClient.approvals.length === 5
-        ? rawClient.approvals
-        : getDefaultApprovalsForStage(rawClient.stage, rawClient.contactPerson || 'Client');
+    // Keep custom approval workflows of any length instead of replacing them
+    // with the five-step default whenever the count differs.
+    const approvals = Array.isArray(rawClient.approvals)
+      ? rawClient.approvals
+      : getDefaultApprovalsForStage(rawClient.stage, rawClient.contactPerson || 'Client');
 
     const resolvedLeadSource: LeadSource =
       rawClient.leadSource ||
@@ -417,8 +417,9 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
         m.clientName
       );
       const cleanBudget = Math.max(0, Number(m.totalBudget) || 0);
-      const rawSpent = Math.max(0, Number(m.amountSpent) || 0);
-      const resolvedSpent = rawSpent === 0 && cleanBudget > 0 ? cleanBudget : rawSpent;
+      // A planned budget is not proof of actual spend. Only recorded spend is a
+      // finance expense; never infer spent money from the budget ceiling.
+      const resolvedSpent = Math.max(0, Number(m.amountSpent) || 0);
 
       const existingMetaExp = existingExpenses.find(
         (e) => e.id === `exp-meta-${m.id}` || e.linkedCampaignId === m.id
@@ -426,12 +427,21 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
       const resolvedPaidBy: ExpensePaidBy =
         m.paidBy || existingMetaExp?.paidBy || 'Vansh';
 
-      const defaultImpressions =
-        m.impressions !== undefined ? Number(m.impressions) : Math.round(resolvedSpent * 18);
-      const defaultReach =
-        m.reach !== undefined ? Number(m.reach) : Math.round(defaultImpressions * 0.76);
-      const defaultClicks =
-        m.clicks !== undefined ? Number(m.clicks) : Math.max(12, Math.round(defaultImpressions * 0.024));
+      const recordedImpressions = Number.isFinite(Number(m.impressions))
+        ? Math.max(0, Number(m.impressions))
+        : 0;
+      const recordedReach = Number.isFinite(Number(m.reach))
+        ? Math.max(0, Number(m.reach))
+        : 0;
+      const recordedClicks = Number.isFinite(Number(m.clicks))
+        ? Math.max(0, Number(m.clicks))
+        : 0;
+      const recordedConversions = Number.isFinite(Number(m.conversions))
+        ? Math.max(0, Number(m.conversions))
+        : Math.max(0, Number(m.leadsGenerated) || 0);
+      const recordedRoas = Number.isFinite(Number(m.roas))
+        ? Math.max(0, Number(m.roas))
+        : 0;
 
       return {
         ...m,
@@ -442,11 +452,11 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
         agencyFee: Math.max(0, Number(m.agencyFee) || 0),
         leadsGenerated: Math.max(0, Number(m.leadsGenerated) || 0),
         paidBy: resolvedPaidBy,
-        impressions: defaultImpressions,
-        reach: defaultReach,
-        clicks: defaultClicks,
-        conversions: m.conversions !== undefined ? Number(m.conversions) : Math.max(0, Number(m.leadsGenerated) || 0),
-        roas: m.roas !== undefined ? Number(m.roas) : 4.2,
+        impressions: recordedImpressions,
+        reach: recordedReach,
+        clicks: recordedClicks,
+        conversions: recordedConversions,
+        roas: recordedRoas,
       };
     });
 
@@ -476,11 +486,18 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
         renewalCostINR: Math.max(0, Number(w.renewalCostINR) || 0),
         paidBy: resolvedPaidBy,
         hostingPlan: w.hostingPlan || `${w.hostingPlatform} Production Edge`,
-        backupStatus: w.backupStatus || 'Verified Daily',
-        lastBackupDate: w.lastBackupDate || today,
-        uptimePercent: w.uptimePercent !== undefined ? Number(w.uptimePercent) : 99.98,
-        responseTimeMs: w.responseTimeMs !== undefined ? Number(w.responseTimeMs) : 142,
-        lastCheckedAt: w.lastCheckedAt || 'Just now',
+        siteStatus: w.siteStatus || 'Unverified',
+        backupStatus: w.backupStatus || 'Manual Only',
+        lastBackupDate: w.lastBackupDate,
+        uptimePercent:
+          w.uptimePercent !== undefined && Number.isFinite(Number(w.uptimePercent))
+            ? Number(w.uptimePercent)
+            : undefined,
+        responseTimeMs:
+          w.responseTimeMs !== undefined && Number.isFinite(Number(w.responseTimeMs))
+            ? Number(w.responseTimeMs)
+            : undefined,
+        lastCheckedAt: w.lastCheckedAt,
         clientPaymentStatus:
           w.clientPaymentStatus ||
           (matched && matched.advancePaid >= matched.finalAgreedPrice
@@ -531,13 +548,14 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
     });
 
   const syncedMetaExpenses: StudioExpense[] = linkedCampaigns
-    .filter((m) => m.amountSpent > 0 || m.totalBudget > 0)
+    // Only actual spend belongs in the expense ledger; an unused budget is not an expense.
+    .filter((m) => m.amountSpent > 0)
     .map((m) => {
       const prevExp = existingExpenses.find(
         (e) => e.id === `exp-meta-${m.id}` || e.linkedCampaignId === m.id
       );
       const paidBy: ExpensePaidBy = m.paidBy || prevExp?.paidBy || 'Vansh';
-      const spendAmount = m.amountSpent > 0 ? m.amountSpent : m.totalBudget;
+      const spendAmount = m.amountSpent;
       return {
         id: `exp-meta-${m.id}`,
         linkedCampaignId: m.id,

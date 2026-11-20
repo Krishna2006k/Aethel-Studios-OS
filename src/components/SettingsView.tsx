@@ -435,14 +435,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <Zap className="w-3.5 h-3.5" /> Proactive Operations Engine
               </div>
               <h2 className="text-lg font-extrabold text-[#0B0F19] mt-0.5">
-                Automated Studio Workflows ({activeAutomationsCount} of {automationRules.length} Active)
+                Automation Preferences ({activeAutomationsCount} of {automationRules.length} Enabled)
               </h2>
               <p className="text-xs text-[#64748B] mt-0.5">
-                Deterministic relational triggers that keep CRM, Deliveries, Domains, and Finance synchronized in real time.
+                These are saved configuration preferences. A configurable trigger runner and scheduled workflow execution are not implemented yet.
               </p>
             </div>
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#D1FAE5]/70 text-[#059669] text-xs font-bold">
-              <CheckCircle2 className="w-4 h-4" /> Real-Time Relational Triggers Active
+              <AlertCircle className="w-4 h-4" /> Preferences Only · No Background Runner
             </span>
           </div>
 
@@ -462,16 +462,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </span>
                   </div>
                   <div className="text-xs text-[#475569] leading-relaxed">
-                    <strong className="text-[#0B0F19]">IF TRIGGER:</strong> {rule.trigger}
+                    <strong className="text-[#0B0F19]">PLANNED TRIGGER:</strong> {rule.trigger}
                   </div>
                   <div className="text-xs text-[#2563EB] font-medium leading-relaxed">
-                    <strong>THEN ACTION:</strong> {rule.action}
+                    <strong>PLANNED ACTION:</strong> {rule.action}
                   </div>
                 </div>
 
                 <div className="pt-3 border-t border-[#EAECEF] flex items-center justify-between">
                   <span className="text-[11px] font-mono text-[#64748B]">
-                    Executes atomically in syncEngine
+                    Configuration only — no rule executor connected
                   </span>
                   <button
                     type="button"
@@ -482,7 +482,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         : 'bg-[#E2E8F0] text-[#64748B]'
                     }`}
                   >
-                    {rule.enabled ? 'Active (Enabled)' : 'Paused (Click to Enable)'}
+                    {rule.enabled ? 'Enabled (Saved)' : 'Disabled (Saved)'}
                   </button>
                 </div>
               </div>

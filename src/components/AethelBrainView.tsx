@@ -285,7 +285,7 @@ export const AethelBrainView: React.FC<AethelBrainViewProps> = ({
     try {
       const res = await fetch('/api/brain/ask', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Aethel-Request': 'same-origin' },
         body: JSON.stringify({
           query: q || 'What should I focus on today?',
           activeFounder: activeFounderFilter,
@@ -558,7 +558,7 @@ export const AethelBrainView: React.FC<AethelBrainViewProps> = ({
     try {
       const res = await fetch('/api/brain/weekly-recap', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Aethel-Request': 'same-origin' },
         body: JSON.stringify({ state: dbState }),
       });
       if (res.ok) {

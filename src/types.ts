@@ -149,7 +149,7 @@ export interface HostedWebsite {
   expiryDate: string;
   renewalCostINR: number;
   sslStatus: 'Active' | 'Expiring Soon' | 'Pending';
-  siteStatus: 'Online' | 'Maintenance' | 'Development';
+  siteStatus: 'Online' | 'Maintenance' | 'Development' | 'Unverified';
   githubRepo: string;
   notes: string;
   paidBy?: ExpensePaidBy;

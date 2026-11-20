@@ -1,4 +1,6 @@
+import 'dotenv/config';
 import express from 'express';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,16 +50,20 @@ async function loadOrInitializeDiskDb(): Promise<PersistedDiskEnvelope> {
     try {
       const raw = fs.readFileSync(DB_FILE_PATH, 'utf-8');
       const parsed = JSON.parse(raw) as PersistedDiskEnvelope;
-      if (parsed && parsed.state && Array.isArray(parsed.state.clients)) {
-        parsed.state = reconcileDatabaseIntegrity({
-          ...SEED_DATA,
-          ...parsed.state,
-        });
-        writeEnvelopeAtomically(parsed);
-        return parsed;
+      if (!parsed || !parsed.state || !Array.isArray(parsed.state.clients)) {
+        throw new Error('The persisted workspace file does not contain a valid state object.');
       }
-    } catch {
-      // Fall through to initialize empty workspace if file is corrupted
+
+      parsed.state = reconcileDatabaseIntegrity({
+        ...SEED_DATA,
+        ...parsed.state,
+      });
+      writeEnvelopeAtomically(parsed);
+      return parsed;
+    } catch (err: unknown) {
+      const detail = err instanceof Error ? err.message : 'Unknown parse or validation error';
+      // Never replace an existing workspace file with an empty seed after a read failure.
+      throw new Error(`Unable to load ${DB_FILE_PATH}; the original file has been preserved. ${detail}`);
     }
   }
 
@@ -82,33 +88,208 @@ function isValidDatabaseState(candidate: unknown): candidate is AethelDatabaseSt
   );
 }
 
+
+
+const AUTH_COOKIE_NAME = 'aethel_os_session';
+const AUTH_SESSION_TTL_SECONDS = 60 * 60 * 8;
+const loginAttempts = new Map<string, { count: number; windowStartedAt: number }>();
+
+function authIsRequired(): boolean {
+  // Fail closed when NODE_ENV is missing or unfamiliar; only explicit local
+  // development mode disables the gate.
+  return process.env.NODE_ENV !== 'development' || process.env.AETHEL_FORCE_AUTH === 'true';
+}
+
+function authIsConfigured(): boolean {
+  const password = process.env.AETHEL_ACCESS_PASSWORD || '';
+  const secret = process.env.AETHEL_SESSION_SECRET || '';
+  return password.length >= 12 && secret.length >= 32;
+}
+
+function safeStringEqual(left: string, right: string): boolean {
+  const leftBytes = Buffer.from(left);
+  const rightBytes = Buffer.from(right);
+  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
+}
+
+function readCookie(req: express.Request, name: string): string | null {
+  const cookieHeader = req.headers.cookie || '';
+  for (const part of cookieHeader.split(';')) {
+    const separator = part.indexOf('=');
+    if (separator < 0) continue;
+    if (part.slice(0, separator).trim() === name) {
+      return part.slice(separator + 1).trim();
+    }
+  }
+  return null;
+}
+
+function createSessionToken(): string {
+  const payload = Buffer.from(JSON.stringify({
+    audience: 'aethel-os',
+    expiresAt: Date.now() + AUTH_SESSION_TTL_SECONDS * 1000,
+  })).toString('base64url');
+  const signature = createHmac('sha256', process.env.AETHEL_SESSION_SECRET || '')
+    .update(payload)
+    .digest('base64url');
+  return `${payload}.${signature}`;
+}
+
+function hasValidSession(req: express.Request): boolean {
+  const token = readCookie(req, AUTH_COOKIE_NAME);
+  if (!token) return false;
+  const separator = token.lastIndexOf('.');
+  if (separator <= 0) return false;
+
+  const payload = token.slice(0, separator);
+  const suppliedSignature = Buffer.from(token.slice(separator + 1), 'base64url');
+  const expectedSignature = createHmac('sha256', process.env.AETHEL_SESSION_SECRET || '')
+    .update(payload)
+    .digest();
+  if (suppliedSignature.length !== expectedSignature.length ||
+      !timingSafeEqual(suppliedSignature, expectedSignature)) return false;
+
+  try {
+    const session = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as {
+      audience?: string;
+      expiresAt?: number;
+    };
+    return session.audience === 'aethel-os' &&
+      typeof session.expiresAt === 'number' &&
+      session.expiresAt > Date.now();
+  } catch {
+    return false;
+  }
+}
+
+function setSessionCookie(req: express.Request, res: express.Response): void {
+  const secure = req.secure ? '; Secure' : '';
+  res.setHeader('Set-Cookie',
+    `${AUTH_COOKIE_NAME}=${createSessionToken()}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${AUTH_SESSION_TTL_SECONDS}${secure}`
+  );
+}
+
+function clearSessionCookie(req: express.Request, res: express.Response): void {
+  const secure = req.secure ? '; Secure' : '';
+  res.setHeader('Set-Cookie',
+    `${AUTH_COOKIE_NAME}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`
+  );
+}
+
+function getLoginAttemptState(ip: string): { count: number; windowStartedAt: number } {
+  const now = Date.now();
+  const current = loginAttempts.get(ip);
+  if (!current || now - current.windowStartedAt > 15 * 60 * 1000) {
+    const fresh = { count: 0, windowStartedAt: now };
+    loginAttempts.set(ip, fresh);
+    return fresh;
+  }
+  return current;
+}
+
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
+  app.disable('x-powered-by');
+  app.set('trust proxy', 1);
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-Frame-Options', 'DENY');
+    next();
+  });
   app.use(express.json({ limit: '10mb' }));
+
+  app.get('/api/auth/session', (req, res) => {
+    const required = authIsRequired();
+    const configured = !required || authIsConfigured();
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      authRequired: required,
+      configured,
+      authenticated: configured && (!required || hasValidSession(req)),
+    });
+  });
+
+  app.post('/api/auth/login', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!authIsRequired()) {
+      res.json({ ok: true });
+      return;
+    }
+    if (!authIsConfigured()) {
+      res.status(503).json({
+        error: 'Workspace access protection is not configured. Set AETHEL_ACCESS_PASSWORD and AETHEL_SESSION_SECRET on the server.',
+      });
+      return;
+    }
+
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const attemptState = getLoginAttemptState(ip);
+    if (attemptState.count >= 10) {
+      res.setHeader('Retry-After', '900');
+      res.status(429).json({ error: 'Too many sign-in attempts. Try again in 15 minutes.' });
+      return;
+    }
+
+    const suppliedPassword = typeof req.body?.password === 'string' ? req.body.password : '';
+    if (!safeStringEqual(suppliedPassword, process.env.AETHEL_ACCESS_PASSWORD || '')) {
+      attemptState.count += 1;
+      res.status(401).json({ error: 'Incorrect workspace password.' });
+      return;
+    }
+
+    loginAttempts.delete(ip);
+    setSessionCookie(req, res);
+    res.json({ ok: true });
+  });
+
+  app.post('/api/auth/logout', (req, res) => {
+    clearSessionCookie(req, res);
+    res.json({ ok: true });
+  });
+
+  app.use('/api', (req, res, next) => {
+    const pathname = req.originalUrl.split('?')[0];
+    const publicRoutes = new Set([
+      '/api/health',
+      '/api/auth/session',
+      '/api/auth/login',
+      '/api/auth/logout',
+    ]);
+    if (publicRoutes.has(pathname)) return next();
+
+    res.setHeader('Cache-Control', 'no-store');
+    if (!authIsRequired()) return next();
+    if (!authIsConfigured()) {
+      res.status(503).json({
+        error: 'Workspace APIs are disabled until AETHEL_ACCESS_PASSWORD and AETHEL_SESSION_SECRET are configured.',
+      });
+      return;
+    }
+    if (!hasValidSession(req)) {
+      res.status(401).json({ error: 'Authentication required.' });
+      return;
+    }
+    if (
+      ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) &&
+      req.get('X-Aethel-Request') !== 'same-origin'
+    ) {
+      res.status(403).json({ error: 'Missing same-origin request protection header.' });
+      return;
+    }
+    next();
+  });
 
   let currentEnvelope = await loadOrInitializeDiskDb();
 
   app.get('/api/health', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     res.json({
       status: 'ok',
-      engine: 'Aethel OS Persistent Backend Engine',
-      updatedAt: currentEnvelope.updatedAt,
-      hasSupabaseConfig: Boolean(
-        currentEnvelope.supabaseConfig?.url && currentEnvelope.supabaseConfig?.anonKey
-      ),
-      counts: {
-        clients: currentEnvelope.state.clients.length,
-        metaCampaigns: currentEnvelope.state.metaCampaigns.length,
-        websites: currentEnvelope.state.websites.length,
-        tickets: currentEnvelope.state.tickets.length,
-        rndProjects: currentEnvelope.state.rndProjects.length,
-        expenses: currentEnvelope.state.expenses.length,
-        payments: currentEnvelope.state.payments.length,
-        vaultItems: currentEnvelope.state.vaultItems.length,
-        tasks: (currentEnvelope.state.tasks || []).length,
-      },
+      engine: 'Aethel OS API',
+      authenticationRequired: authIsRequired(),
     });
   });
 

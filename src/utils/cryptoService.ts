@@ -61,8 +61,8 @@ export interface EncryptedPayload {
 }
 
 export async function encryptSecret(plainText: string, masterPassphrase: string): Promise<EncryptedPayload> {
-  if (!masterPassphrase) {
-    throw new Error('Master Passphrase is required to encrypt credentials.');
+  if (masterPassphrase.trim().length < 12) {
+    throw new Error('Use a vault passphrase of at least 12 characters to encrypt new credentials.');
   }
   const subtle = getSubtleCrypto();
   const encoder = new TextEncoder();

@@ -57,7 +57,7 @@ export function saveSupabaseConfig(config: SupabaseConfig): void {
   supabaseInstance = null;
   fetch('/api/config/supabase', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Aethel-Request': 'same-origin' },
     body: JSON.stringify(clean),
   }).catch(() => {
     // ignore network error
@@ -69,7 +69,7 @@ export function clearSupabaseConfig(): void {
   supabaseInstance = null;
   fetch('/api/config/supabase', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Aethel-Request': 'same-origin' },
     body: JSON.stringify({ url: '', anonKey: '' }),
   }).catch(() => {
     // ignore network error
@@ -104,9 +104,7 @@ async function fetchServerMirror(): Promise<AethelDatabaseState | null> {
         }
       }
       if (json && json.state && Array.isArray(json.state.clients)) {
-        const reconciled = reconcileDatabaseIntegrity(json.state as AethelDatabaseState);
-        saveToLocalStorage(reconciled);
-        return reconciled;
+        return reconcileDatabaseIntegrity(json.state as AethelDatabaseState);
       }
     }
   } catch {
@@ -115,18 +113,19 @@ async function fetchServerMirror(): Promise<AethelDatabaseState | null> {
   return null;
 }
 
-async function pushToServerMirror(state: AethelDatabaseState): Promise<void> {
+async function pushToServerMirror(state: AethelDatabaseState): Promise<boolean> {
   try {
-    await fetch('/api/db', {
+    const response = await fetch('/api/db', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Aethel-Request': 'same-origin' },
       body: JSON.stringify({
         state,
         supabaseConfig: getSavedSupabaseConfig().url ? getSavedSupabaseConfig() : undefined,
       }),
     });
+    return response.ok;
   } catch {
-    // Ignore offline error
+    return false;
   }
 }
 
@@ -164,51 +163,26 @@ export async function loadDatabaseState(): Promise<{
           ...rawPayload,
         });
 
-        // If remote Supabase row was empty while our local server has real clients,
-        // push our local server state up to Supabase so we never wipe out existing work.
+        // Never migrate or overwrite data as a side effect of a read. A remote empty
+        // row must not replace a populated local/server workspace without an explicit save.
         if (remoteState.clients.length === 0 && baseFallback.clients.length > 0) {
-          await client.from('aethel_os_state').upsert({
-            id: 'studio-primary',
-            payload: baseFallback,
-            updated_at: new Date().toISOString(),
-          });
-          saveToLocalStorage(baseFallback);
-          await pushToServerMirror(baseFallback);
-          return { state: baseFallback, mode: 'supabase' };
-        }
-
-        // Persist reconciled state (including newly synced Domain & Meta Ads expenses) back to Supabase
-        if ((rawPayload.expenses || []).length !== remoteState.expenses.length) {
-          await client.from('aethel_os_state').upsert({
-            id: 'studio-primary',
-            payload: remoteState,
-            updated_at: new Date().toISOString(),
-          });
-        }
-
-        saveToLocalStorage(remoteState);
-        await pushToServerMirror(remoteState);
-        return { state: remoteState, mode: 'supabase' };
-      } else {
-        // Initialize the remote Supabase row with our current workspace state
-        const initial = reconcileDatabaseIntegrity(baseFallback);
-        const { error: upsertErr } = await client.from('aethel_os_state').upsert({
-          id: 'studio-primary',
-          payload: initial,
-          updated_at: new Date().toISOString(),
-        });
-
-        if (upsertErr) {
           return {
-            state: initial,
+            state: baseFallback,
             mode: 'local',
-            error: sanitizeSupabaseError(upsertErr.message),
+            error: 'The Supabase row is empty; existing local/server records were preserved.',
           };
         }
 
-        saveToLocalStorage(initial);
-        await pushToServerMirror(initial);
-        return { state: initial, mode: 'supabase' };
+        // Return the reconciled snapshot. The next explicit save persists any derived
+        // migrations, avoiding background writes racing with a newer user edit.
+        return { state: remoteState, mode: 'supabase' };
+      } else {
+        // Do not auto-initialize a missing remote row from a potentially stale read.
+        return {
+          state: baseFallback,
+          mode: 'local',
+          error: 'No Supabase workspace row exists yet; local/server data was preserved.',
+        };
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown connection error';
@@ -223,6 +197,8 @@ export async function loadDatabaseState(): Promise<{
   return { state: baseFallback, mode: 'local' };
 }
 
+let workspaceWriteQueue: Promise<void> = Promise.resolve();
+
 export async function saveDatabaseState(
   newState: AethelDatabaseState
 ): Promise<{ synced: boolean; error?: string }> {
@@ -231,28 +207,34 @@ export async function saveDatabaseState(
     lastUpdated: new Date().toISOString(),
   });
   saveToLocalStorage(reconciledState);
-  await pushToServerMirror(reconciledState);
 
-  const client = getSupabaseClient();
-  if (!client) {
-    return { synced: false };
-  }
-
-  try {
-    const { error } = await client.from('aethel_os_state').upsert({
-      id: 'studio-primary',
-      payload: reconciledState,
-      updated_at: reconciledState.lastUpdated,
-    });
-
-    if (error) {
-      return { synced: false, error: sanitizeSupabaseError(error.message) };
+  const writeSnapshot = async (): Promise<{ synced: boolean; error?: string }> => {
+    const mirrorSaved = await pushToServerMirror(reconciledState);
+    const client = getSupabaseClient();
+    if (!client) {
+      return mirrorSaved
+        ? { synced: false }
+        : { synced: false, error: 'Workspace is saved in this browser, but the server mirror is unavailable.' };
     }
-    return { synced: true };
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Sync failed';
-    return { synced: false, error: sanitizeSupabaseError(message) };
-  }
+
+    try {
+      const { error } = await client.from('aethel_os_state').upsert({
+        id: 'studio-primary',
+        payload: reconciledState,
+        updated_at: reconciledState.lastUpdated,
+      });
+      if (error) return { synced: false, error: sanitizeSupabaseError(error.message) };
+      return { synced: true };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Sync failed';
+      return { synced: false, error: sanitizeSupabaseError(message) };
+    }
+  };
+
+  // Persist snapshots in call order so delayed older requests cannot win a race.
+  const queuedWrite = workspaceWriteQueue.then(writeSnapshot, writeSnapshot);
+  workspaceWriteQueue = queuedWrite.then(() => undefined, () => undefined);
+  return queuedWrite;
 }
 
 export function loadFromLocalStorage(): AethelDatabaseState {
@@ -993,9 +975,11 @@ create table if not exists public.activity_logs (
 -- 11. Enable Row Level Security (RLS) & Studio Access Policies
 alter table public.aethel_os_state enable row level security;
 drop policy if exists "Allow studio full access" on public.aethel_os_state;
-create policy "Allow studio full access"
+drop policy if exists "Allow authenticated studio access" on public.aethel_os_state;
+create policy "Allow authenticated studio access"
   on public.aethel_os_state
   for all
-  using (true)
-  with check (true);
+  to authenticated
+  using (auth.uid() is not null)
+  with check (auth.uid() is not null);
 `;
