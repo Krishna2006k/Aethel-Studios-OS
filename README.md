@@ -18,7 +18,7 @@ Production mode requires two server-only environment variables:
 
 Set both in the deployment platform's secret/environment-variable manager. Never prefix them with `VITE_`, put them in client code, or commit real values. Production workspace APIs fail closed when either value is missing or too short. The current sign-in model is a shared-password gate, not per-founder accounts or role-based access control.
 
-For local development, API authentication is disabled unless `AETHEL_FORCE_AUTH=true` is set.
+For local development, copy `.env.example` to `.env`; it sets `NODE_ENV=development` so the access gate is disabled locally. The server loads `.env` at startup. A missing or unrecognized `NODE_ENV` is treated as production-like and requires authentication. Never deploy a `.env` file that sets `NODE_ENV=development`.
 
 ## Storage and cloud sync
 
