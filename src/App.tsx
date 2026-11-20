@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { CommandCenterView } from './components/CommandCenterView';
 import { ClientPipelineView } from './components/ClientPipelineView';
@@ -74,6 +74,9 @@ export default function App() {
   const [dbState, setDbState] = useState<AethelDatabaseState>(() =>
     reconcileDatabaseIntegrity(SEED_DATA)
   );
+  const dbStateRef = useRef(dbState);
+  const mutationRevisionRef = useRef(0);
+  const refreshRequestRef = useRef(0);
   const [syncMode, setSyncMode] = useState<'supabase' | 'local'>('local');
   const [isSyncing, setIsSyncing] = useState(false);
   const [supabaseModalOpen, setSupabaseModalOpen] = useState(false);
@@ -83,12 +86,31 @@ export default function App() {
     mode: 'supabase' | 'local';
     error?: string;
   }> => {
+    const requestId = ++refreshRequestRef.current;
+    const startingRevision = mutationRevisionRef.current;
     setIsSyncing(true);
-    const result = await loadDatabaseState();
-    setDbState(result.state);
-    setSyncMode(result.mode);
-    setIsSyncing(false);
-    return { mode: result.mode, error: result.error };
+    try {
+      const result = await loadDatabaseState();
+      if (
+        requestId === refreshRequestRef.current &&
+        startingRevision === mutationRevisionRef.current
+      ) {
+        dbStateRef.current = result.state;
+        setDbState(result.state);
+        setSyncMode(result.mode);
+      }
+      return { mode: result.mode, error: result.error };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Workspace refresh failed.';
+      return { mode: 'local', error: message };
+    } finally {
+      if (
+        requestId === refreshRequestRef.current &&
+        startingRevision === mutationRevisionRef.current
+      ) {
+        setIsSyncing(false);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -117,20 +139,24 @@ export default function App() {
   }, []);
 
   const persistUpdate = async (updater: (prev: AethelDatabaseState) => AethelDatabaseState) => {
-    setDbState((prev) => {
-      const updated = reconcileDatabaseIntegrity(updater(prev));
-      saveToLocalStorage(updated);
-      setIsSyncing(true);
-      saveDatabaseState(updated).then((res) => {
-        if (res.synced) {
-          setSyncMode('supabase');
-        } else if (res.error) {
-          setSyncMode('local');
-        }
-        setIsSyncing(false);
-      });
-      return updated;
-    });
+    // Avoid network side effects inside a React state updater, which can be replayed.
+    const updated = reconcileDatabaseIntegrity(updater(dbStateRef.current));
+    dbStateRef.current = updated;
+    const revision = ++mutationRevisionRef.current;
+    setDbState(updated);
+    saveToLocalStorage(updated);
+    setIsSyncing(true);
+
+    try {
+      const result = await saveDatabaseState(updated);
+      if (revision === mutationRevisionRef.current) {
+        setSyncMode(result.synced ? 'supabase' : 'local');
+      }
+    } catch {
+      if (revision === mutationRevisionRef.current) setSyncMode('local');
+    } finally {
+      if (revision === mutationRevisionRef.current) setIsSyncing(false);
+    }
   };
 
   // Jump to any Client's 360° Profile Drawer from anywhere in Aethel OS
