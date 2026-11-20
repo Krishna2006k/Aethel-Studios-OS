@@ -548,13 +548,14 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
     });
 
   const syncedMetaExpenses: StudioExpense[] = linkedCampaigns
-    .filter((m) => m.amountSpent > 0 || m.totalBudget > 0)
+    // Only actual spend belongs in the expense ledger; an unused budget is not an expense.
+    .filter((m) => m.amountSpent > 0)
     .map((m) => {
       const prevExp = existingExpenses.find(
         (e) => e.id === `exp-meta-${m.id}` || e.linkedCampaignId === m.id
       );
       const paidBy: ExpensePaidBy = m.paidBy || prevExp?.paidBy || 'Vansh';
-      const spendAmount = m.amountSpent > 0 ? m.amountSpent : m.totalBudget;
+      const spendAmount = m.amountSpent;
       return {
         id: `exp-meta-${m.id}`,
         linkedCampaignId: m.id,
