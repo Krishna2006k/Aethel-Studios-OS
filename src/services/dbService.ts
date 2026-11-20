@@ -104,9 +104,7 @@ async function fetchServerMirror(): Promise<AethelDatabaseState | null> {
         }
       }
       if (json && json.state && Array.isArray(json.state.clients)) {
-        const reconciled = reconcileDatabaseIntegrity(json.state as AethelDatabaseState);
-        saveToLocalStorage(reconciled);
-        return reconciled;
+        return reconcileDatabaseIntegrity(json.state as AethelDatabaseState);
       }
     }
   } catch {
@@ -165,51 +163,26 @@ export async function loadDatabaseState(): Promise<{
           ...rawPayload,
         });
 
-        // If remote Supabase row was empty while our local server has real clients,
-        // push our local server state up to Supabase so we never wipe out existing work.
+        // Never migrate or overwrite data as a side effect of a read. A remote empty
+        // row must not replace a populated local/server workspace without an explicit save.
         if (remoteState.clients.length === 0 && baseFallback.clients.length > 0) {
-          await client.from('aethel_os_state').upsert({
-            id: 'studio-primary',
-            payload: baseFallback,
-            updated_at: new Date().toISOString(),
-          });
-          saveToLocalStorage(baseFallback);
-          await pushToServerMirror(baseFallback);
-          return { state: baseFallback, mode: 'supabase' };
-        }
-
-        // Persist reconciled state (including newly synced Domain & Meta Ads expenses) back to Supabase
-        if ((rawPayload.expenses || []).length !== remoteState.expenses.length) {
-          await client.from('aethel_os_state').upsert({
-            id: 'studio-primary',
-            payload: remoteState,
-            updated_at: new Date().toISOString(),
-          });
-        }
-
-        saveToLocalStorage(remoteState);
-        await pushToServerMirror(remoteState);
-        return { state: remoteState, mode: 'supabase' };
-      } else {
-        // Initialize the remote Supabase row with our current workspace state
-        const initial = reconcileDatabaseIntegrity(baseFallback);
-        const { error: upsertErr } = await client.from('aethel_os_state').upsert({
-          id: 'studio-primary',
-          payload: initial,
-          updated_at: new Date().toISOString(),
-        });
-
-        if (upsertErr) {
           return {
-            state: initial,
+            state: baseFallback,
             mode: 'local',
-            error: sanitizeSupabaseError(upsertErr.message),
+            error: 'The Supabase row is empty; existing local/server records were preserved.',
           };
         }
 
-        saveToLocalStorage(initial);
-        await pushToServerMirror(initial);
-        return { state: initial, mode: 'supabase' };
+        // Return the reconciled snapshot. The next explicit save persists any derived
+        // migrations, avoiding background writes racing with a newer user edit.
+        return { state: remoteState, mode: 'supabase' };
+      } else {
+        // Do not auto-initialize a missing remote row from a potentially stale read.
+        return {
+          state: baseFallback,
+          mode: 'local',
+          error: 'No Supabase workspace row exists yet; local/server data was preserved.',
+        };
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Unknown connection error';
