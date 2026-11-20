@@ -49,16 +49,20 @@ async function loadOrInitializeDiskDb(): Promise<PersistedDiskEnvelope> {
     try {
       const raw = fs.readFileSync(DB_FILE_PATH, 'utf-8');
       const parsed = JSON.parse(raw) as PersistedDiskEnvelope;
-      if (parsed && parsed.state && Array.isArray(parsed.state.clients)) {
-        parsed.state = reconcileDatabaseIntegrity({
-          ...SEED_DATA,
-          ...parsed.state,
-        });
-        writeEnvelopeAtomically(parsed);
-        return parsed;
+      if (!parsed || !parsed.state || !Array.isArray(parsed.state.clients)) {
+        throw new Error('The persisted workspace file does not contain a valid state object.');
       }
-    } catch {
-      // Fall through to initialize empty workspace if file is corrupted
+
+      parsed.state = reconcileDatabaseIntegrity({
+        ...SEED_DATA,
+        ...parsed.state,
+      });
+      writeEnvelopeAtomically(parsed);
+      return parsed;
+    } catch (err: unknown) {
+      const detail = err instanceof Error ? err.message : 'Unknown parse or validation error';
+      // Never replace an existing workspace file with an empty seed after a read failure.
+      throw new Error(`Unable to load ${DB_FILE_PATH}; the original file has been preserved. ${detail}`);
     }
   }
 
@@ -278,24 +282,11 @@ async function startServer() {
   let currentEnvelope = await loadOrInitializeDiskDb();
 
   app.get('/api/health', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     res.json({
       status: 'ok',
-      engine: 'Aethel OS Persistent Backend Engine',
-      updatedAt: currentEnvelope.updatedAt,
-      hasSupabaseConfig: Boolean(
-        currentEnvelope.supabaseConfig?.url && currentEnvelope.supabaseConfig?.anonKey
-      ),
-      counts: {
-        clients: currentEnvelope.state.clients.length,
-        metaCampaigns: currentEnvelope.state.metaCampaigns.length,
-        websites: currentEnvelope.state.websites.length,
-        tickets: currentEnvelope.state.tickets.length,
-        rndProjects: currentEnvelope.state.rndProjects.length,
-        expenses: currentEnvelope.state.expenses.length,
-        payments: currentEnvelope.state.payments.length,
-        vaultItems: currentEnvelope.state.vaultItems.length,
-        tasks: (currentEnvelope.state.tasks || []).length,
-      },
+      engine: 'Aethel OS API',
+      authenticationRequired: authIsRequired(),
     });
   });
 
