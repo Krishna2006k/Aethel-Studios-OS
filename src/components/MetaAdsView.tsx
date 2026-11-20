@@ -46,14 +46,14 @@ export const MetaAdsView: React.FC<MetaAdsViewProps> = ({
   const [clientName, setClientName] = useState('');
   const [campaignName, setCampaignName] = useState('');
   const [objective, setObjective] = useState<MetaAdCampaign['objective']>('Website Traffic');
-  const [totalBudget, setTotalBudget] = useState(1652);
-  const [amountSpent, setAmountSpent] = useState(1652);
+  const [totalBudget, setTotalBudget] = useState(0);
+  const [amountSpent, setAmountSpent] = useState(0);
   const [agencyFee, setAgencyFee] = useState(0);
   const [paidBy, setPaidBy] = useState<ExpensePaidBy>('Vansh');
-  const [impressions, setImpressions] = useState(24800);
-  const [reach, setReach] = useState(18400);
-  const [clicks, setClicks] = useState(840);
-  const [roas, setRoas] = useState(4.2);
+  const [impressions, setImpressions] = useState(0);
+  const [reach, setReach] = useState(0);
+  const [clicks, setClicks] = useState(0);
+  const [roas, setRoas] = useState(0);
   const [notes, setNotes] = useState('');
 
   // Full Card Edit State

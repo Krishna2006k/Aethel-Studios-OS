@@ -16,7 +16,6 @@ import {
   X,
   Activity,
   DatabaseBackup,
-  RefreshCw,
 } from 'lucide-react';
 import { ClientLead, ExpensePaidBy, HostedWebsite } from '../types';
 import { calculateDaysUntilExpiry, formatINR } from '../utils/calculations';
@@ -57,7 +56,6 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
   // Inline Row Edit State
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<HostedWebsite | null>(null);
-  const [pingingId, setPingingId] = useState<string | null>(null);
 
   const handleStartEdit = (site: HostedWebsite) => {
     setEditingId(site.id);
@@ -84,22 +82,15 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
     setEditDraft(null);
   };
 
-  const handlePingWebsite = (site: HostedWebsite) => {
-    setPingingId(site.id);
-    setTimeout(() => {
-      const simulatedLatency = Math.floor(95 + Math.random() * 65);
-      onUpdateWebsite({
-        ...site,
-        siteStatus: 'Online',
-        uptimePercent: 99.98,
-        responseTimeMs: simulatedLatency,
-        lastCheckedAt: new Date().toLocaleTimeString('en-IN', {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-      });
-      setPingingId(null);
-    }, 300);
+  const handleOpenWebsite = (site: HostedWebsite) => {
+    const target = site.liveUrl || `https://${site.domainName}`;
+    try {
+      const parsed = new URL(target);
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return;
+      window.open(parsed.toString(), '_blank', 'noopener,noreferrer');
+    } catch {
+      // Ignore invalid or incomplete website URLs.
+    }
   };
 
   const handleCreate = (e: React.FormEvent) => {
@@ -124,13 +115,9 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
       purchaseDate: today,
       expiryDate,
       renewalCostINR: Number(renewalCostINR),
-      sslStatus: 'Active',
-      siteStatus: 'Online',
-      backupStatus: 'Verified Daily',
-      lastBackupDate: today,
-      uptimePercent: 99.98,
-      responseTimeMs: 134,
-      lastCheckedAt: 'Just now',
+      sslStatus: 'Pending',
+      siteStatus: 'Unverified',
+      backupStatus: 'Manual Only',
       clientPaymentStatus,
       githubRepo: githubRepo.trim() || `aethel-studios/${cleanDomain.split('.')[0]}`,
       notes: 'Configured with edge caching, daily Git backup & SSL.',
@@ -194,7 +181,7 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
               UPTIME MONITOR
             </div>
             <div className="text-2xl font-extrabold font-mono mt-1">
-              {websites.filter((w) => w.siteStatus === 'Online').length} / {websites.length} Online
+              {websites.filter((w) => w.siteStatus === 'Online').length} / {websites.length} Marked Online
             </div>
             <div className="text-xs text-[#94A3B8] mt-0.5">Avg 99.98% Uptime · Edge SSL Active</div>
           </div>
@@ -690,7 +677,8 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
                               : 'text-amber-700'
                           }`}
                         >
-                          ● {site.siteStatus} ({site.uptimePercent || 99.98}%)
+                          ● {site.siteStatus}
+                          {site.uptimePercent !== undefined ? ` (${site.uptimePercent}% recorded)` : ' · No uptime data'}
                         </span>
                         <span className="text-[#CBD5E1]">·</span>
                         <span className="inline-flex items-center gap-1 text-[11px] text-[#475569]">
@@ -699,23 +687,19 @@ export const DomainsVaultView: React.FC<DomainsVaultViewProps> = ({
                         </span>
                       </div>
                       <div className="flex items-center gap-2 mt-1 text-[10px] font-mono text-[#64748B]">
-                        <span>{site.responseTimeMs || 142}ms</span>
+                        <span>{site.responseTimeMs !== undefined ? `${site.responseTimeMs}ms` : 'No response-time data'}</span>
                         <span>·</span>
                         <span className="text-[#059669] font-semibold">
-                          Backup: {site.backupStatus || 'Verified Daily'}
+                          Backup: {site.backupStatus || 'Manual Only'}
                         </span>
                         <button
                           type="button"
-                          onClick={() => handlePingWebsite(site)}
+                          onClick={() => handleOpenWebsite(site)}
                           className="px-1.5 py-0.5 rounded bg-[#F8F9FA] hover:bg-[#EFF6FF] text-[#2563EB] border border-[#EAECEF] flex items-center gap-0.5 cursor-pointer"
-                          title="Ping Live Website Uptime"
+                          title="Open the live website in a new tab"
                         >
-                          <RefreshCw
-                            className={`w-2.5 h-2.5 ${
-                              pingingId === site.id ? 'animate-spin' : ''
-                            }`}
-                          />
-                          Ping
+                          <ExternalLink className="w-2.5 h-2.5" />
+                          Open Site
                         </button>
                       </div>
                     </td>

@@ -148,7 +148,7 @@ export const DEFAULT_AUTOMATION_RULES: AutomationRule[] = [
     trigger: 'When project stage is Live / Payment Pending with balance > ₹0',
     action: 'Surface critical receivable alert & one-click WhatsApp settlement reminder',
     enabled: true,
-    triggeredCount: 2,
+    triggeredCount: 0,
     category: 'Finance',
   },
   {
@@ -157,7 +157,7 @@ export const DEFAULT_AUTOMATION_RULES: AutomationRule[] = [
     trigger: 'When a deal moves to In Building or receives an advance payment',
     action: 'Auto-create 6 delivery milestones, 14 subtasks, 5 approval gates & ledger entry',
     enabled: true,
-    triggeredCount: 3,
+    triggeredCount: 0,
     category: 'CRM',
   },
   {
@@ -166,7 +166,7 @@ export const DEFAULT_AUTOMATION_RULES: AutomationRule[] = [
     trigger: 'When all 6 milestones complete or final balance is settled',
     action: 'Transition stage to Delivered / Live & mark invoice Paid in Finance Ledger',
     enabled: true,
-    triggeredCount: 2,
+    triggeredCount: 0,
     category: 'Project',
   },
   {
@@ -175,7 +175,7 @@ export const DEFAULT_AUTOMATION_RULES: AutomationRule[] = [
     trigger: 'When any hosted domain is within 45 days of expiration',
     action: 'Dispatch notification alert & sync renewal cost to Operational Expenses',
     enabled: true,
-    triggeredCount: 2,
+    triggeredCount: 0,
     category: 'Domain',
   },
 ];
@@ -476,11 +476,18 @@ export function reconcileDatabaseIntegrity(state: AethelDatabaseState): AethelDa
         renewalCostINR: Math.max(0, Number(w.renewalCostINR) || 0),
         paidBy: resolvedPaidBy,
         hostingPlan: w.hostingPlan || `${w.hostingPlatform} Production Edge`,
-        backupStatus: w.backupStatus || 'Verified Daily',
-        lastBackupDate: w.lastBackupDate || today,
-        uptimePercent: w.uptimePercent !== undefined ? Number(w.uptimePercent) : 99.98,
-        responseTimeMs: w.responseTimeMs !== undefined ? Number(w.responseTimeMs) : 142,
-        lastCheckedAt: w.lastCheckedAt || 'Just now',
+        siteStatus: w.siteStatus || 'Unverified',
+        backupStatus: w.backupStatus || 'Manual Only',
+        lastBackupDate: w.lastBackupDate,
+        uptimePercent:
+          w.uptimePercent !== undefined && Number.isFinite(Number(w.uptimePercent))
+            ? Number(w.uptimePercent)
+            : undefined,
+        responseTimeMs:
+          w.responseTimeMs !== undefined && Number.isFinite(Number(w.responseTimeMs))
+            ? Number(w.responseTimeMs)
+            : undefined,
+        lastCheckedAt: w.lastCheckedAt,
         clientPaymentStatus:
           w.clientPaymentStatus ||
           (matched && matched.advancePaid >= matched.finalAgreedPrice

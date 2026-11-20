@@ -57,7 +57,7 @@ export function saveSupabaseConfig(config: SupabaseConfig): void {
   supabaseInstance = null;
   fetch('/api/config/supabase', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Aethel-Request': 'same-origin' },
     body: JSON.stringify(clean),
   }).catch(() => {
     // ignore network error
@@ -69,7 +69,7 @@ export function clearSupabaseConfig(): void {
   supabaseInstance = null;
   fetch('/api/config/supabase', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Aethel-Request': 'same-origin' },
     body: JSON.stringify({ url: '', anonKey: '' }),
   }).catch(() => {
     // ignore network error
@@ -119,7 +119,7 @@ async function pushToServerMirror(state: AethelDatabaseState): Promise<void> {
   try {
     await fetch('/api/db', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Aethel-Request': 'same-origin' },
       body: JSON.stringify({
         state,
         supabaseConfig: getSavedSupabaseConfig().url ? getSavedSupabaseConfig() : undefined,
@@ -993,9 +993,11 @@ create table if not exists public.activity_logs (
 -- 11. Enable Row Level Security (RLS) & Studio Access Policies
 alter table public.aethel_os_state enable row level security;
 drop policy if exists "Allow studio full access" on public.aethel_os_state;
-create policy "Allow studio full access"
+drop policy if exists "Allow authenticated studio access" on public.aethel_os_state;
+create policy "Allow authenticated studio access"
   on public.aethel_os_state
   for all
-  using (true)
-  with check (true);
+  to authenticated
+  using (auth.uid() is not null)
+  with check (auth.uid() is not null);
 `;

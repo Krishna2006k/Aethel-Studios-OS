@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { AuthGate } from './components/AuthGate';
 import './index.css';
 
 // Register Service Worker for mobile & desktop PWA installability and offline shell
@@ -16,4 +17,4 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   });
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(document.getElementById('root')!).render(<AuthGate><App /></AuthGate>);

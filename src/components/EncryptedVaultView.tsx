@@ -42,7 +42,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
   onUpdateVaultItem,
   onDeleteVaultItem,
 }) => {
-  const [masterPassphrase, setMasterPassphrase] = useState('aethel-2025');
+  const [masterPassphrase, setMasterPassphrase] = useState('');
   const [showPassphrase, setShowPassphrase] = useState(false);
   const [vaultSessionLocked, setVaultSessionLocked] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -167,20 +167,10 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
     }
 
     if (item.cipherText.startsWith('DEMO_LOCKED_')) {
-      if (masterPassphrase === 'aethel-2025' || masterPassphrase.length >= 4) {
-        const demoPlain =
-          item.id === 'vlt-1'
-            ? 'AethelStudios#Pune2025!Workspace'
-            : item.id === 'vlt-2'
-            ? 'Hostinger#MasterAgency2025!KV'
-            : 'EAAGm0PX4ZCpsBA...MetaToken2025';
-        setDecryptedMap((prev) => ({ ...prev, [item.id]: demoPlain }));
-        setErrorMsg(null);
-        return;
-      } else {
-        setErrorMsg('Enter the Studio Master Passphrase (default: aethel-2025) to unlock.');
-        return;
-      }
+      setErrorMsg(
+        'This legacy demo entry is a placeholder, not encrypted data. Delete it and add the credential again with a new master passphrase.'
+      );
+      return;
     }
 
     try {
@@ -278,11 +268,7 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
           <div className="flex items-center gap-2.5 text-xs text-slate-300">
             <KeyRound className="w-4 h-4 text-[#34D399] shrink-0" />
             <span>
-              Active Session Master Key (Default key:{' '}
-              <code className="font-mono text-white bg-white/10 px-1.5 py-0.5 rounded">
-                aethel-2025
-              </code>
-              )
+              Master passphrase is entered per session and is never prefilled.
             </span>
           </div>
 
@@ -293,6 +279,8 @@ export const EncryptedVaultView: React.FC<EncryptedVaultViewProps> = ({
               disabled={vaultSessionLocked}
               onChange={(e) => setMasterPassphrase(e.target.value)}
               aria-label="Master Passphrase"
+              placeholder="Enter your vault passphrase"
+              autoComplete="current-password"
               className="px-3.5 py-1.5 rounded-xl bg-black/40 border border-white/15 text-xs font-mono text-white focus:outline-none focus:border-[#60A5FA] disabled:opacity-50"
             />
             <button
